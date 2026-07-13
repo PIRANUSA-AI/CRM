@@ -15,6 +15,7 @@ RUN bun run --filter backend build
 FROM oven/bun:1.2.15-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache ffmpeg
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/dist ./apps/backend/dist

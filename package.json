@@ -11,7 +11,7 @@
 	"scripts": {
 		"dev": "bun run scripts/dev.ts",
 		"dev:apps": "bun run --filter '*' dev",
-		"dev:services": "docker compose up -d --wait",
+		"dev:services": "docker compose up -d --build",
 		"dev:backend": "bun run --filter backend dev",
 		"dev:frontend": "bun run --filter frontend dev",
 		"build": "bun run --filter '*' build",

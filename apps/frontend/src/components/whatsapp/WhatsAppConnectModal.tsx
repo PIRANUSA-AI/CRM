@@ -113,7 +113,7 @@ function getManualConnectionFailureMessage(error: unknown): string {
 }
 
 function normalizeBaileysSession(
-	session: BaileysConnectResponse['data'] extends { session?: infer T } ? T : never,
+	session: BaileysSessionState | null | undefined,
 ): BaileysSessionState | null {
 	if (!session) return null
 

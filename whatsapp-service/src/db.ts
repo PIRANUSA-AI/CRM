@@ -47,6 +47,7 @@ export async function ensureBaileysSessionStorage() {
 				id uuid PRIMARY KEY,
 				channel_id uuid NOT NULL UNIQUE,
 				app_id uuid NOT NULL,
+				owner_user_id uuid,
 				provider_channel_key varchar(191) NOT NULL UNIQUE,
 				phone_number varchar(50),
 				status varchar(50) DEFAULT 'pending',
@@ -55,11 +56,17 @@ export async function ensureBaileysSessionStorage() {
 				qr_code text,
 				last_error text,
 				last_connected_at timestamptz,
+				first_connected_at timestamptz,
 				last_seen_at timestamptz,
 				metadata jsonb DEFAULT '{}'::jsonb,
 				created_at timestamptz DEFAULT now(),
 				updated_at timestamptz DEFAULT now()
 			)
+		`)
+		await execute(`
+			ALTER TABLE public.baileys_sessions
+			ADD COLUMN IF NOT EXISTS owner_user_id uuid,
+			ADD COLUMN IF NOT EXISTS first_connected_at timestamptz
 		`)
 		await execute(`
 			CREATE INDEX IF NOT EXISTS idx_baileys_sessions_app_id

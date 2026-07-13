@@ -826,8 +826,12 @@ type WhatsAppInboundContentType =
 	| 'text'
 	| 'image'
 	| 'video'
+	| 'gif'
 	| 'audio'
+	| 'voice'
 	| 'document'
+	| 'sticker'
+	| 'reaction'
 	| 'interactive'
 	| 'button'
 
@@ -874,8 +878,12 @@ function normalizeBridgeWhatsAppContentType(
 		.toLowerCase()
 	if (normalized === 'image') return 'image'
 	if (normalized === 'video') return 'video'
+	if (normalized === 'gif') return 'gif'
 	if (normalized === 'audio') return 'audio'
+	if (normalized === 'voice') return 'voice'
 	if (normalized === 'document' || normalized === 'file') return 'document'
+	if (normalized === 'sticker') return 'sticker'
+	if (normalized === 'reaction') return 'reaction'
 	if (normalized === 'interactive') return 'interactive'
 	if (normalized === 'button') return 'button'
 	return 'text'
@@ -4565,8 +4573,11 @@ export abstract class WebhookService {
 		const isMediaMessage =
 			message.contentType === 'image' ||
 			message.contentType === 'video' ||
+			message.contentType === 'gif' ||
 			message.contentType === 'audio' ||
-			message.contentType === 'document'
+			message.contentType === 'voice' ||
+			message.contentType === 'document' ||
+			message.contentType === 'sticker'
 
 		const contentAttributes = {
 			...(message.contentAttributes || {}),

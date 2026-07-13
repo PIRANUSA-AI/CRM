@@ -30,6 +30,10 @@ export const conversationBulkQueue = new Queue('conversation-bulk', {
 	connection: redis,
 })
 
+export const whatsappProfileSyncQueue = new Queue('whatsapp-profile-sync', {
+	connection: redis,
+})
+
 // Helper to add jobs
 export const addJob = async (queueName: string, data: any, opts = {}) => {
 	const queues: Record<string, Queue> = {
@@ -40,6 +44,7 @@ export const addJob = async (queueName: string, data: any, opts = {}) => {
 		maintenance: maintenanceQueue,
 		cron: cronQueue,
 		conversationBulk: conversationBulkQueue,
+		whatsappProfileSync: whatsappProfileSyncQueue,
 	}
 
 	const queue = queues[queueName]

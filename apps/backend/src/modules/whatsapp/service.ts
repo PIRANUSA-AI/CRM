@@ -687,7 +687,74 @@ export abstract class WhatsAppService {
 			lastConnectedAt: session.last_connected_at?.toISOString() || null,
 			lastSeenAt: session.last_seen_at?.toISOString() || null,
 			isConnected: session.status === 'connected',
+			hasConnectedBefore: Boolean(session.first_connected_at || session.last_connected_at),
 		}
+	}
+
+	static async getPersonalBaileysConnection(appId: string, userId: string) {
+		const rows = await prisma.$queryRawUnsafe<any[]>(
+			`SELECT s.*, c.name AS channel_name
+			 FROM baileys_sessions s
+			 JOIN whatsapp_channels c ON c.id = s.channel_id
+			 WHERE s.app_id = $1::uuid AND s.owner_user_id = $2::uuid
+			   AND c.deleted_at IS NULL
+			 LIMIT 1`,
+			appId,
+			userId,
+		)
+		const session = rows[0]
+		if (!session) return null
+		return {
+			channelId: session.channel_id,
+			phoneNumber: session.phone_number || null,
+			status: session.status || 'pending',
+			pairingCode: session.pairing_code || null,
+			qrCode: session.qr_code || null,
+			lastError: session.last_error || null,
+			lastConnectedAt: session.last_connected_at?.toISOString?.() || session.last_connected_at || null,
+			isConnected: session.status === 'connected',
+			requiresPairing: session.status !== 'connected',
+			hasConnectedBefore: Boolean(session.first_connected_at || session.last_connected_at),
+		}
+	}
+
+	static async canAccessBaileysConnection(channelId: string, appId: string, userId: string) {
+		const rows = await prisma.$queryRawUnsafe<Array<{ allowed: boolean }>>(
+			`SELECT true AS allowed
+			 FROM baileys_sessions s
+			 WHERE s.channel_id = $1::uuid AND s.app_id = $2::uuid
+			   AND (s.owner_user_id IS NULL OR s.owner_user_id = $3::uuid)
+			 LIMIT 1`,
+			channelId, appId, userId,
+		)
+		return Boolean(rows[0]?.allowed)
+	}
+
+	static async ensurePersonalBaileysConnection(params: {
+		appId: string
+		userId: string
+		userName: string
+		providerWebhookUrl: string
+	}) {
+		const existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
+		if (existing) return existing
+
+		const providerChannelKey = `personal-${params.appId}-${params.userId}`
+		const created = await this.createBaileysChannel(
+			{
+				name: `${params.userName || 'Sales'} WhatsApp`,
+				phoneNumber: '0000000000',
+				providerChannelKey,
+				providerWebhookUrl: params.providerWebhookUrl,
+			},
+			params.appId,
+		)
+		await prisma.$executeRawUnsafe(
+			`UPDATE baileys_sessions SET owner_user_id = $1::uuid, updated_at = now() WHERE channel_id = $2::uuid`,
+			params.userId,
+			created.channel.id,
+		)
+		return this.getPersonalBaileysConnection(params.appId, params.userId)
 	}
 
 	static async updateChannel(id: string, data: any) {

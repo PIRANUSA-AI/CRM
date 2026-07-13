@@ -49,8 +49,21 @@ export const Route = createRootRoute({
 		links: [{ rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' }],
 	}),
 	component: RootComponent,
+	notFoundComponent: NotFoundPage,
 	shellComponent: RootDocument,
 })
+
+function NotFoundPage() {
+	return (
+		<main className="grid min-h-svh place-items-center bg-background px-6 text-center text-foreground">
+			<div>
+				<p className="text-sm font-medium text-muted-foreground">Halaman tidak ditemukan</p>
+				<h1 className="mt-2 text-3xl font-semibold tracking-tight">Sepertinya kamu tersesat.</h1>
+				<a href="/" className="mt-6 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Kembali ke CRM</a>
+			</div>
+		</main>
+	)
+}
 
 function RootComponent() {
 	return <Outlet />

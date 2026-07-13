@@ -6,7 +6,7 @@ export const Route = createFileRoute('/')({
 		if (typeof localStorage !== 'undefined') {
 			const token = localStorage.getItem('scalechat_token')
 			if (token) {
-				throw redirect({ to: '/dashboard', replace: true })
+				throw redirect({ to: '/whatsapp/connect', replace: true })
 			}
 		}
 		throw redirect({ to: '/login', replace: true })

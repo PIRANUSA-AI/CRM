@@ -27,6 +27,8 @@ import {
 	isPathAllowedForRole,
 } from '@/lib/role-access'
 import { syncOrganizationContextFromSession } from '@/lib/organization'
+import { whatsappChannels } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 interface Agent {
 	id: string
@@ -102,6 +104,7 @@ function AppLayout() {
 	const [agent, setAgent] = useState<Agent | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [resolvingAppContext, setResolvingAppContext] = useState(false)
+	const [connectionGateResolved, setConnectionGateResolved] = useState(false)
 	const [appId, setAppId] = useState(() => {
 		if (typeof localStorage === 'undefined') return ''
 		return (
@@ -243,7 +246,27 @@ function AppLayout() {
 		}
 	}, [agent, loading, location.pathname, navigate])
 
-	if (loading || resolvingAppContext) return null
+	useEffect(() => {
+		if (loading || !agent) return
+		if (!['sales', 'agent'].includes(agent.role)) {
+			setConnectionGateResolved(true)
+			return
+		}
+		let active = true
+		void whatsappChannels.getMyConnection()
+			.then((response) => {
+				if (!active) return
+				if (!response.data.isConnected) {
+					void navigate({ to: '/whatsapp/connect', replace: true })
+					return
+				}
+				setConnectionGateResolved(true)
+			})
+			.catch(() => { if (active) void navigate({ to: '/whatsapp/connect', replace: true }) })
+		return () => { active = false }
+	}, [agent, loading, navigate])
+
+	if (loading || resolvingAppContext || !connectionGateResolved) return null
 
 	if (!crmAllowed) return null
 
@@ -252,11 +275,12 @@ function AppLayout() {
 		agent,
 		toggleSidebar: () => setIsMobileSidebarOpen((prev) => !prev),
 	}
+	const isChatWorkspace = location.pathname === '/chat'
 
 	return (
 		<AppContext.Provider value={contextValue}>
 			<div className="ocm-shell flex h-screen overflow-hidden bg-background text-foreground">
-				<div className="hidden shrink-0 p-3 lg:flex">
+				<div className={cn('hidden shrink-0 p-3 lg:flex', isChatWorkspace && 'lg:hidden')}>
 					<Sidebar agent={agent} isCollapsed={isSidebarCollapsed} onCollapseToggle={toggleDesktopSidebar} />
 				</div>
 
@@ -280,7 +304,7 @@ function AppLayout() {
 
 				<div className="flex min-w-0 flex-1 flex-col bg-background lg:pt-3">
 					<TopBar />
-					<div className="relative flex min-h-0 flex-1 pb-16 lg:pb-0">
+					<div className={cn('relative flex min-h-0 flex-1 lg:pb-0', isChatWorkspace ? 'pb-20' : 'pb-16')}>
 						<Outlet />
 					</div>
 					<BottomNav

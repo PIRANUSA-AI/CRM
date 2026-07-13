@@ -30,6 +30,7 @@ import {
 	message,
 	metrics,
 	orchestration,
+	personalWhatsappInbox,
 	teamModule,
 	templateVariables,
 	userModule,
@@ -140,6 +141,7 @@ export const app = new Elysia()
 			.use(knowledge)
 			.use(flow)
 			.use(orchestration)
+			.use(personalWhatsappInbox)
 			.use(crm)
 			.use(teamModule)
 			.use(inbox)

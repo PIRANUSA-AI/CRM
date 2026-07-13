@@ -13,9 +13,9 @@
 		"declarationMap": true,
 		"composite": true,
 		"noEmit": true,
-		"types": ["bun-types"]
+		"types": ["bun"]
 	},
 	"files": [],
-	"references": [{ "path": "./apps/backend" }],
+	"references": [{ "path": "./apps/backend" }, { "path": "./scripts" }],
 	"exclude": ["node_modules", "dist", ".turbo"]
 }

@@ -2050,6 +2050,7 @@ model baileys_sessions {
   id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   channel_id           String    @unique @db.Uuid
   app_id               String    @db.Uuid
+  owner_user_id        String?   @db.Uuid
   provider_channel_key String    @unique @db.VarChar(191)
   phone_number         String?   @db.VarChar(50)
   status               String?   @default("pending") @db.VarChar(50)
@@ -2058,12 +2059,15 @@ model baileys_sessions {
   qr_code              String?
   last_error           String?
   last_connected_at    DateTime? @db.Timestamptz(6)
+  first_connected_at   DateTime? @db.Timestamptz(6)
   last_seen_at         DateTime? @db.Timestamptz(6)
   metadata             Json?     @default("{}")
   created_at           DateTime? @default(now()) @db.Timestamptz(6)
   updated_at           DateTime? @default(now()) @db.Timestamptz(6)
 
   @@index([app_id], map: "idx_baileys_sessions_app_id")
+  @@unique([app_id, owner_user_id], map: "baileys_sessions_app_owner_key")
+  @@index([owner_user_id], map: "idx_baileys_sessions_owner_user_id")
   @@index([status], map: "idx_baileys_sessions_status")
 }
 

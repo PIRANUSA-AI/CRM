@@ -140,7 +140,7 @@ export async function animateThemeChange(
     prefersReducedMotion ||
     typeof document.startViewTransition !== "function"
   ) {
-    applyThemeTransition(320);
+    applyThemeTransition(440);
     await updateTheme();
     return;
   }
@@ -158,7 +158,7 @@ export async function animateThemeChange(
     return;
   }
 
-  const duration = 680;
+  const duration = 900;
   const easing = "cubic-bezier(0.83, 0, 0.17, 1)";
 
   // Zigzag wipe: tema baru nyapu dengan leading edge bergerigi. Jumlah gigi

@@ -4,6 +4,7 @@ import { appContext } from '../../plugins'
 import { WhatsAppService } from '../whatsapp/service'
 import { META_VERIFY_TOKEN } from '../whatsapp/webhook-config'
 import { requireRole } from '../../lib/require-role'
+import { incomingMessageQueue } from '../../lib/queue'
 
 const VERIFY_TOKEN = META_VERIFY_TOKEN
 
@@ -134,6 +135,19 @@ export const webhook = new Elysia({ prefix: '/webhooks', tags: ['Webhook'] })
 				return { error: 'Invalid Baileys webhook secret' }
 			}
 
+			const record = body as Record<string, any>
+			if (String(record.event || '').toLowerCase() === 'message.received') {
+				const externalId = String(record.message?.id || crypto.randomUUID())
+				await incomingMessageQueue.add('whatsapp.inbound', { payload: body }, {
+					jobId: `wa-${channel.id}-${externalId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+					attempts: 5,
+					backoff: { type: 'exponential', delay: 1000 },
+					removeOnComplete: 1000,
+					removeOnFail: 5000,
+				})
+				set.status = 202
+				return { success: true, queued: true }
+			}
 			return WebhookService.processWhatsAppPayload(body)
 		},
 		{

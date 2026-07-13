@@ -10,8 +10,20 @@ if (process.platform === 'win32') {
 	])
 }
 
-const compose = Bun.spawn(['docker', 'compose', 'up', '-d', '--wait'], {
-	cwd: import.meta.dir + '/..',
+const projectRoot = import.meta.dir + '/..'
+
+const compose = Bun.spawn([
+	'docker',
+	'compose',
+	'up',
+	'-d',
+	'--wait',
+	'--remove-orphans',
+	'postgres',
+	'redis',
+	'minio',
+], {
+	cwd: projectRoot,
 	stdin: 'inherit',
 	stdout: 'inherit',
 	stderr: 'inherit',
@@ -19,14 +31,27 @@ const compose = Bun.spawn(['docker', 'compose', 'up', '-d', '--wait'], {
 
 const composeExitCode = await compose.exited
 if (composeExitCode !== 0) {
-	console.error('\nCould not start the CRM development services. Is Docker Desktop running?')
+	console.error('\nCould not start the persistent CRM development services. Check the Docker output above.')
 	process.exit(composeExitCode)
+}
+
+const minioInit = Bun.spawn(['docker', 'compose', 'run', '--rm', '--no-deps', 'minio-init'], {
+	cwd: projectRoot,
+	stdin: 'inherit',
+	stdout: 'inherit',
+	stderr: 'inherit',
+})
+
+const minioInitExitCode = await minioInit.exited
+if (minioInitExitCode !== 0) {
+	console.error('\nMinIO is healthy, but the CRM media bucket could not be initialized.')
+	process.exit(minioInitExitCode)
 }
 
 console.log('\nCRM development services are healthy. Starting the API and frontend...\n')
 
 const apps = Bun.spawn(['bun', 'run', 'dev:apps'], {
-	cwd: import.meta.dir + '/..',
+	cwd: projectRoot,
 	stdin: 'inherit',
 	stdout: 'inherit',
 	stderr: 'inherit',

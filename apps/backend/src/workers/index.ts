@@ -2448,16 +2448,16 @@ const dispatchDueChatbotFollowups = async () => {
 	}
 }
 
-export const incomingWorker = WORKER_MODE_ENABLED
-	? new Worker(
+export const incomingWorker = new Worker(
 			'incoming-messages',
 			async (job: Job) => {
-				console.log(`📥 Processing incoming message job: ${job.id}`)
-				return { success: true }
+				if (job.name === 'whatsapp.inbound' && (job.data as any)?.payload) {
+					return WebhookService.handleWhatsAppInbound((job.data as any).payload)
+				}
+				return { success: true, skipped: true }
 			},
-			{ connection: redis },
+			{ connection: redis, concurrency: 10 },
 		)
-	: null
 
 export const outboundWorker = WORKER_MODE_ENABLED
 	? new Worker(
@@ -2473,8 +2473,7 @@ export const outboundWorker = WORKER_MODE_ENABLED
 		)
 	: null
 
-export const webhookWorker = WORKER_MODE_ENABLED
-	? new Worker(
+export const webhookWorker = new Worker(
 			'webhooks',
 			async (job: Job) => {
 				console.log(`🪝 Processing webhook job: ${job.name} (${job.id})`)
@@ -2505,7 +2504,6 @@ export const webhookWorker = WORKER_MODE_ENABLED
 			},
 			{ connection: redis, concurrency: 5 },
 		)
-	: null
 
 export const maintenanceWorker = WORKER_MODE_ENABLED
 	? new Worker(

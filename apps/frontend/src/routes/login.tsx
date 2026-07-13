@@ -123,11 +123,11 @@ function LoginPage() {
 			try {
 				const context = await syncOrganizationContextFromSession()
 				await navigate({
-					to: context.onboardingRequired || !context.organization ? '/onboarding' : '/dashboard',
+					to: context.onboardingRequired || !context.organization ? '/onboarding' : '/whatsapp/connect',
 					replace: true,
 				})
 			} catch {
-				await navigate({ to: '/dashboard', replace: true })
+			await navigate({ to: '/whatsapp/connect', replace: true })
 			}
 		} catch (loginError) {
 			setError(loginError instanceof Error ? loginError.message : 'Tidak dapat masuk. Silakan coba lagi.')

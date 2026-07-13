@@ -13,7 +13,8 @@ function normalizeUrl(value: string | null | undefined) {
 	}
 }
 
-export const PORT = Number(process.env.PORT || 3012)
+// Root PORT belongs to the CRM API. This service must have its own port.
+export const PORT = Number(process.env.WHATSAPP_SERVICE_PORT || 3012)
 export const HOST = String(process.env.HOST || '127.0.0.1').trim()
 export const BAILEYS_CHANNEL_SYNC_INTERVAL_MS = Math.max(
 	5_000,
@@ -28,7 +29,7 @@ export const CRM_API_BASE_URL =
 	'http://localhost:3010'
 
 const configuredWebhookPath = String(
-	process.env.CRM_BAILEYS_WEBHOOK_PATH || '/api/v1/webhooks/whatsapp/baileys',
+	process.env.CRM_BAILEYS_WEBHOOK_PATH || '/api/personal-whatsapp-inbox/ingest',
 ).trim()
 
 export const CRM_BAILEYS_WEBHOOK_PATH = configuredWebhookPath.startsWith('/')

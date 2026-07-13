@@ -7,6 +7,56 @@ import {
 } from '../../lib/s3'
 import prisma from '../../lib/prisma'
 import crypto from 'crypto'
+import { spawn } from 'node:child_process'
+import ffmpegStaticPath from 'ffmpeg-static'
+
+type MediaPurpose = 'attachment' | 'voice' | 'gif' | 'sticker'
+
+function runFfmpeg(input: Buffer, args: string[]) {
+	return new Promise<Buffer>((resolve, reject) => {
+		const ffmpegExecutable = process.env.FFMPEG_PATH || (process.platform === 'win32' ? ffmpegStaticPath : null) || 'ffmpeg'
+		const child = spawn(ffmpegExecutable, ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', ...args, 'pipe:1'], {
+			stdio: ['pipe', 'pipe', 'pipe'],
+		})
+		const stdout: Buffer[] = []
+		const stderr: Buffer[] = []
+		child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
+		child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+		child.on('error', (error) => reject(new Error(`FFmpeg tidak tersedia: ${error.message}`)))
+		child.on('close', (code) => {
+			if (code === 0 && stdout.length) return resolve(Buffer.concat(stdout))
+			reject(new Error(Buffer.concat(stderr).toString('utf8').trim() || 'Konversi media gagal'))
+		})
+		child.stdin.end(input)
+	})
+}
+
+async function prepareMedia(file: File, purpose: MediaPurpose) {
+	const source = Buffer.from(await file.arrayBuffer())
+	if (purpose === 'voice') {
+		return {
+			buffer: await runFfmpeg(source, ['-vn', '-c:a', 'libopus', '-ac', '1', '-ar', '48000', '-b:a', '32k', '-f', 'ogg']),
+			mimeType: 'audio/ogg; codecs=opus', fileName: `${file.name.replace(/\.[^.]+$/, '') || 'voice-note'}.ogg`, type: 'audio' as const,
+		}
+	}
+	if (purpose === 'gif') {
+		return {
+			buffer: await runFfmpeg(source, ['-an', '-movflags', 'frag_keyframe+empty_moov', '-pix_fmt', 'yuv420p', '-vf', "scale='min(720,iw)':-2:force_original_aspect_ratio=decrease", '-c:v', 'libx264', '-f', 'mp4']),
+			mimeType: 'video/mp4', fileName: `${file.name.replace(/\.[^.]+$/, '') || 'animation'}.mp4`, type: 'video' as const,
+		}
+	}
+	if (purpose === 'sticker') {
+		return {
+			buffer: await runFfmpeg(source, ['-vf', "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000", '-vcodec', 'libwebp', '-lossless', '0', '-compression_level', '6', '-q:v', '75', '-f', 'webp']),
+			mimeType: 'image/webp', fileName: `${file.name.replace(/\.[^.]+$/, '') || 'sticker'}.webp`, type: 'image' as const,
+		}
+	}
+	let type: 'image' | 'video' | 'audio' | 'document' = 'document'
+	if (file.type.startsWith('image/')) type = 'image'
+	else if (file.type.startsWith('video/')) type = 'video'
+	else if (file.type.startsWith('audio/')) type = 'audio'
+	return { buffer: source, mimeType: file.type || 'application/octet-stream', fileName: file.name || 'attachment', type }
+}
 
 export abstract class MediaService {
 	static async uploadFile(
@@ -14,15 +64,11 @@ export abstract class MediaService {
 		platform: string,
 		agentId: string,
 		appId: string,
+		purpose: MediaPurpose = 'attachment',
 	) {
-		const mimeType = file.type
-		const fileName = file.name
-		const fileSize = file.size
-
-		let type: 'image' | 'video' | 'audio' | 'document' = 'document'
-		if (mimeType.startsWith('image/')) type = 'image'
-		else if (mimeType.startsWith('video/')) type = 'video'
-		else if (mimeType.startsWith('audio/')) type = 'audio'
+		const prepared = await prepareMedia(file, purpose)
+		const { buffer, mimeType, fileName, type } = prepared
+		const fileSize = buffer.length
 
 		const extension = fileName.split('.').pop() || 'bin'
 		const mediaId = crypto.randomBytes(8).toString('hex')
@@ -33,8 +79,6 @@ export abstract class MediaService {
 			throw new Error(s3ConfigError)
 		}
 
-		const arrayBuffer = await file.arrayBuffer()
-		const buffer = Buffer.from(arrayBuffer)
 		const checksumSha256 = crypto
 			.createHash('sha256')
 			.update(buffer)

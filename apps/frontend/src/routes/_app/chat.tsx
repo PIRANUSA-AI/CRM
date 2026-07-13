@@ -2,3765 +2,1421 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	AlertCircle,
 	ArrowLeft,
-	Bot,
-	CalendarDays,
 	Check,
 	CheckCheck,
+	CheckSquare,
+	Copy,
+	Download,
 	FileText,
-	Filter,
-	Handshake,
-	Link2,
-	Loader2,
+	Inbox,
+	ImageIcon,
+	Info,
+	LayoutDashboard,
+	Menu,
 	MessageCircle,
-	MoreHorizontal,
+	Mic,
 	Paperclip,
-	Pin,
 	Plus,
+	Phone,
+	RefreshCw,
+	Reply,
 	Search,
-	Send,
+	SendHorizontal,
 	Smile,
-	Sparkles,
-	User,
+	Square,
+	Sticker,
+	Trash2,
+	Video,
+	UserRound,
 	X,
-	Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-	TemplateSelector,
-	type WhatsAppTemplateOption,
-} from '@/components/TemplateSelector'
-import { CrmAvatar } from '@/components/crm/shared'
-import { randomId } from '@/lib/id'
-import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
+import { API_BASE, readApiResponse } from '@/lib/api'
+import { connectSocket } from '@/lib/socket'
+import { cn } from '@/lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
 	Dialog,
 	DialogContent,
-	DialogFooter,
+	DialogDescription,
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-} from '@/components/ui/select'
-import {
-	agents,
-	broadcasts,
-	chatbots,
-	type ContactDetailSignalTone,
-	type ConversationContactDetailResponse,
-	contacts,
-	conversations,
-	inboxes,
-	labels,
-	media,
-	whatsappTemplates,
-} from '@/lib/api'
-import { getAppIdFromCookie } from '@/lib/organization'
-import { connectSocket } from '@/lib/socket'
-import { formatChatTime } from '@/lib/timezone'
-import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 export const Route = createFileRoute('/_app/chat')({
-	validateSearch: (search): ChatSearch => ({
-		conversation_id:
-			typeof search.conversation_id === 'string'
-				? search.conversation_id
-				: undefined,
-		provider:
-			typeof search.provider === 'string'
-				? normalizeWhatsappProviderFilter(search.provider)
-				: 'all',
-	}),
-	component: ChatPage,
+	component: PersonalWhatsappInbox,
 })
 
-type ChatSearch = {
-	conversation_id?: string
-	provider?: WhatsAppProviderFilter
-}
-
-type ChatStatus = 'ai' | 'human' | 'handover' | 'done'
-type ChatFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread'
-type WhatsAppProviderFilter = 'all' | 'official' | 'baileys'
-type UiWhatsAppProvider = 'official' | 'baileys' | null
-type MessageSource = 'api' | 'local'
-type MessageFrom = 'customer' | 'ai'
-type MessageKind = 'text' | 'image'
-type SocketMessageCreatedPayload = {
-	message?: Record<string, unknown>
-	conversation?: Record<string, unknown>
-}
-
-type UiAiAnalytics = {
-	confidence: number | null
-	intent: string | null
-	workflowId: string | null
-	workflowName: string | null
-	ragLabel: string | null
-	ragIntent: string | null
-	updatedAt: string | null
-	source: MessageSource
-}
-
-type ResolvedAiBanner = {
-	analytics: UiAiAnalytics
-}
-
-type UiConversation = {
+type Conversation = {
 	id: string
-	backendId: string | null
-	inboxId: string | null
-	provider: UiWhatsAppProvider
+	contactId: string | null
+	workflow: 'ai' | 'handover' | 'human'
 	name: string
 	phone: string
+	avatarUrl: string | null
+	source: string | null
 	preview: string
-	time: string
+	lastMessageAt: string | null
 	unread: number
-	status: ChatStatus
-	handler: string
-	intent: string
-	online: boolean
-	pinned?: boolean
-	aiAnalytics?: UiAiAnalytics | null
-	source: MessageSource
 }
 
-type UiMessage = {
+type ChatMessage = {
 	id: string
-	from: MessageFrom
-	kind: MessageKind
-	text: string
-	createdAt: string
-	intent?: string | null
-	time: string
-	status?: 'read' | 'delivered'
-	model?: string
-	tokens?: number
-	latency?: number
-	confidence?: number
-	source: MessageSource
+	external_id: string | null
+	content: string | null
+	content_type: string | null
+	content_attributes: {
+		media?: { url?: string; mime_type?: string; file_name?: string; filename?: string; purpose?: string }
+		quote?: { message_id?: string; external_id?: string; content?: string | null; content_type?: string | null; sender_type?: string | null }
+	} | null
+	message_type: string
+	sender_type: string | null
+	status: string | null
+	reply_to_message_id: string | null
+	created_at: string | null
 }
 
-type ChatSelectOption = {
-	id: string
-	label: string
+type MediaPurpose = 'attachment' | 'voice' | 'gif' | 'sticker'
+type OutboundMedia = { url: string; kind: 'image' | 'video' | 'audio' | 'document' | 'voice' | 'gif' | 'sticker'; mimeType: string; fileName: string }
+type PendingAttachment = { id: string; file: File; purpose: MediaPurpose; previewUrl: string | null }
+
+type Diagnostic = {
+	connection: string
+	storedMessages: number
+	lastSeenAt?: string | null
 }
 
-type ChatInboxOption = ChatSelectOption & {
-	provider: UiWhatsAppProvider
-}
+type InboxFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread'
 
-type ChatPipelineStageOption = ChatSelectOption & {
-	color: string | null
-}
-
-type AdvancedChatFilters = {
-	dateFrom: string
-	dateTo: string
-	inboxId: string
-	labelId: string
-	resolvedById: string
-	agentId: string
-	aiAgentId: string
-	status: 'all' | 'open' | 'pending' | 'resolved'
-	pipelineStageId: string
-}
-
-type NewChatFormState = {
-	inboxId: string
-	name: string
-	phoneNumber: string
-	templateId: string
-}
-
-type AiSuggestionItem = {
-	label: string
-	text: string
-	intentKey: string
-}
-
-const INTENT_SUGGESTION_LIBRARY: Record<string, AiSuggestionItem> = {
-	greeting: {
-		intentKey: 'greeting',
-		label: 'Balas sapaan',
-		text: 'Halo Kak, makasih sudah chat kami. Boleh dibantu untuk produk atau kebutuhan apa ya?',
-	},
-	product: {
-		intentKey: 'product',
-		label: 'Jelaskan produk',
-		text: 'Siap Kak, saya bantu jelaskan detail produknya ya. Kakak mau fokus ke ukuran, bahan, atau varian warna?',
-	},
-	stock: {
-		intentKey: 'stock',
-		label: 'Konfirmasi stok',
-		text: 'Untuk stok saat ini masih tersedia Kak. Kalau mau, saya cekkan jumlah terbaru sesuai varian yang Kakak pilih.',
-	},
-	price: {
-		intentKey: 'price',
-		label: 'Bahas harga/promo',
-		text: 'Untuk harga terbaru saya infokan ya Kak, sekalian saya cek promo yang lagi aktif biar dapat penawaran terbaik.',
-	},
-	shipping: {
-		intentKey: 'shipping',
-		label: 'Jelaskan pengiriman',
-		text: 'Siap Kak, untuk pengiriman kami bisa bantu estimasi ongkir dan waktu kirim sesuai lokasi Kakak.',
-	},
-	payment: {
-		intentKey: 'payment',
-		label: 'Arahkan pembayaran',
-		text: 'Kalau sudah cocok, saya bisa bantu kirim link pembayaran sekarang ya Kak.',
-	},
-	invoice: {
-		intentKey: 'invoice',
-		label: 'Kirim invoice',
-		text: 'Siap Kak, saya proses invoice-nya sekarang dan kirimkan link pembayarannya.',
-	},
-	complaint: {
-		intentKey: 'complaint',
-		label: 'Tangani komplain',
-		text: 'Mohon maaf atas kendalanya Kak, saya bantu tindak lanjuti sekarang supaya cepat selesai.',
-	},
-	warranty: {
-		intentKey: 'warranty',
-		label: 'Jelaskan garansi',
-		text: 'Untuk garansi produk, saya jelaskan ketentuan dan cakupannya dulu ya Kak supaya jelas.',
-	},
-	upsell: {
-		intentKey: 'upsell',
-		label: 'Tawarkan bundling',
-		text: 'Kebetulan lagi ada promo Kak, kalau ambil 2 pcs dapat potongan 15% dan free ongkir. Mau saya jelaskan detailnya?',
-	},
-	urgency: {
-		intentKey: 'urgency',
-		label: 'Tanyakan urgency',
-		text: 'Kalau boleh tau, rencananya butuh dikirim kapan ya Kak? Biar kami prioritaskan.',
-	},
-	handover: {
-		intentKey: 'handover',
-		label: 'Escalate ke CS',
-		text: 'Sebentar ya Kak, saya hubungkan ke tim sales kami biar bisa bantu lebih detail.',
-	},
-	general: {
-		intentKey: 'general',
-		label: 'Gali kebutuhan',
-		text: 'Boleh saya tahu kebutuhan utama Kakak dulu supaya saya rekomendasikan opsi yang paling cocok?',
-	},
-}
-
-const CHAT_MESSAGE_PAGE_SIZE = 10
-const CONVERSATION_PAGE_SIZE = 10
-const FILTER_SELECT_EMPTY_VALUE = '__all__'
-const FILTER_DATE_FORMATTER = new Intl.DateTimeFormat('id-ID', {
-	day: '2-digit',
-	month: '2-digit',
-	year: 'numeric',
-})
-const FILTER_TRIGGER_CLASSNAME =
-	'h-11 w-full rounded-xl border-slate-300 bg-white px-3.5 text-sm text-slate-900 shadow-none transition focus-visible:border-slate-400 focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 [&_svg]:text-slate-500'
-const FILTER_SELECT_ITEM_CLASSNAME =
-	'min-h-9 rounded-lg px-3 py-2 text-sm text-slate-900'
-const NEW_CHAT_FIELD_CLASSNAME =
-	'h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400'
-const DEFAULT_ADVANCED_CHAT_FILTERS: AdvancedChatFilters = {
-	dateFrom: '',
-	dateTo: '',
-	inboxId: '',
-	labelId: '',
-	resolvedById: '',
-	agentId: '',
-	aiAgentId: '',
-	status: 'all',
-	pipelineStageId: '',
-}
-const DEFAULT_NEW_CHAT_FORM: NewChatFormState = {
-	inboxId: '',
-	name: '',
-	phoneNumber: '',
-	templateId: '',
-}
-const CHAT_STATUS_FILTER_OPTIONS: ChatSelectOption[] = [
-	{ id: 'all', label: 'All Statuses' },
-	{ id: 'open', label: 'Open' },
-	{ id: 'pending', label: 'Pending' },
-	{ id: 'resolved', label: 'Resolved' },
-]
-
-function inferIntentKeyFromText(text: string): string {
-	const normalized = text.toLowerCase()
-	if (!normalized.trim()) return 'general'
-
-	if (
-		normalized.includes('halo') ||
-		normalized.includes('hai') ||
-		normalized.includes('pagi') ||
-		normalized.includes('siang') ||
-		normalized.includes('malam')
-	) {
-		return 'greeting'
+function authHeaders() {
+	const token = localStorage.getItem('scalechat_token')
+	const appId = localStorage.getItem('scalechat_app_id')
+	return {
+		...(token ? { Authorization: `Bearer ${token}` } : {}),
+		...(appId ? { 'X-App-Id': appId } : {}),
 	}
-	if (
-		normalized.includes('stok') ||
-		normalized.includes('ready') ||
-		normalized.includes('tersedia')
-	) {
-		return 'stock'
-	}
-	if (
-		normalized.includes('harga') ||
-		normalized.includes('diskon') ||
-		normalized.includes('promo') ||
-		normalized.includes('murah') ||
-		normalized.includes('nego')
-	) {
-		return 'price'
-	}
-	if (
-		normalized.includes('ongkir') ||
-		normalized.includes('kirim') ||
-		normalized.includes('pengiriman') ||
-		normalized.includes('estimasi')
-	) {
-		return 'shipping'
-	}
-	if (
-		normalized.includes('bayar') ||
-		normalized.includes('transfer') ||
-		normalized.includes('pembayaran') ||
-		normalized.includes('dp')
-	) {
-		return 'payment'
-	}
-	if (normalized.includes('invoice') || normalized.includes('tagihan')) {
-		return 'invoice'
-	}
-	if (
-		normalized.includes('garansi') ||
-		normalized.includes('warranty') ||
-		normalized.includes('klaim')
-	) {
-		return 'warranty'
-	}
-	if (
-		normalized.includes('komplain') ||
-		normalized.includes('rusak') ||
-		normalized.includes('retur') ||
-		normalized.includes('refund')
-	) {
-		return 'complaint'
-	}
-	if (
-		normalized.includes('produk') ||
-		normalized.includes('varian') ||
-		normalized.includes('ukuran') ||
-		normalized.includes('warna')
-	) {
-		return 'product'
-	}
-	return 'general'
 }
 
-function resolveSuggestionByIntent(intentKey: string): AiSuggestionItem {
-	return (
-		INTENT_SUGGESTION_LIBRARY[intentKey] ||
-		INTENT_SUGGESTION_LIBRARY[inferIntentKeyFromText(intentKey)] ||
-		INTENT_SUGGESTION_LIBRARY.general
-	)
+function formatTime(value: string | null) {
+	if (!value) return ''
+	return new Intl.DateTimeFormat('id-ID', {
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(new Date(value))
 }
 
-function buildAiSuggestions(
-	messages: UiMessage[],
-	bannerIntent?: string | null,
-): AiSuggestionItem[] {
-	const intentKeys: string[] = []
-	const recentCustomerMessages = messages
-		.filter((message) => message.from === 'customer')
-		.slice(-5)
-		.reverse()
-
-	for (const message of recentCustomerMessages) {
-		const inferredIntent = inferIntentKeyFromText(
-			`${message.intent || ''} ${message.text || ''}`,
-		)
-		if (!intentKeys.includes(inferredIntent)) {
-			intentKeys.push(inferredIntent)
-		}
-	}
-
-	const bannerIntentKey = inferIntentKeyFromText(bannerIntent || '')
-	if (bannerIntentKey !== 'general' && !intentKeys.includes(bannerIntentKey)) {
-		intentKeys.unshift(bannerIntentKey)
-	}
-
-	const suggestions = intentKeys.map((intentKey) =>
-		resolveSuggestionByIntent(intentKey),
-	)
-
-	return suggestions.slice(0, 5)
+function formatListTime(value: string | null) {
+	if (!value) return ''
+	const date = new Date(value)
+	const now = new Date()
+	if (date.toDateString() === now.toDateString()) return formatTime(value)
+	return new Intl.DateTimeFormat('id-ID', {
+		day: 'numeric',
+		month: 'short',
+	}).format(date)
 }
 
-const AI_PLAYGROUND_IDENTIFIER_PREFIX = 'ai-playground-'
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value)
+function formatCopyTimestamp(value: string | null) {
+	if (!value) return 'Waktu tidak diketahui'
+	return new Intl.DateTimeFormat('id-ID', {
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false,
+	}).format(new Date(value))
 }
 
-function toArray<T = unknown>(value: unknown): T[] {
-	return Array.isArray(value) ? (value as T[]) : []
-}
-
-function toText(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (typeof value === 'number') return String(value)
-	return ''
-}
-
-function parseFilterDateValue(value: string): Date | undefined {
-	const normalized = value.trim()
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return undefined
-
-	const [year, month, day] = normalized.split('-').map(Number)
-	const parsedDate = new Date(year, month - 1, day)
-
-	if (
-		Number.isNaN(parsedDate.getTime()) ||
-		parsedDate.getFullYear() !== year ||
-		parsedDate.getMonth() !== month - 1 ||
-		parsedDate.getDate() !== day
-	) {
-		return undefined
-	}
-
-	return parsedDate
-}
-
-function toFilterDateValue(value: Date | undefined): string {
-	if (!(value instanceof Date) || Number.isNaN(value.getTime())) return ''
-
-	const year = value.getFullYear()
-	const month = String(value.getMonth() + 1).padStart(2, '0')
-	const day = String(value.getDate()).padStart(2, '0')
-
-	return `${year}-${month}-${day}`
-}
-
-function formatFilterDateLabel(value: string, placeholder: string): string {
-	const parsedDate = parseFilterDateValue(value)
-	return parsedDate ? FILTER_DATE_FORMATTER.format(parsedDate) : placeholder
-}
-
-type ChatFilterDateFieldProps = {
-	label?: string
-	value: string
-	placeholder: string
-	onChange: (value: string) => void
-}
-
-function ChatFilterDateField({
-	label,
-	value,
-	placeholder,
-	onChange,
-}: ChatFilterDateFieldProps) {
-	const [open, setOpen] = useState(false)
-	const selectedDate = parseFilterDateValue(value)
-
-	return (
-		<div className="min-w-0">
-			{label ? (
-				<p className="mb-3 text-sm font-semibold text-slate-700">{label}</p>
-			) : null}
-			<Popover open={open} onOpenChange={setOpen}>
-				<PopoverTrigger
-					render={
-						<Button
-							type="button"
-							variant="outline"
-							className={cn(
-								FILTER_TRIGGER_CLASSNAME,
-								'justify-between font-normal',
-								!value && 'text-slate-400',
-							)}
-						/>
-					}
-				>
-					<span className="truncate text-sm">
-						{formatFilterDateLabel(value, placeholder)}
-					</span>
-					<CalendarDays className="size-4 shrink-0" />
-				</PopoverTrigger>
-				<PopoverContent
-					align="start"
-					sideOffset={8}
-					className="w-auto rounded-2xl border border-slate-200 bg-white p-0 shadow-xl"
-				>
-					<div className="border-b border-slate-200 px-4 py-3">
-						<p className="text-sm font-semibold text-slate-900">
-							{label || placeholder}
-						</p>
-						<p className="text-xs text-slate-500">{placeholder}</p>
-					</div>
-					<Calendar
-						mode="single"
-						selected={selectedDate}
-						onSelect={(nextDate) => {
-							onChange(toFilterDateValue(nextDate))
-							if (nextDate) setOpen(false)
-						}}
-						className="bg-white"
-					/>
-					<div className="flex items-center justify-end border-t border-slate-200 px-3 py-3">
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							onClick={() => {
-								onChange('')
-								setOpen(false)
-							}}
-							disabled={!value}
-							className="text-slate-600 hover:text-slate-900"
-						>
-							Clear
-						</Button>
-					</div>
-				</PopoverContent>
-			</Popover>
-		</div>
-	)
-}
-
-type ChatFilterSelectFieldProps = {
-	label: string
-	value: string
-	onChange: (value: string) => void
-	placeholder: string
-	options: ChatSelectOption[]
-	disabled?: boolean
-}
-
-function ChatFilterSelectField({
-	label,
-	value,
-	onChange,
-	placeholder,
-	options,
-	disabled = false,
-}: ChatFilterSelectFieldProps) {
-	const selectedLabel = value
-		? options.find((option) => option.id === value)?.label || value
-		: placeholder
-
-	return (
-		<div className="min-w-0">
-			<p className="mb-3 text-sm font-semibold text-slate-700">{label}</p>
-			<Select
-				value={value || FILTER_SELECT_EMPTY_VALUE}
-				onValueChange={(nextValue) =>
-					onChange(nextValue === FILTER_SELECT_EMPTY_VALUE ? '' : nextValue)
-				}
-				disabled={disabled}
-			>
-				<SelectTrigger className={FILTER_TRIGGER_CLASSNAME}>
-					<span
-						className={cn(
-							'flex flex-1 items-center truncate text-left text-sm',
-							!value && 'text-slate-400',
-						)}
-					>
-						{selectedLabel}
-					</span>
-				</SelectTrigger>
-				<SelectContent className="rounded-2xl border border-slate-200 bg-white p-1 shadow-xl">
-					<SelectItem
-						value={FILTER_SELECT_EMPTY_VALUE}
-						className={cn(FILTER_SELECT_ITEM_CLASSNAME, 'text-slate-600')}
-					>
-						{placeholder}
-					</SelectItem>
-					{options.map((option) => (
-						<SelectItem
-							key={option.id}
-							value={option.id}
-							className={FILTER_SELECT_ITEM_CLASSNAME}
-						>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-		</div>
-	)
-}
-
-function toFiniteNumber(value: unknown): number | null {
-	const parsed = Number(value)
-	return Number.isFinite(parsed) ? parsed : null
-}
-
-function normalizeWhatsappProviderFilter(
-	value: unknown,
-): WhatsAppProviderFilter {
-	const normalized = String(value || '')
-		.trim()
-		.toLowerCase()
-	if (normalized === 'official') return 'official'
-	if (normalized === 'baileys') return 'baileys'
-	return 'all'
-}
-
-function normalizeUiWhatsappProvider(value: unknown): UiWhatsAppProvider {
-	const normalized = String(value || '')
-		.trim()
-		.toLowerCase()
-	if (normalized === 'baileys') return 'baileys'
-	if (normalized === 'official' || normalized === 'whatsapp_cloud') {
-		return 'official'
-	}
-	return null
-}
-
-function matchesWhatsappProviderSelection(
-	provider: UiWhatsAppProvider,
-	selectedProvider: WhatsAppProviderFilter,
-) {
-	if (selectedProvider === 'all') return true
-	return provider === selectedProvider
-}
-
-function normalizeConfidence(value: unknown): number | null {
-	const parsed = toFiniteNumber(value)
-	if (parsed === null) return null
-	const ratio = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed
-	const clamped = Math.max(0, Math.min(1, ratio))
-	return Number(clamped.toFixed(4))
-}
-
-function toNullableText(value: unknown): string | null {
-	const normalized = toText(value).trim()
-	return normalized.length > 0 ? normalized : null
-}
-
-function normalizeMessageText(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (isRecord(value)) {
-		const primary = toText(
-			value.text || value.body || value.message || value.caption,
-		)
-		if (primary) return primary
-	}
-	return ''
-}
-
-function extractTemplateBodyText(components: unknown): string {
-	const bodyComponent = toArray<Record<string, unknown>>(components).find(
-		(component) => String(component?.type || '').toUpperCase() === 'BODY',
-	)
-	return toNullableText(bodyComponent?.text) || ''
-}
-
-function extractCollectionRows(payload: unknown): Record<string, unknown>[] {
-	if (Array.isArray(payload)) {
-		return payload.filter((item): item is Record<string, unknown> => isRecord(item))
-	}
-
-	if (!isRecord(payload)) return []
-
-	const candidates = [
-		payload.data,
-		payload.payload,
-		payload.results,
-		payload.items,
-		payload.labels,
-		payload.inboxes,
-		payload.agents,
-		payload.chatbots,
-		payload.stages,
-	]
-
-	for (const candidate of candidates) {
-		const rows = extractCollectionRows(candidate)
-		if (rows.length > 0) return rows
-	}
-
-	return []
-}
-
-function findTemplateComponent(
-	components: unknown,
-	type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS',
-) {
-	return (
-		toArray<Record<string, unknown>>(components).find(
-			(component) => String(component?.type || '').toUpperCase() === type,
-		) || null
-	)
-}
-
-function extractTemplateHeaderText(components: unknown): string {
-	return toNullableText(findTemplateComponent(components, 'HEADER')?.text) || ''
-}
-
-function extractTemplateFooterText(components: unknown): string {
-	return toNullableText(findTemplateComponent(components, 'FOOTER')?.text) || ''
-}
-
-function extractTemplateButtonLabels(components: unknown): string[] {
-	const buttons = findTemplateComponent(components, 'BUTTONS')
-	const buttonList = toArray<Record<string, unknown>>(buttons?.buttons)
-	return buttonList
-		.map((button) => toNullableText(button.text))
-		.filter((label): label is string => Boolean(label))
-}
-
-function extractTemplateVariableKeys(components: unknown): string[] {
-	const matches = JSON.stringify(components || []).match(/\{\{\s*(\d+)\s*\}\}/g)
-	if (!matches) return []
-	return Array.from(
-		new Set(
-			matches
-				.map((match) => match.match(/\d+/)?.[0] || '')
-				.filter((value) => value.length > 0),
-		),
-	).sort((left, right) => Number(left) - Number(right))
-}
-
-function renderTemplateText(
-	text: string,
-	variables: Record<string, string>,
-	fallbackValue = 'Customer',
-): string {
-	if (!text.trim()) return ''
-	return text.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_match, rawKey) => {
-		const normalizedKey = String(rawKey || '').trim()
-		return variables[normalizedKey] || fallbackValue
-	})
-}
-
-function normalizePhoneForChat(value: string): string {
-	const digits = value.replace(/[^\d]/g, '')
-	if (!digits) return ''
-	if (digits.startsWith('62')) return digits
-	if (digits.startsWith('0')) return `62${digits.slice(1)}`
-	if (digits.startsWith('8')) return `62${digits}`
-	return digits
-}
-
-function formatPhoneForInput(value: string): string {
-	const normalized = normalizePhoneForChat(value)
-	return normalized ? `+${normalized}` : ''
-}
-
-function resolveTemplatePreviewText(
-	contentAttributes: Record<string, unknown>,
-	fallbackContent: unknown,
-): string {
-	return (
-		toNullableText(contentAttributes.template_preview_text) ||
-		toNullableText(contentAttributes.preview_text) ||
-		extractTemplateBodyText(contentAttributes.components) ||
-		normalizeMessageText(fallbackContent)
-	)
-}
-
-function resolveRenderableMessageText(raw: Record<string, unknown>): string {
-	const contentType = toText(raw.content_type).trim().toLowerCase()
-	const contentAttributes = isRecord(raw.content_attributes)
-		? raw.content_attributes
-		: {}
-
-	if (contentType === 'template') {
-		return resolveTemplatePreviewText(contentAttributes, raw.content)
-	}
-
-	return normalizeMessageText(raw.content)
-}
-
-function shouldHideMessageFromChat(raw: Record<string, unknown>): boolean {
-	const senderType = toText(raw.sender_type).toLowerCase()
-	const contentAttributes = isRecord(raw.content_attributes)
-		? raw.content_attributes
-		: {}
-	const source = toText(contentAttributes.source).toLowerCase()
-	const event = toText(contentAttributes.event).toLowerCase()
-	const type = toText(contentAttributes.type).toLowerCase()
-	const isTrace =
-		contentAttributes.trace === true ||
-		type === 'flow_trace' ||
-		event === 'node_entered'
-	const isWorkflowSystemMessage =
-		senderType === 'system' && source === 'flow_runtime'
-	return isTrace || isWorkflowSystemMessage
-}
-
-function isAiPlaygroundConversation(raw: Record<string, unknown>): boolean {
-	const contact = isRecord(raw.contacts) ? raw.contacts : {}
-	const additionalAttributes = isRecord(raw.additional_attributes)
-		? raw.additional_attributes
-		: {}
-	const customAttributes = isRecord(raw.custom_attributes)
-		? raw.custom_attributes
-		: {}
-	const contactMetadata = isRecord(contact.metadata) ? contact.metadata : {}
-	const contactMeta = isRecord(contact.meta) ? contact.meta : {}
-
-	const conversationIdentifier = toText(raw.identifier).trim().toLowerCase()
-	const contactIdentifier = toText(contact.identifier).trim().toLowerCase()
-	const hasPlaygroundIdentifier =
-		conversationIdentifier.startsWith(AI_PLAYGROUND_IDENTIFIER_PREFIX) ||
-		contactIdentifier.startsWith(AI_PLAYGROUND_IDENTIFIER_PREFIX)
-
-	if (hasPlaygroundIdentifier) return true
-
-	const sourceCandidates = [
-		toText(additionalAttributes.source),
-		toText(customAttributes.source),
-		toText(contactMetadata.source),
-		toText(contactMeta.source),
-	]
-	return sourceCandidates.some((value) => {
-		const normalized = value.trim().toLowerCase()
-		return (
-			normalized === 'ai_playground' || normalized === 'ai_playground_workflow'
-		)
-	})
-}
-
-function formatConversationClock(value: unknown): string {
-	if (!value) return '--:--'
+function storedUserName() {
 	try {
-		return formatChatTime(value as string | Date | number)
+		const raw = localStorage.getItem('scalechat_user')
+		const parsed = raw ? JSON.parse(raw) : null
+		const user = parsed?.user && typeof parsed.user === 'object' ? parsed.user : parsed
+		return String(user?.name || user?.email?.split('@')?.[0] || 'Sales').trim()
 	} catch {
-		return '--:--'
+		return 'Sales'
 	}
 }
 
-function toConfidenceLabel(value: number | null) {
-	if (value === null || !Number.isFinite(value)) return '-'
-	return value.toFixed(2)
-}
-
-function formatCurrencyIdr(value: number | null | undefined): string {
-	const amount = Number.isFinite(Number(value)) ? Number(value) : 0
-	return new Intl.NumberFormat('id-ID', {
-		style: 'currency',
-		currency: 'IDR',
-		maximumFractionDigits: 0,
-	}).format(amount)
-}
-
-function formatCurrencyIdrCompact(value: number | null | undefined): string {
-	const amount = Number.isFinite(Number(value)) ? Number(value) : 0
-	if (Math.abs(amount) >= 1_000_000) {
-		const compact = Number((amount / 1_000_000).toFixed(1))
-		return `Rp ${compact}jt`
-	}
-	return formatCurrencyIdr(amount)
-}
-
-function resolveSignalTone(value: unknown): ContactDetailSignalTone {
-	if (value === 'success') return 'success'
-	if (value === 'warning') return 'warning'
-	if (value === 'info') return 'info'
-	return 'neutral'
-}
-
-function parseAiAnalytics(
-	value: unknown,
-	source: MessageSource,
-): UiAiAnalytics | null {
-	if (!isRecord(value)) return null
-
-	const workflowId =
-		toNullableText(value.workflow_id) ||
-		toNullableText(value.workflowId) ||
-		toNullableText(value.flow_id)
-	const workflowName =
-		toNullableText(value.workflow_name) || toNullableText(value.workflowName)
-	const ragIntent =
-		toNullableText(value.rag_intent) || toNullableText(value.ragIntent)
-	const ragLabel =
-		toNullableText(value.rag_label) || toNullableText(value.ragLabel)
-	const intent = toNullableText(value.intent) || ragIntent
-	const confidence = normalizeConfidence(value.confidence)
-	const updatedAt =
-		toNullableText(value.updated_at) || toNullableText(value.updatedAt)
-
-	const hasAnyData =
-		confidence !== null ||
-		Boolean(intent || workflowId || workflowName || ragLabel || ragIntent)
-	if (!hasAnyData) return null
-
-	return {
-		confidence,
-		intent,
-		workflowId,
-		workflowName,
-		ragLabel,
-		ragIntent,
-		updatedAt,
-		source,
-	}
-}
-
-function resolveAiBanner(
-	conversation: UiConversation,
-	messages: UiMessage[],
-): ResolvedAiBanner | null {
-	if (conversation.status !== 'ai') return null
-
-	const apiAnalytics = conversation.aiAnalytics
-
-	let latestAiConfidence: number | null = null
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const item = messages[index]
-		if (item.from !== 'ai') continue
-		if (
-			typeof item.confidence === 'number' &&
-			Number.isFinite(item.confidence)
-		) {
-			latestAiConfidence = Number(item.confidence.toFixed(4))
-			break
-		}
-	}
-
-	const confidence = apiAnalytics?.confidence ?? latestAiConfidence ?? null
-
-	const workflowName =
-		apiAnalytics?.workflowName || apiAnalytics?.workflowId || null
-
-	const ragLabel = apiAnalytics?.ragLabel || apiAnalytics?.ragIntent || null
-	const intent = apiAnalytics?.intent || conversation.intent || null
-
-	if (confidence === null && !intent && !workflowName && !ragLabel) return null
-
-	const analytics: UiAiAnalytics = {
-		confidence,
-		intent: intent || null,
-		workflowId: apiAnalytics?.workflowId || null,
-		workflowName: workflowName || null,
-		ragLabel: ragLabel || null,
-		ragIntent: apiAnalytics?.ragIntent || null,
-		updatedAt: apiAnalytics?.updatedAt || null,
-		source: 'api',
-	}
-
-	return {
-		analytics,
-	}
-}
-
-function resolveStatus(raw: Record<string, unknown>): ChatStatus {
-	const baseStatus = toText(raw.status).toLowerCase()
-	if (baseStatus === 'resolved' || baseStatus === 'closed') return 'done'
-	if (baseStatus === 'pending') return 'handover'
-	if (toText(raw.assignee_id)) return 'human'
-	return 'ai'
-}
-
-function statusLabel(status: ChatStatus, handler: string) {
-	if (status === 'ai') return 'AI'
-	if (status === 'handover') return 'Handover'
-	if (status === 'human') return handler || 'CS'
-	return 'Closed'
-}
-
-function statusChipClass(status: ChatStatus) {
-	if (status === 'ai') {
-		return 'border-[color:color-mix(in_oklab,var(--ocm-warning)_35%,transparent)] bg-[color:color-mix(in_oklab,var(--ocm-warning)_20%,transparent)] text-[color:var(--ocm-warning)]'
-	}
-	if (status === 'handover') {
-		return 'border-[color:color-mix(in_oklab,var(--ocm-danger)_35%,transparent)] bg-[color:color-mix(in_oklab,var(--ocm-danger)_18%,transparent)] text-[color:var(--ocm-danger)]'
-	}
-	if (status === 'human') {
-		return 'border-sky-400/40 bg-sky-500/15 text-sky-400'
-	}
-	return 'border-emerald-400/35 bg-emerald-500/15 text-emerald-400'
-}
-
-function mapApiConversation(
-	raw: Record<string, unknown>,
-): UiConversation | null {
-	const id = toText(raw.id)
-	if (!id) return null
-
-	const channelType = toText(raw.channel_type).toLowerCase()
-	if (channelType && channelType !== 'whatsapp') return null
-	if (isAiPlaygroundConversation(raw)) return null
-
-	const contact = isRecord(raw.contacts) ? raw.contacts : {}
-	const contactMeta = isRecord(contact.metadata) ? contact.metadata : {}
-	const provider = normalizeUiWhatsappProvider(
-		raw.whatsapp_provider ?? raw.provider,
-	)
-	const lastMessage =
-		toArray<Record<string, unknown>>(raw.messages).find(
-			(item) => !shouldHideMessageFromChat(item),
-		) || {}
-	const status = resolveStatus(raw)
-	const aiAnalytics = parseAiAnalytics(raw.ai_analytics, 'api')
-
-	const name =
-		toText(contact.name) ||
-		toText(contact.full_name) ||
-		toText(contact.identifier) ||
-		'Pelanggan'
-	const phone =
-		toText(contact.phone_number) ||
-		toText(contact.whatsapp_id) ||
-		toText(contact.identifier) ||
-		'-'
-	const preview =
-		resolveRenderableMessageText(lastMessage) ||
-		(Object.keys(lastMessage).length > 0 ? toText(raw.last_message) : '') ||
-		'Belum ada pesan.'
-	const handler =
-		status === 'human' ? 'CS Team' : status === 'handover' ? 'Pending CS' : 'AI'
-	const intent =
-		toText(contactMeta.intent) ||
-		toText(raw.intent) ||
-		toText(aiAnalytics?.intent) ||
-		'Percakapan'
-	const unread = Number(raw.unread_count || 0)
-	const timestamp =
-		raw.last_message_at ||
-		lastMessage.created_at ||
-		raw.updated_at ||
-		raw.created_at
-
-	return {
-		id,
-		backendId: id,
-		inboxId: toNullableText(raw.inbox_id),
-		provider,
-		name,
-		phone,
-		preview,
-		time: formatConversationClock(timestamp),
-		unread: Number.isFinite(unread) ? unread : 0,
-		status,
-		handler,
-		intent,
-		online: false,
-		aiAnalytics,
-		source: 'api',
-	}
-}
-
-function normalizeMessageTimestamp(value: unknown): string | null {
-	if (
-		!(
-			value instanceof Date ||
-			typeof value === 'string' ||
-			typeof value === 'number'
-		)
-	) {
-		return null
-	}
-
-	const timestamp = new Date(value)
-	if (Number.isNaN(timestamp.getTime())) return null
-	return timestamp.toISOString()
-}
-
-function toMessageSortValue(value: string) {
-	const timestamp = new Date(value).getTime()
-	return Number.isFinite(timestamp) ? timestamp : 0
-}
-
-function extractOldestMessageCursor(rows: Record<string, unknown>[]) {
-	for (let index = rows.length - 1; index >= 0; index -= 1) {
-		const cursor = normalizeMessageTimestamp(rows[index]?.created_at)
-		if (cursor) return cursor
-	}
-
-	return null
-}
-
-function mergeMessagesChronologically(messages: UiMessage[]) {
-	const deduped = new Map<string, UiMessage>()
-	for (const message of messages) {
-		deduped.set(message.id, message)
-	}
-
-	return Array.from(deduped.values()).sort((left, right) => {
-		const timeDiff =
-			toMessageSortValue(left.createdAt) - toMessageSortValue(right.createdAt)
-		if (timeDiff !== 0) return timeDiff
-		return left.id.localeCompare(right.id)
-	})
-}
-
-function mapApiMessage(raw: Record<string, unknown>): UiMessage | null {
-	if (shouldHideMessageFromChat(raw)) return null
-
-	const id = toText(raw.id)
-	if (!id) return null
-
-	const messageType = toText(raw.message_type).toLowerCase()
-	const from: MessageFrom = messageType === 'incoming' ? 'customer' : 'ai'
-	const contentType = toText(raw.content_type).toLowerCase()
-	const contentAttributes = isRecord(raw.content_attributes)
-		? raw.content_attributes
-		: {}
-	const text =
-		(contentType === 'template'
-			? resolveTemplatePreviewText(contentAttributes, raw.content)
-			: normalizeMessageText(raw.content)) || '-'
-	const kind: MessageKind =
-		contentType === 'image' ||
-		contentType === 'video' ||
-		contentType === 'document'
-			? 'image'
-			: 'text'
-	const aiAnalyticsRecord = isRecord(contentAttributes.ai_analytics)
-		? contentAttributes.ai_analytics
-		: null
-	const aiAnalytics = parseAiAnalytics(contentAttributes.ai_analytics, 'api')
-	const confidence =
-		aiAnalytics?.confidence ??
-		normalizeConfidence(
-			contentAttributes.ai_confidence ?? contentAttributes.last_ai_confidence,
-		)
-	const intent =
-		toNullableText(contentAttributes.intent) ||
-		toNullableText(contentAttributes.rag_intent) ||
-		toNullableText(
-			isRecord(aiAnalyticsRecord) ? aiAnalyticsRecord.intent : null,
-		) ||
-		null
-	const createdAt = normalizeMessageTimestamp(raw.created_at) || new Date().toISOString()
-
-	return {
-		id,
-		from,
-		kind,
-		text,
-		createdAt,
-		intent,
-		time: formatConversationClock(raw.created_at || Date.now()),
-		status: toText(raw.status) === 'read' ? 'read' : 'delivered',
-		...(confidence !== null ? { confidence } : {}),
-		source: 'api',
-	}
-}
-
-function mapSocketMessage(raw: Record<string, unknown>): UiMessage | null {
-	if (shouldHideMessageFromChat(raw)) return null
-
-	const id = toText(raw.id)
-	if (!id) return null
-
-	const senderType = toText(raw.sender_type).toLowerCase()
-	const messageType = toText(raw.message_type).toLowerCase()
-	const from: MessageFrom =
-		senderType === 'contact' || messageType === 'incoming' ? 'customer' : 'ai'
-	const contentType = toText(raw.content_type).toLowerCase()
-	const contentAttributes = isRecord(raw.content_attributes)
-		? raw.content_attributes
-		: {}
-	const text =
-		(contentType === 'template'
-			? resolveTemplatePreviewText(contentAttributes, raw.content)
-			: normalizeMessageText(raw.content)) || '-'
-	const kind: MessageKind =
-		contentType === 'image' ||
-		contentType === 'video' ||
-		contentType === 'document'
-			? 'image'
-			: 'text'
-
-	const aiAnalyticsRecord = isRecord(contentAttributes.ai_analytics)
-		? contentAttributes.ai_analytics
-		: null
-	const intent =
-		toNullableText(contentAttributes.intent) ||
-		toNullableText(contentAttributes.rag_intent) ||
-		toNullableText(
-			isRecord(aiAnalyticsRecord) ? aiAnalyticsRecord.intent : null,
-		) ||
-		null
-	const createdAt = normalizeMessageTimestamp(raw.created_at) || new Date().toISOString()
-
-	return {
-		id,
-		from,
-		kind,
-		text,
-		createdAt,
-		intent,
-		time: formatConversationClock(raw.created_at || Date.now()),
-		status: 'delivered',
-		source: 'api',
-	}
-}
-
-function unwrapConversationRows(payload: unknown): Record<string, unknown>[] {
-	if (Array.isArray(payload)) return payload as Record<string, unknown>[]
-	if (!isRecord(payload)) return []
-
-	const directData = toArray<Record<string, unknown>>(payload.data)
-	if (directData.length > 0) return directData
-
-	const directPayload = toArray<Record<string, unknown>>(payload.payload)
-	if (directPayload.length > 0) return directPayload
-
-	const nested = isRecord(payload.results) ? payload.results : null
-	if (nested) {
-		const nestedData = toArray<Record<string, unknown>>(nested.data)
-		if (nestedData.length > 0) return nestedData
-		const nestedPayload = toArray<Record<string, unknown>>(nested.payload)
-		if (nestedPayload.length > 0) return nestedPayload
-	}
-
-	return []
-}
-
-function extractConversationPaginationMeta(payload: unknown): {
-	total: number
-	page: number
-	limit: number
-} | null {
-	if (!isRecord(payload)) return null
-
-	const total = Number(payload.total)
-	const page = Number(payload.page)
-	const limit = Number(payload.limit)
-
-	if (
-		!Number.isFinite(total) ||
-		!Number.isFinite(page) ||
-		!Number.isFinite(limit) ||
-		page < 1 ||
-		limit < 1
-	) {
-		return null
-	}
-
-	return {
-		total,
-		page,
-		limit,
-	}
-}
-
-function unwrapMessageRows(payload: unknown): Record<string, unknown>[] {
-	if (Array.isArray(payload)) return payload as Record<string, unknown>[]
-	if (!isRecord(payload)) return []
-
-	const directData = toArray<Record<string, unknown>>(payload.data)
-	if (directData.length > 0) return directData
-
-	const directPayload = toArray<Record<string, unknown>>(payload.payload)
-	if (directPayload.length > 0) return directPayload
-
-	const nested = isRecord(payload.results) ? payload.results : null
-	if (nested) {
-		const nestedData = toArray<Record<string, unknown>>(
-			nested.messages || nested.data,
-		)
-		if (nestedData.length > 0) return nestedData
-	}
-
-	return []
-}
-
-function uniqueNotes(notes: string[]) {
-	return Array.from(new Set(notes))
-}
-
-function mergeConversationPages(
-	current: UiConversation[],
-	incoming: UiConversation[],
-) {
-	const next = [...current]
-	const indexById = new Map(
-		current.map((conversation, index) => [conversation.id, index] as const),
-	)
-
-	for (const conversation of incoming) {
-		const existingIndex = indexById.get(conversation.id)
-		if (existingIndex === undefined) {
-			indexById.set(conversation.id, next.length)
-			next.push(conversation)
-			continue
-		}
-
-		next[existingIndex] = conversation
-	}
-
-	return next
-}
-
-function ChatPage() {
+function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
-	const search = Route.useSearch()
-	const requestedConversationId = toText(search.conversation_id).trim()
-	const selectedProvider = normalizeWhatsappProviderFilter(search.provider)
-	const [conversationRows, setConversationRows] = useState<UiConversation[]>([])
-	const activeId = requestedConversationId
-	const [messages, setMessages] = useState<UiMessage[]>([])
-	const [filter, setFilter] = useState<ChatFilter>('all')
-	const [searchQuery, setSearchQuery] = useState('')
-	const [panelOpen, setPanelOpen] = useState(true)
-	const [aiMode, setAiMode] = useState(true)
+	const [conversations, setConversations] = useState<Conversation[]>([])
+	const [messages, setMessages] = useState<ChatMessage[]>([])
+	const [selectedId, setSelectedId] = useState<string | null>(null)
+	const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
+	const [query, setQuery] = useState('')
+	const [filter, setFilter] = useState<InboxFilter>('all')
+	const [menuOpen, setMenuOpen] = useState(false)
+	const [newChatOpen, setNewChatOpen] = useState(false)
+	const [newContactName, setNewContactName] = useState('')
+	const [newPhoneNumber, setNewPhoneNumber] = useState('')
+	const [voiceTranscript, setVoiceTranscript] = useState('')
+	const [recording, setRecording] = useState(false)
+	const [transcribing, setTranscribing] = useState(false)
+	const [creatingChat, setCreatingChat] = useState(false)
+	const [newChatError, setNewChatError] = useState<string | null>(null)
 	const [draft, setDraft] = useState('')
-	const [loadingConversations, setLoadingConversations] = useState(false)
-	const [loadingMessages, setLoadingMessages] = useState(false)
-	const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
-	const [loadingContactDetail, setLoadingContactDetail] = useState(false)
-	const [uploadingAttachment, setUploadingAttachment] = useState(false)
-	const [resolvingConversation, setResolvingConversation] = useState(false)
-	const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
-	const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
-	const [isNewChatDialogOpen, setIsNewChatDialogOpen] = useState(false)
-	const [hasOlderMessages, setHasOlderMessages] = useState(false)
-	const [oldestMessageCursor, setOldestMessageCursor] = useState<string | null>(
-		null,
-	)
-	const [draftFilters, setDraftFilters] = useState<AdvancedChatFilters>(
-		DEFAULT_ADVANCED_CHAT_FILTERS,
-	)
-	const [appliedFilters, setAppliedFilters] = useState<AdvancedChatFilters>(
-		DEFAULT_ADVANCED_CHAT_FILTERS,
-	)
-	const [filterOptionsLoading, setFilterOptionsLoading] = useState(false)
-	const [inboxOptions, setInboxOptions] = useState<ChatInboxOption[]>([])
-	const [labelOptions, setLabelOptions] = useState<ChatSelectOption[]>([])
-	const [agentOptions, setAgentOptions] = useState<ChatSelectOption[]>([])
-	const [aiAgentOptions, setAiAgentOptions] = useState<ChatSelectOption[]>([])
-	const [pipelineStageOptions, setPipelineStageOptions] = useState<
-		ChatPipelineStageOption[]
-	>([])
-	const [newChatForm, setNewChatForm] =
-		useState<NewChatFormState>(DEFAULT_NEW_CHAT_FORM)
-	const [newChatTemplates, setNewChatTemplates] = useState<
-		WhatsAppTemplateOption[]
-	>([])
-	const [loadingNewChatTemplates, setLoadingNewChatTemplates] = useState(false)
-	const [submittingNewChat, setSubmittingNewChat] = useState(false)
-	const [newChatTemplateError, setNewChatTemplateError] = useState<string | null>(
-		null,
-	)
-	const [conversationPage, setConversationPage] = useState(1)
-	const [conversationTotal, setConversationTotal] = useState(0)
-	const [hasMoreConversations, setHasMoreConversations] = useState(false)
-	const [loadingMoreConversations, setLoadingMoreConversations] = useState(false)
-	const [contactDetail, setContactDetail] =
-		useState<ConversationContactDetailResponse | null>(null)
-	const [runtimeBackendNotes, setRuntimeBackendNotes] = useState<string[]>([])
-	const messagesContainerRef = useRef<HTMLDivElement | null>(null)
-	const messagesEndRef = useRef<HTMLDivElement | null>(null)
-	const attachmentInputRef = useRef<HTMLInputElement | null>(null)
-	const activeConversationBackendIdRef = useRef<string | null>(null)
-	const previousActiveConversationRef = useRef<string | null>(null)
-	const pendingPrependScrollRef = useRef<{
-		scrollHeight: number
-		scrollTop: number
-	} | null>(null)
-	const pendingScrollToBottomRef = useRef<'auto' | 'smooth' | null>(null)
+	const [sendingMessage, setSendingMessage] = useState(false)
+	const [composerError, setComposerError] = useState<string | null>(null)
+	const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null)
+	const [bulkDeleteIds, setBulkDeleteIds] = useState<string[]>([])
+	const [deletingMessage, setDeletingMessage] = useState(false)
+	const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set())
+	const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null)
+	const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null)
+	const [dragActive, setDragActive] = useState(false)
+	const [uploadingMedia, setUploadingMedia] = useState(false)
+	const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
+	const [profileOpen, setProfileOpen] = useState(false)
+	const [voiceRecording, setVoiceRecording] = useState(false)
+	const [contactPresence, setContactPresence] = useState<string | null>(null)
+	const [loading, setLoading] = useState(true)
+	const [repairing, setRepairing] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+	const recorderRef = useRef<MediaRecorder | null>(null)
+	const recorderTimeoutRef = useRef<number | null>(null)
+	const voiceRecorderRef = useRef<MediaRecorder | null>(null)
+	const fileInputRef = useRef<HTMLInputElement | null>(null)
+	const mediaPurposeRef = useRef<MediaPurpose>('attachment')
+	const presenceIdleRef = useRef<number | null>(null)
+	const lastPresenceSentRef = useRef(0)
+	const dragDepthRef = useRef(0)
+	const profileSyncRequestedRef = useRef(false)
+	const selectedPhone = conversations.find((item) => item.id === selectedId)?.phone || ''
+	const selectedName = conversations.find((item) => item.id === selectedId)?.name || 'Kontak'
+	const connected = diagnostic?.connection === 'connected'
+	const currentUserName = useMemo(storedUserName, [])
 
-	const pushBackendNote = useCallback((note: string) => {
-		setRuntimeBackendNotes((current) => uniqueNotes([...current, note]))
+	const loadConversations = useCallback(async () => {
+		try {
+			setError(null)
+			const response = await fetch(
+				`${API_BASE}/personal-whatsapp-inbox/conversations`,
+				{ headers: authHeaders() },
+			)
+			const payload = (await readApiResponse(response)) as {
+				data?: Conversation[]
+				diagnostic?: Diagnostic
+				error?: string
+			}
+			if (!response.ok) throw new Error(payload.error || 'Gagal membuka kotak masuk')
+			setConversations(payload.data || [])
+			setDiagnostic(payload.diagnostic || null)
+			if (!profileSyncRequestedRef.current && payload.diagnostic?.connection === 'connected') {
+				profileSyncRequestedRef.current = true
+				void fetch(`${API_BASE}/personal-whatsapp-inbox/sync-profiles`, {
+					method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ force: false }),
+				}).catch(() => undefined)
+			}
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Gagal membuka kotak masuk')
+		} finally {
+			setLoading(false)
+		}
 	}, [])
 
-	const loadConversations = useCallback(
-		async ({
-			page = 1,
-			append = false,
-		}: {
-			page?: number
-			append?: boolean
-		} = {}) => {
-			if (append) {
-				setLoadingMoreConversations(true)
-			} else {
-				setLoadingConversations(true)
-			}
+	const loadMessages = useCallback(async (conversationId: string) => {
+		const response = await fetch(
+			`${API_BASE}/personal-whatsapp-inbox/${conversationId}/messages`,
+			{ headers: authHeaders() },
+		)
+		const payload = (await readApiResponse(response)) as { data?: ChatMessage[] }
+		if (response.ok) setMessages(payload.data || [])
+	}, [])
 
-			const targetPage = Math.max(1, Math.floor(page))
-
-			try {
-				const response = await conversations.list({
-					page: targetPage,
-					limit: CONVERSATION_PAGE_SIZE,
-					channelType: 'whatsapp',
-					provider: selectedProvider,
-					status:
-						appliedFilters.status === 'all'
-							? undefined
-							: appliedFilters.status,
-					inbox_id: appliedFilters.inboxId || undefined,
-					assignee_id: appliedFilters.agentId || undefined,
-					dateFrom: appliedFilters.dateFrom || undefined,
-					dateTo: appliedFilters.dateTo || undefined,
-					labelIds: appliedFilters.labelId || undefined,
-					resolvedBy: appliedFilters.resolvedById || undefined,
-					aiAgentId: appliedFilters.aiAgentId || undefined,
-					pipelineStageId: appliedFilters.pipelineStageId || undefined,
-				})
-
-				const rows = unwrapConversationRows(response)
-				const paginationMeta = extractConversationPaginationMeta(response)
-				const mapped = rows
-					.map((item) => mapApiConversation(item))
-					.filter((item): item is UiConversation => item !== null)
-
-				const resolvedPage = paginationMeta?.page || targetPage
-				const resolvedLimit =
-					paginationMeta?.limit || CONVERSATION_PAGE_SIZE
-				const resolvedTotal = paginationMeta?.total ?? mapped.length
-
-				setConversationRows((current) =>
-					append ? mergeConversationPages(current, mapped) : mapped,
-				)
-				setConversationPage(resolvedPage)
-				setConversationTotal(resolvedTotal)
-				setHasMoreConversations(resolvedPage * resolvedLimit < resolvedTotal)
-			} catch (error) {
-				if (!append) {
-					setConversationRows([])
-					setConversationPage(1)
-					setConversationTotal(0)
-					setHasMoreConversations(false)
-				}
-
-				const reason =
-					error instanceof Error && error.message
-						? error.message
-						: 'unknown error'
-				pushBackendNote(`Tidak bisa load list conversation dari API (${reason}).`)
-			} finally {
-				if (append) {
-					setLoadingMoreConversations(false)
-				} else {
-					setLoadingConversations(false)
-				}
-			}
-		},
-		[appliedFilters, pushBackendNote, selectedProvider],
-	)
-
-	const loadModalOptions = useCallback(async () => {
-		setFilterOptionsLoading(true)
-		try {
-			const [
-				inboxesResponse,
-				labelsResponse,
-				agentsResponse,
-				chatbotsResponse,
-				contactSettingsResponse,
-			] = await Promise.all([
-				inboxes.list(),
-				labels.list(),
-				agents.list(),
-				chatbots.list(),
-				contacts.settings.get(),
-			])
-
-			const nextInboxes = extractCollectionRows(inboxesResponse)
-				.filter((row) => {
-					const channelType = toText(row.channel_type).toLowerCase()
-					return !channelType || channelType === 'whatsapp'
-				})
-				.map((row) => {
-					const id = toText(row.id)
-					if (!id) return null
-					return {
-						id,
-						label: toText(row.name) || `Inbox ${id.slice(0, 8)}`,
-						provider: normalizeUiWhatsappProvider(
-							row.whatsapp_provider ??
-								row.provider ??
-								(isRecord(row.channel_config)
-									? row.channel_config.provider
-									: null),
-						),
-					} satisfies ChatInboxOption
-				})
-				.filter((item): item is ChatInboxOption => Boolean(item))
-
-			const nextLabels = extractCollectionRows(labelsResponse)
-				.map((row) => {
-					const id = toText(row.id)
-					if (!id) return null
-					return {
-						id,
-						label:
-							toText(row.name) ||
-							toText(row.label) ||
-							toText(row.title) ||
-							`Label ${id.slice(0, 8)}`,
-					} satisfies ChatSelectOption
-				})
-				.filter((item): item is ChatSelectOption => Boolean(item))
-
-			const agentRows = extractCollectionRows(
-				isRecord(agentsResponse) ? agentsResponse.data : agentsResponse,
-			)
-			const nextAgents = agentRows
-				.map((row) => {
-					const id = toText(row.id)
-					if (!id) return null
-					return {
-						id,
-						label:
-							toText(row.name) ||
-							toText(row.email) ||
-							`Agent ${id.slice(0, 8)}`,
-					} satisfies ChatSelectOption
-				})
-				.filter((item): item is ChatSelectOption => Boolean(item))
-
-			const chatbotRows = extractCollectionRows(
-				isRecord(chatbotsResponse) ? chatbotsResponse.data : chatbotsResponse,
-			)
-			const nextAiAgents = chatbotRows
-				.map((row) => {
-					const id = toText(row.id)
-					if (!id) return null
-					return {
-						id,
-						label: toText(row.name) || `AI Agent ${id.slice(0, 8)}`,
-					} satisfies ChatSelectOption
-				})
-				.filter((item): item is ChatSelectOption => Boolean(item))
-
-			const stagePayload = isRecord(contactSettingsResponse)
-				? contactSettingsResponse.payload || contactSettingsResponse.data
-				: null
-			const stageRows = isRecord(stagePayload)
-				? toArray<Record<string, unknown>>(
-						isRecord(stagePayload.stages)
-							? stagePayload.stages.stages
-							: stagePayload.stages,
-					)
-				: []
-			const nextStages = stageRows
-				.map((row) => {
-					const id = toText(row.id)
-					if (!id) return null
-					return {
-						id,
-						label: toText(row.name) || `Stage ${id.slice(0, 8)}`,
-						color: toNullableText(row.color),
-					} satisfies ChatPipelineStageOption
-				})
-				.filter((item): item is ChatPipelineStageOption => Boolean(item))
-
-			setInboxOptions(nextInboxes)
-			setLabelOptions(nextLabels)
-			setAgentOptions(nextAgents)
-			setAiAgentOptions(nextAiAgents)
-			setPipelineStageOptions(nextStages)
-			setNewChatForm((current) =>
-				current.inboxId || nextInboxes.length === 0
-					? current
-					: { ...current, inboxId: nextInboxes[0].id },
-			)
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'unknown error'
-			pushBackendNote(`Tidak bisa load opsi chat (${reason}).`)
-		} finally {
-			setFilterOptionsLoading(false)
+	const markRead = useCallback(async (conversationId: string) => {
+		setConversations((current) => current.map((item) => (
+			item.id === conversationId ? { ...item, unread: 0 } : item
+		)))
+		const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/${conversationId}/read`, {
+			method: 'POST',
+			headers: authHeaders(),
+		})
+		if (response.ok) {
+			setConversations((current) => current.map((item) => (
+				item.id === conversationId ? { ...item, unread: 0 } : item
+			)))
 		}
-	}, [pushBackendNote])
+	}, [])
+
+	const repairAndRefresh = useCallback(async () => {
+		setRepairing(true)
+		try {
+			await fetch(`${API_BASE}/personal-whatsapp-inbox/repair-queue`, {
+				method: 'POST',
+				headers: authHeaders(),
+			})
+			await loadConversations()
+			if (selectedId) await loadMessages(selectedId)
+		} finally {
+			setRepairing(false)
+		}
+	}, [loadConversations, loadMessages, selectedId])
 
 	useEffect(() => {
 		void loadConversations()
 	}, [loadConversations])
 
 	useEffect(() => {
-		void loadModalOptions()
-	}, [loadModalOptions])
-
-	const activeConversation = useMemo(() => {
-		if (!activeId) return null
-		return conversationRows.find((item) => item.id === activeId) || null
-	}, [activeId, conversationRows])
-	const activeConversationId = activeConversation?.id || null
-	const activeConversationBackendId = activeConversation?.backendId || null
-	const activeConversationInboxId =
-		contactDetail?.conversation.inbox_id ||
-		activeConversation?.inboxId ||
-		null
-	const activeConversationName = activeConversation?.name || 'Pelanggan'
-	const selectedNewChatInbox = useMemo(
-		() => inboxOptions.find((item) => item.id === newChatForm.inboxId) || null,
-		[inboxOptions, newChatForm.inboxId],
-	)
-	const selectedNewChatTemplate = useMemo(
-		() =>
-			newChatTemplates.find((item) => item.id === newChatForm.templateId) || null,
-		[newChatForm.templateId, newChatTemplates],
-	)
-	const normalizedNewChatPhone = useMemo(
-		() => normalizePhoneForChat(newChatForm.phoneNumber),
-		[newChatForm.phoneNumber],
-	)
-	const newChatTemplateVariables = useMemo(
-		() => ({
-			'1': newChatForm.name.trim() || 'Customer',
-			'2': normalizedNewChatPhone || '6280000000000',
-			customer_name: newChatForm.name.trim() || 'Customer',
-		}),
-		[newChatForm.name, normalizedNewChatPhone],
-	)
-	const newChatTemplateVariableKeys = useMemo(
-		() =>
-			selectedNewChatTemplate
-				? extractTemplateVariableKeys(selectedNewChatTemplate.components)
-				: [],
-		[selectedNewChatTemplate],
-	)
-	const hasUnsupportedNewChatTemplateVariables = useMemo(
-		() => newChatTemplateVariableKeys.some((key) => key !== '1' && key !== '2'),
-		[newChatTemplateVariableKeys],
-	)
-	const newChatPreviewHeader = useMemo(
-		() =>
-			selectedNewChatTemplate
-				? renderTemplateText(
-						extractTemplateHeaderText(selectedNewChatTemplate.components),
-						newChatTemplateVariables,
-					)
-				: '',
-		[selectedNewChatTemplate, newChatTemplateVariables],
-	)
-	const newChatPreviewBody = useMemo(() => {
-		if (!selectedNewChatTemplate) return ''
-		return renderTemplateText(
-			extractTemplateBodyText(selectedNewChatTemplate.components) ||
-				selectedNewChatTemplate.name,
-			newChatTemplateVariables,
-		)
-	}, [selectedNewChatTemplate, newChatTemplateVariables])
-	const newChatPreviewFooter = useMemo(
-		() =>
-			selectedNewChatTemplate
-				? renderTemplateText(
-						extractTemplateFooterText(selectedNewChatTemplate.components),
-						newChatTemplateVariables,
-					)
-				: '',
-		[selectedNewChatTemplate, newChatTemplateVariables],
-	)
-	const newChatPreviewButtons = useMemo(
-		() =>
-			selectedNewChatTemplate
-				? extractTemplateButtonLabels(selectedNewChatTemplate.components)
-				: [],
-		[selectedNewChatTemplate],
-	)
-	const canSubmitNewChat = Boolean(
-		newChatForm.inboxId &&
-			newChatForm.name.trim() &&
-			normalizedNewChatPhone &&
-			selectedNewChatTemplate &&
-			!loadingNewChatTemplates &&
-			!submittingNewChat &&
-			!hasUnsupportedNewChatTemplateVariables,
-	)
-
-	useEffect(() => {
-		activeConversationBackendIdRef.current = activeConversationBackendId
-	}, [activeConversationBackendId])
-
-	useEffect(() => {
-		if (!isNewChatDialogOpen || !newChatForm.inboxId) {
-			setNewChatTemplates([])
-			setNewChatTemplateError(null)
-			setNewChatForm((current) =>
-				current.templateId ? { ...current, templateId: '' } : current,
-			)
-			return
+		if (window.location.search) {
+			window.history.replaceState(window.history.state, '', '/chat')
 		}
-
-		let mounted = true
-
-		const loadTemplates = async () => {
-			setLoadingNewChatTemplates(true)
-			setNewChatTemplateError(null)
-			try {
-				const response = await whatsappTemplates.list('APPROVED', undefined, {
-					inboxId: newChatForm.inboxId,
-				})
-
-				if (!mounted) return
-
-				const rows = extractCollectionRows(response.data)
-				const mapped = rows.map((row) => ({
-					id: String(row.id || randomId()),
-					name: String(row.name || 'template'),
-					status: String(row.status || 'UNKNOWN').toUpperCase(),
-					category: String(row.category || 'UTILITY').toUpperCase(),
-					language: String(row.language || row.locale || 'en_US'),
-					components: Array.isArray(row.components) ? row.components : [],
-				}))
-
-				setNewChatTemplates(mapped)
-				setNewChatForm((current) => ({
-					...current,
-					templateId: mapped.some((item) => item.id === current.templateId)
-						? current.templateId
-						: mapped[0]?.id || '',
-				}))
-			} catch (error) {
-				if (!mounted) return
-				setNewChatTemplates([])
-				setNewChatForm((current) =>
-					current.templateId ? { ...current, templateId: '' } : current,
-				)
-				setNewChatTemplateError(
-					error instanceof Error
-						? error.message
-						: 'Gagal memuat template WhatsApp',
-				)
-			} finally {
-				if (mounted) setLoadingNewChatTemplates(false)
-			}
-		}
-
-		void loadTemplates()
-		return () => {
-			mounted = false
-		}
-	}, [isNewChatDialogOpen, newChatForm.inboxId])
-
-	const loadLatestMessages = useCallback(
-		async (
-			conversationBackendId: string,
-			options?: {
-				replace?: boolean
-				scrollToBottom?: 'auto' | 'smooth'
-			},
-		) => {
-			const replace = options?.replace !== false
-			const scrollToBottom = options?.scrollToBottom || null
-
-			setLoadingMessages(true)
-			try {
-				const response = await conversations.getMessages(conversationBackendId, {
-					limit: CHAT_MESSAGE_PAGE_SIZE,
-				})
-				if (activeConversationBackendIdRef.current !== conversationBackendId) {
-					return
-				}
-
-				const rows = unwrapMessageRows(response)
-				const mapped = rows
-					.map((item) => mapApiMessage(item))
-					.filter((item): item is UiMessage => item !== null)
-					.reverse()
-				const nextOldestCursor = extractOldestMessageCursor(rows)
-
-				setMessages((current) =>
-					replace
-						? mapped
-						: mergeMessagesChronologically([...current, ...mapped]),
-				)
-				setOldestMessageCursor((current) =>
-					replace ? nextOldestCursor : current || nextOldestCursor,
-				)
-				setHasOlderMessages((current) =>
-					replace
-						? Boolean(nextOldestCursor) &&
-							rows.length === CHAT_MESSAGE_PAGE_SIZE
-						: current ||
-							(Boolean(nextOldestCursor) &&
-								rows.length === CHAT_MESSAGE_PAGE_SIZE),
-				)
-
-				if (scrollToBottom) {
-					pendingScrollToBottomRef.current = scrollToBottom
-				}
-			} catch (error) {
-				if (activeConversationBackendIdRef.current !== conversationBackendId) {
-					return
-				}
-
-				if (replace) {
-					setMessages([])
-					setOldestMessageCursor(null)
-					setHasOlderMessages(false)
-				}
-
-				const reason =
-					error instanceof Error && error.message
-						? error.message
-						: 'unknown error'
-				pushBackendNote(`Tidak bisa load message dari API (${reason}).`)
-			} finally {
-				if (activeConversationBackendIdRef.current === conversationBackendId) {
-					setLoadingMessages(false)
-				}
-			}
-		},
-		[pushBackendNote],
-	)
-
-	const loadOlderMessages = useCallback(
-		async (conversationBackendId: string) => {
-			if (
-				loadingMessages ||
-				loadingOlderMessages ||
-				!hasOlderMessages ||
-				!oldestMessageCursor
-			) {
-				return
-			}
-
-			const container = messagesContainerRef.current
-			if (container) {
-				pendingPrependScrollRef.current = {
-					scrollHeight: container.scrollHeight,
-					scrollTop: container.scrollTop,
-				}
-			}
-
-			setLoadingOlderMessages(true)
-			try {
-				const response = await conversations.getMessages(conversationBackendId, {
-					limit: CHAT_MESSAGE_PAGE_SIZE,
-					before: oldestMessageCursor,
-				})
-				if (activeConversationBackendIdRef.current !== conversationBackendId) {
-					return
-				}
-
-				const rows = unwrapMessageRows(response)
-				const mapped = rows
-					.map((item) => mapApiMessage(item))
-					.filter((item): item is UiMessage => item !== null)
-					.reverse()
-				const nextOldestCursor = extractOldestMessageCursor(rows)
-
-				if (nextOldestCursor) {
-					setOldestMessageCursor(nextOldestCursor)
-				}
-
-				if (mapped.length > 0) {
-					setMessages((current) =>
-						mergeMessagesChronologically([...mapped, ...current]),
-					)
-				}
-
-				setHasOlderMessages(
-					Boolean(nextOldestCursor) && rows.length === CHAT_MESSAGE_PAGE_SIZE,
-				)
-			} catch (error) {
-				pendingPrependScrollRef.current = null
-				const reason =
-					error instanceof Error && error.message
-						? error.message
-						: 'unknown error'
-				pushBackendNote(`Tidak bisa load message lama dari API (${reason}).`)
-			} finally {
-				if (activeConversationBackendIdRef.current === conversationBackendId) {
-					setLoadingOlderMessages(false)
-				}
-			}
-		},
-		[
-			hasOlderMessages,
-			loadingMessages,
-			loadingOlderMessages,
-			oldestMessageCursor,
-			pushBackendNote,
-		],
-	)
-
-	const handleMessagesScroll = useCallback(() => {
-		const container = messagesContainerRef.current
-		if (!container || !activeConversationBackendId) return
-		if (container.scrollTop > 72) return
-		void loadOlderMessages(activeConversationBackendId)
-	}, [activeConversationBackendId, loadOlderMessages])
-
-	const handleSelectConversation = useCallback(
-		(conversationId: string) => {
-			const normalizedConversationId = toText(conversationId).trim()
-			if (!normalizedConversationId) return
-
-			if (normalizedConversationId !== activeConversationId) {
-				setMessages([])
-				setLoadingOlderMessages(false)
-				setHasOlderMessages(false)
-				setOldestMessageCursor(null)
-				setContactDetail(null)
-				setRuntimeBackendNotes([])
-				pendingPrependScrollRef.current = null
-				pendingScrollToBottomRef.current = null
-			}
-
-			void navigate({
-				to: '/chat',
-				search: (prev) => ({
-					...prev,
-					provider: selectedProvider,
-					conversation_id: normalizedConversationId,
-				}),
-				replace: true,
-			})
-		},
-		[activeConversationId, navigate, selectedProvider],
-	)
-	const handleBackToConversationList = useCallback(() => {
-		setMessages([])
-		setLoadingMessages(false)
-		setLoadingOlderMessages(false)
-		setHasOlderMessages(false)
-		setOldestMessageCursor(null)
-		setContactDetail(null)
-		setRuntimeBackendNotes([])
-		pendingPrependScrollRef.current = null
-		pendingScrollToBottomRef.current = null
-
-		void navigate({
-			to: '/chat',
-			search: (prev) => ({
-				...prev,
-				provider: selectedProvider,
-				conversation_id: undefined,
-			}),
-			replace: true,
-		})
-	}, [navigate, selectedProvider])
-	const handleOpenFilterDialog = useCallback(() => {
-		setDraftFilters(appliedFilters)
-		setIsFilterDialogOpen(true)
-	}, [appliedFilters])
-	const handleApplyAdvancedFilters = useCallback(() => {
-		setAppliedFilters(draftFilters)
-		setIsFilterDialogOpen(false)
-		void navigate({
-			to: '/chat',
-			search: (prev) => ({
-				...prev,
-				provider: selectedProvider,
-				conversation_id: undefined,
-			}),
-			replace: true,
-		})
-	}, [draftFilters, navigate, selectedProvider])
-	const handleResetAdvancedFilters = useCallback(() => {
-		setDraftFilters(DEFAULT_ADVANCED_CHAT_FILTERS)
-		setAppliedFilters(DEFAULT_ADVANCED_CHAT_FILTERS)
-		setIsFilterDialogOpen(false)
-		void navigate({
-			to: '/chat',
-			search: (prev) => ({
-				...prev,
-				provider: selectedProvider,
-				conversation_id: undefined,
-			}),
-			replace: true,
-		})
-	}, [navigate, selectedProvider])
-	const handleOpenNewChatDialog = useCallback(() => {
-		const preferredInbox =
-			inboxOptions.find((item) =>
-				matchesWhatsappProviderSelection(item.provider, selectedProvider),
-			) || inboxOptions[0]
-		setNewChatTemplateError(null)
-		setNewChatForm({
-			...DEFAULT_NEW_CHAT_FORM,
-			inboxId: preferredInbox?.id || '',
-		})
-		setNewChatTemplates([])
-		setIsNewChatDialogOpen(true)
-	}, [inboxOptions, selectedProvider])
-	const handleCloseNewChatDialog = useCallback(() => {
-		setIsNewChatDialogOpen(false)
-		setSubmittingNewChat(false)
-		setNewChatTemplateError(null)
 	}, [])
-	const handleStartNewChat = useCallback(async () => {
-		if (!canSubmitNewChat || !selectedNewChatTemplate) return
-
-		setSubmittingNewChat(true)
-		setNewChatTemplateError(null)
-		try {
-			await contacts.create({
-				name: newChatForm.name.trim(),
-				phone_number: normalizedNewChatPhone,
-			})
-
-			const created = await broadcasts.create({
-				title: `Quick chat - ${newChatForm.name.trim() || normalizedNewChatPhone}`,
-				message_type: 'template',
-				message_content: selectedNewChatTemplate.name,
-				template_name: selectedNewChatTemplate.name,
-				template_language: selectedNewChatTemplate.language || 'en_US',
-				template_params: {
-					inbox_id: newChatForm.inboxId,
-					template_name: selectedNewChatTemplate.name,
-					language: selectedNewChatTemplate.language || 'en_US',
-					components: selectedNewChatTemplate.components,
-					variable_defaults: {
-						1: newChatTemplateVariables['1'],
-						2: newChatTemplateVariables['2'],
-					},
-				},
-				target_audience: {
-					type: 'numbers',
-					inbox_id: newChatForm.inboxId,
-					recipients: [
-						{
-							phoneNumber: normalizedNewChatPhone,
-							name: newChatForm.name.trim(),
-							variables: {
-								1: newChatTemplateVariables['1'],
-								2: newChatTemplateVariables['2'],
-							},
-						},
-					],
-				},
-			})
-
-			const createdBroadcastId = created?.payload?.id
-			if (createdBroadcastId) {
-				await broadcasts.send(createdBroadcastId)
-			}
-
-			toast.success(
-				'Pesan template masuk antrean. Conversation baru akan muncul setelah webhook WhatsApp masuk.',
-			)
-			setIsNewChatDialogOpen(false)
-			const preferredInbox =
-				inboxOptions.find((item) =>
-					matchesWhatsappProviderSelection(item.provider, selectedProvider),
-				) || inboxOptions[0]
-			setNewChatForm({
-				...DEFAULT_NEW_CHAT_FORM,
-				inboxId: preferredInbox?.id || '',
-			})
-			setNewChatTemplates([])
-			void loadConversations()
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'Gagal memulai chat baru'
-			setNewChatTemplateError(reason)
-			toast.error(reason)
-		} finally {
-			setSubmittingNewChat(false)
-		}
-	}, [
-		canSubmitNewChat,
-		inboxOptions,
-		loadConversations,
-		newChatForm.inboxId,
-		newChatForm.name,
-		newChatTemplateVariables,
-		normalizedNewChatPhone,
-		selectedProvider,
-		selectedNewChatTemplate,
-	])
-	const backendNotes = useMemo(
-		() =>
-			uniqueNotes([
-				...runtimeBackendNotes,
-				...(Array.isArray(contactDetail?.backend_notes)
-					? contactDetail.backend_notes
-					: []),
-			]),
-		[runtimeBackendNotes, contactDetail?.backend_notes],
-	)
-	const detailCustomer = contactDetail?.customer || null
-	const detailBadges = contactDetail?.badges || null
-	const displayName = detailCustomer?.name || activeConversationName
-	const displayPhone =
-		detailCustomer?.phone_number || activeConversation?.phone || '-'
-	const activeAiBanner = useMemo(() => {
-		if (!activeConversation) return null
-		return resolveAiBanner(activeConversation, messages)
-	}, [activeConversation, messages])
-	const aiSuggestions = useMemo(
-		() =>
-			buildAiSuggestions(messages, activeAiBanner?.analytics.intent || null),
-		[messages, activeAiBanner?.analytics.intent],
-	)
 
 	useEffect(() => {
-		setRuntimeBackendNotes([])
-	}, [activeConversationId])
+		if (selectedId) {
+			void Promise.all([loadMessages(selectedId), markRead(selectedId)])
+		}
+		else setMessages([])
+		setSelectedMessageIds(new Set())
+		setContextMenu(null)
+		setReplyTarget(null)
+		setProfileOpen(false)
+		setPendingAttachments((current) => {
+			for (const attachment of current) if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+			return []
+		})
+	}, [selectedId, loadMessages, markRead])
 
 	useEffect(() => {
-		if (!activeConversationId) {
-			setContactDetail(null)
-			setLoadingContactDetail(false)
-			return
-		}
-
-		if (!activeConversationBackendId) {
-			setContactDetail(null)
-			setLoadingContactDetail(false)
-			return
-		}
-
-		let mounted = true
-		const loadContactDetail = async () => {
-			setLoadingContactDetail(true)
-			setContactDetail(null)
-			try {
-				const detail = await conversations.getContactDetail(
-					activeConversationBackendId,
-				)
-				if (!mounted) return
-				setContactDetail(detail)
-			} catch (error) {
-				if (!mounted) return
-				setContactDetail(null)
-				const reason =
-					error instanceof Error && error.message
-						? error.message
-						: 'unknown error'
-				pushBackendNote(
-					`Tidak bisa load contact detail dari API (${reason}), panel kanan sementara kosong.`,
-				)
-			} finally {
-				if (mounted) setLoadingContactDetail(false)
-			}
-		}
-
-		loadContactDetail()
-
+		if (!contextMenu) return
+		const close = () => setContextMenu(null)
+		window.addEventListener('click', close)
+		window.addEventListener('resize', close)
 		return () => {
-			mounted = false
+			window.removeEventListener('click', close)
+			window.removeEventListener('resize', close)
 		}
-	}, [activeConversationBackendId, activeConversationId, pushBackendNote])
-
-	useEffect(() => {
-		if (!activeConversationId) {
-			setMessages([])
-			setLoadingMessages(false)
-			setLoadingOlderMessages(false)
-			setHasOlderMessages(false)
-			setOldestMessageCursor(null)
-			pendingPrependScrollRef.current = null
-			pendingScrollToBottomRef.current = null
-			return
-		}
-
-		if (!activeConversationBackendId) {
-			setMessages([])
-			setLoadingMessages(false)
-			setLoadingOlderMessages(false)
-			setHasOlderMessages(false)
-			setOldestMessageCursor(null)
-			pendingPrependScrollRef.current = null
-			pendingScrollToBottomRef.current = null
-			return
-		}
-
-		void loadLatestMessages(activeConversationBackendId, {
-			replace: true,
-			scrollToBottom: 'auto',
-		})
-		return () => {
-			pendingPrependScrollRef.current = null
-		}
-	}, [activeConversationBackendId, activeConversationId, loadLatestMessages])
-
-	useEffect(() => {
-		if (messages.length === 0) return
-
-		const container = messagesContainerRef.current
-		const pendingPrependScroll = pendingPrependScrollRef.current
-		if (container && pendingPrependScroll) {
-			pendingPrependScrollRef.current = null
-			requestAnimationFrame(() => {
-				container.scrollTop =
-					container.scrollHeight -
-					pendingPrependScroll.scrollHeight +
-					pendingPrependScroll.scrollTop
-			})
-			return
-		}
-
-		const behavior = pendingScrollToBottomRef.current
-		if (!behavior) return
-
-		pendingScrollToBottomRef.current = null
-		requestAnimationFrame(() => {
-			messagesEndRef.current?.scrollIntoView({
-				behavior,
-				block: 'end',
-			})
-		})
-	}, [messages.length])
-
-	useEffect(() => {
-		if (loadingConversations) return
-		if (loadingMoreConversations) return
-		if (!activeId) return
-		if (activeConversation) return
-		if (hasMoreConversations) {
-			void loadConversations({
-				page: conversationPage + 1,
-				append: true,
-			})
-			return
-		}
-
-		void navigate({
-			to: '/chat',
-			search: (prev) => ({
-				...prev,
-				provider: selectedProvider,
-				conversation_id: undefined,
-			}),
-			replace: true,
-		})
-	}, [
-		activeConversation,
-		activeId,
-		conversationPage,
-		hasMoreConversations,
-		loadConversations,
-		loadingConversations,
-		loadingMoreConversations,
-		navigate,
-		selectedProvider,
-	])
+	}, [contextMenu])
 
 	useEffect(() => {
 		const socket = connectSocket()
-		const appId =
-			getAppIdFromCookie() ||
-			(typeof localStorage !== 'undefined'
-				? localStorage.getItem('scalechat_app_id')
-				: null)
-
-		const joinAppRoom = () => {
-			if (!appId) return
-			socket.emit('join', { appId })
+		const refresh = () => {
+			void loadConversations()
+			if (selectedId) void Promise.all([loadMessages(selectedId), markRead(selectedId)])
 		}
-
-		const handleMessageCreated = (payload: SocketMessageCreatedPayload) => {
-			const messageRecord = isRecord(payload?.message) ? payload.message : null
-			const conversationRecord = isRecord(payload?.conversation)
-				? payload.conversation
-				: null
-			if (!messageRecord || !conversationRecord) return
-
-			const channelType = toText(conversationRecord.channel_type).toLowerCase()
-			if (channelType && channelType !== 'whatsapp') return
-			if (isAiPlaygroundConversation(conversationRecord)) return
-			const whatsappProvider = normalizeUiWhatsappProvider(
-				conversationRecord.whatsapp_provider ?? conversationRecord.provider,
-			)
-			if (!matchesWhatsappProviderSelection(whatsappProvider, selectedProvider)) {
-				return
-			}
-
-			const conversationId = toText(conversationRecord.id)
-			if (!conversationId) return
-
-			const socketMessage = mapSocketMessage(messageRecord)
-			if (!socketMessage) return
-			const messagePreview =
-				socketMessage.text ||
-				resolveRenderableMessageText(messageRecord) ||
-				'Pesan baru'
-			const messageTime = formatConversationClock(
-				messageRecord.created_at || Date.now(),
-			)
-			const status = resolveStatus(conversationRecord)
-			const contactRecord = isRecord(conversationRecord.contacts)
-				? conversationRecord.contacts
-				: {}
-			const contactMetadata = isRecord(contactRecord.metadata)
-				? contactRecord.metadata
-				: {}
-			const name =
-				toText(contactRecord.name) ||
-				toText(contactRecord.full_name) ||
-				toText(contactRecord.identifier) ||
-				'Pelanggan'
-			const phone =
-				toText(contactRecord.phone_number) ||
-				toText(contactRecord.whatsapp_id) ||
-				toText(contactRecord.identifier) ||
-				'-'
-			const intent =
-				toText(contactMetadata.intent) ||
-				toText(conversationRecord.intent) ||
-				'Percakapan'
-			const isIncoming = socketMessage.from === 'customer'
-
-			setConversationRows((current) => {
-				const index = current.findIndex((item) => item.id === conversationId)
-
-				if (index === -1) {
-					const seededUnread = isIncoming && conversationId !== activeId ? 1 : 0
-					return [
-						{
-							id: conversationId,
-							backendId: conversationId,
-							inboxId: toNullableText(conversationRecord.inbox_id),
-							provider: whatsappProvider,
-							name,
-							phone,
-							preview: messagePreview,
-							time: messageTime,
-							unread: seededUnread,
-							status,
-							handler:
-								status === 'human'
-									? 'CS Team'
-									: status === 'handover'
-										? 'Pending CS'
-										: 'AI',
-							intent,
-							online: false,
-							aiAnalytics: parseAiAnalytics(
-								conversationRecord.ai_analytics,
-								'api',
-							),
-							source: 'api',
-						},
-						...current,
-					]
-				}
-
-				const target = current[index]
-				const nextUnread =
-					isIncoming && conversationId !== activeId
-						? target.unread + 1
-						: target.unread
-				const updated: UiConversation = {
-					...target,
-					backendId: conversationId,
-					inboxId:
-						toNullableText(conversationRecord.inbox_id) || target.inboxId,
-					provider: whatsappProvider || target.provider,
-					name,
-					phone,
-					preview: messagePreview,
-					time: messageTime,
-					status,
-					intent: intent || target.intent,
-					unread: conversationId === activeId ? target.unread : nextUnread,
-					aiAnalytics:
-						parseAiAnalytics(conversationRecord.ai_analytics, 'api') ||
-						target.aiAnalytics ||
-						null,
-					source: 'api',
-				}
-
-				const nextRows = [...current]
-				nextRows.splice(index, 1)
-				nextRows.unshift(updated)
-				return nextRows
-			})
-
-			if (conversationId === activeId) {
-				pendingScrollToBottomRef.current = 'smooth'
-				setMessages((current) => {
-					if (current.some((item) => item.id === socketMessage.id))
-						return current
-					return mergeMessagesChronologically([...current, socketMessage])
-				})
-			}
+		const handlePresence = (payload: { phone?: string; presence?: string }) => {
+			const incoming = String(payload.phone || '').replace(/\D/g, '')
+			const selected = selectedPhone.replace(/\D/g, '')
+			if (incoming && selected && incoming === selected) setContactPresence(String(payload.presence || 'unavailable'))
 		}
-
-		joinAppRoom()
-		socket.on('connect', joinAppRoom)
-		socket.on('message:created', handleMessageCreated)
-
+		const handleStatus = (payload: { message_id?: string; status?: string }) => {
+			if (!payload.message_id || !payload.status) return
+			setMessages((current) => current.map((message) => message.id === payload.message_id ? { ...message, status: payload.status || message.status } : message))
+		}
+		socket.on('message:created', refresh)
+		socket.on('message:deleted', refresh)
+		socket.on('message:restored', refresh)
+		socket.on('whatsapp:presence', handlePresence)
+		socket.on('message:status_updated', handleStatus)
+		socket.on('contact:profile_updated', loadConversations)
+		socket.on('message:revoked', refresh)
 		return () => {
-			socket.off('connect', joinAppRoom)
-			socket.off('message:created', handleMessageCreated)
+			socket.off('message:created', refresh)
+			socket.off('message:deleted', refresh)
+			socket.off('message:restored', refresh)
+			socket.off('whatsapp:presence', handlePresence)
+			socket.off('message:status_updated', handleStatus)
+			socket.off('contact:profile_updated', loadConversations)
+			socket.off('message:revoked', refresh)
 		}
-	}, [activeId, selectedProvider])
+	}, [loadConversations, loadMessages, markRead, selectedId, selectedPhone])
 
-	const counts = useMemo(() => {
-		let ai = 0
-		let handover = 0
-		let human = 0
-		let unread = 0
+	const publishPresence = useCallback((presence: 'composing' | 'recording' | 'paused') => {
+		if (!selectedId || !connected) return
+		void fetch(`${API_BASE}/personal-whatsapp-inbox/${selectedId}/presence`, {
+			method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ presence }),
+		}).catch(() => undefined)
+	}, [connected, selectedId])
 
-		for (const row of conversationRows) {
-			if (row.status === 'ai') ai += 1
-			if (row.status === 'handover') handover += 1
-			if (row.status === 'human') human += 1
-			if (row.unread > 0) unread += 1
-		}
-
-		return {
-			all: Math.max(conversationTotal, conversationRows.length),
-			ai,
-			handover,
-			human,
-			unread,
-		}
-	}, [conversationRows, conversationTotal])
-
-	const filteredConversations = useMemo(() => {
-		return conversationRows.filter((row) => {
-			const matchesFilter =
-				filter === 'all'
-					? true
-					: filter === 'unread'
-						? row.unread > 0
-						: row.status === filter
-
-			if (!matchesFilter) return false
-
-			if (!searchQuery.trim()) return true
-			const haystack =
-				`${row.name} ${row.phone} ${row.intent} ${row.preview}`.toLowerCase()
-			return haystack.includes(searchQuery.trim().toLowerCase())
-		})
-	}, [conversationRows, filter, searchQuery])
-
-	const handleLoadMoreConversations = useCallback(() => {
-		if (
-			loadingConversations ||
-			loadingMoreConversations ||
-			!hasMoreConversations
-		) {
+	useEffect(() => {
+		if (!draft.trim()) {
+			if (presenceIdleRef.current) window.clearTimeout(presenceIdleRef.current)
+			publishPresence('paused')
 			return
 		}
-
-		void loadConversations({
-			page: conversationPage + 1,
-			append: true,
-		})
-	}, [
-		conversationPage,
-		hasMoreConversations,
-		loadConversations,
-		loadingConversations,
-		loadingMoreConversations,
-	])
-
-	const handleSend = async (event: React.FormEvent) => {
-		event.preventDefault()
-		if (!draft.trim() || !activeConversation) return
-		if (!activeConversation.backendId) {
-			pushBackendNote(
-				'Conversation belum tersedia dari API, pesan tidak dikirim.',
-			)
-			return
+		if (Date.now() - lastPresenceSentRef.current > 1_500) {
+			lastPresenceSentRef.current = Date.now()
+			publishPresence('composing')
 		}
+		if (presenceIdleRef.current) window.clearTimeout(presenceIdleRef.current)
+		presenceIdleRef.current = window.setTimeout(() => publishPresence('paused'), 2_500)
+		return () => { if (presenceIdleRef.current) window.clearTimeout(presenceIdleRef.current) }
+	}, [draft, publishPresence])
 
-		const now = new Date()
-		const newMessage: UiMessage = {
-			id: `local-${now.getTime()}`,
-			from: 'ai',
-			kind: 'text',
-			text: draft.trim(),
-			createdAt: now.toISOString(),
-			time: formatChatTime(now),
-			status: 'delivered',
-			source: 'local',
-		}
+	useEffect(() => {
+		if (voiceRecording) publishPresence('recording')
+		else publishPresence('paused')
+	}, [publishPresence, voiceRecording])
 
-		pendingScrollToBottomRef.current = 'smooth'
-		setMessages((current) => [...current, newMessage])
-		setDraft('')
+	useEffect(() => () => {
+		if (recorderTimeoutRef.current) window.clearTimeout(recorderTimeoutRef.current)
+		const recorder = recorderRef.current
+		if (recorder?.state === 'recording') recorder.stop()
+		recorder?.stream.getTracks().forEach((track) => track.stop())
+		const voiceRecorder = voiceRecorderRef.current
+		if (voiceRecorder?.state === 'recording') voiceRecorder.stop()
+		voiceRecorder?.stream.getTracks().forEach((track) => track.stop())
+	}, [])
 
+	const transcribeRecording = useCallback(async (blob: Blob) => {
+		setTranscribing(true)
+		setNewChatError(null)
 		try {
-			await conversations.sendMessage(activeConversation.backendId, {
-				content: newMessage.text,
-				message_type: 'outgoing',
+			const formData = new FormData()
+			formData.append('audio', blob, `nomor.${blob.type.includes('ogg') ? 'ogg' : 'webm'}`)
+			formData.append('language', 'id')
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/transcribe-number`, {
+				method: 'POST',
+				headers: authHeaders(),
+				body: formData,
 			})
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'unknown error'
-			pushBackendNote(
-				`Gagal kirim message ke API (${reason}), message saat ini masih local-only.`,
-			)
-		}
-	}
-
-	const handleAttachmentButtonClick = () => {
-		attachmentInputRef.current?.click()
-	}
-
-	const handleTemplateButtonClick = () => {
-		if (!activeConversationBackendId) {
-			pushBackendNote(
-				'Conversation belum tersedia dari API, template tidak bisa dikirim.',
-			)
-			return
-		}
-
-		setIsTemplateModalOpen(true)
-	}
-
-	const handleAttachmentFileChange = async (
-		event: React.ChangeEvent<HTMLInputElement>,
-	) => {
-		const file = event.target.files?.[0]
-		event.target.value = ''
-		if (!file || !activeConversation) return
-
-		const fileName = file.name || 'Lampiran'
-		const mimeType = (file.type || '').toLowerCase()
-		const isImage = mimeType.startsWith('image/')
-		const isPdf =
-			mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')
-
-		if (!isImage && !isPdf) {
-			pushBackendNote('Lampiran hanya mendukung PDF atau gambar.')
-			return
-		}
-
-		if (!activeConversation.backendId) {
-			pushBackendNote(
-				'Conversation belum tersedia dari API, lampiran tidak dikirim.',
-			)
-			return
-		}
-
-		setUploadingAttachment(true)
-		try {
-			const upload = await media.upload(file, 'whatsapp')
-			if (!upload.success || !upload.payload) {
-				throw new Error(upload.error || 'Upload media gagal')
+			const payload = (await readApiResponse(response)) as {
+				data?: { transcript?: string; phoneNumber?: string | null }
+				error?: string
 			}
-
-			const mediaPayload = upload.payload
-			const mediaType = mediaPayload.type === 'document' ? 'document' : 'image'
-
-			await conversations.sendMessage(activeConversation.backendId, {
-				content: mediaPayload.fileName || fileName,
-				message_type: 'outgoing',
-				type: mediaType,
-				content_type: mediaType,
-				media: {
-					type: mediaType,
-					url: mediaPayload.url,
-					mimeType: mediaPayload.mimeType,
-					fileName: mediaPayload.fileName || fileName,
-				},
-				content_attributes: {
-					file_name: mediaPayload.fileName || fileName,
-					mime_type: mediaPayload.mimeType,
-					file_size: mediaPayload.fileSize,
-					upload_key: mediaPayload.key,
-				},
-			})
-
-			await loadLatestMessages(activeConversation.backendId, {
-				replace: messages.length === 0,
-				scrollToBottom: 'smooth',
-			})
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'unknown error'
-			pushBackendNote(`Gagal kirim lampiran (${reason}).`)
+			if (!response.ok) throw new Error(payload.error || 'Suara belum dapat diproses')
+			setVoiceTranscript(payload.data?.transcript || '')
+			if (payload.data?.phoneNumber) setNewPhoneNumber(payload.data.phoneNumber)
+			else setNewChatError('Nomornya belum terbaca utuh. Coba ucapkan digit satu per satu atau koreksi manual.')
+		} catch (reason) {
+			setNewChatError(reason instanceof Error ? reason.message : 'Suara belum dapat diproses')
 		} finally {
-			setUploadingAttachment(false)
+			setTranscribing(false)
 		}
-	}
+	}, [])
 
-	const handleSendTemplate = async (template: WhatsAppTemplateOption) => {
-		if (!activeConversationBackendId) {
-			throw new Error('Conversation belum tersedia dari API.')
-		}
-
-		const templatePreviewText =
-			extractTemplateBodyText(template.components) || template.name
-
-		try {
-			await conversations.sendMessage(activeConversationBackendId, {
-				content: {
-					name: template.name,
-					language: template.language || 'en_US',
-				},
-				message_type: 'outgoing',
-				type: 'template',
-				content_type: 'template',
-				content_attributes: {
-					template_name: template.name,
-					template_language: template.language || 'en_US',
-					template_preview_text: templatePreviewText,
-				},
-			})
-
-			await loadLatestMessages(activeConversationBackendId, {
-				replace: messages.length === 0,
-				scrollToBottom: 'smooth',
-			})
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'unknown error'
-			pushBackendNote(`Gagal kirim template (${reason}).`)
-			throw error
-		}
-	}
-
-	const handleResolveConversation = async () => {
-		if (!activeConversation) return
-		if (activeConversation.status === 'done') return
-
-		const activeConversationIdValue = activeConversation.id
-		const activeBackendConversationId = activeConversation.backendId
-		if (!activeBackendConversationId) {
-			pushBackendNote(
-				'Conversation belum tersedia dari API, status tidak diubah.',
-			)
+	const toggleRecording = useCallback(async () => {
+		if (recording) {
+			recorderRef.current?.stop()
 			return
 		}
-
-		setResolvingConversation(true)
+		setNewChatError(null)
+		setVoiceTranscript('')
 		try {
-			await conversations.updateStatus(activeBackendConversationId, 'resolved')
-
-			setConversationRows((current) =>
-				current.map((row) =>
-					row.id === activeConversationIdValue
-						? {
-								...row,
-								status: 'done',
-								handler: 'Resolved',
-								unread: 0,
-								time: formatConversationClock(Date.now()),
-							}
-						: row,
-				),
-			)
-		} catch (error) {
-			const reason =
-				error instanceof Error && error.message
-					? error.message
-					: 'unknown error'
-			pushBackendNote(`Gagal resolve conversation (${reason}).`)
-		} finally {
-			setResolvingConversation(false)
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+			const preferredType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+				? 'audio/webm;codecs=opus'
+				: MediaRecorder.isTypeSupported('audio/ogg;codecs=opus') ? 'audio/ogg;codecs=opus' : ''
+			const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined)
+			const chunks: BlobPart[] = []
+			recorder.ondataavailable = (event) => {
+				if (event.data.size) chunks.push(event.data)
+			}
+			recorder.onstop = () => {
+				if (recorderTimeoutRef.current) window.clearTimeout(recorderTimeoutRef.current)
+				recorderTimeoutRef.current = null
+				stream.getTracks().forEach((track) => track.stop())
+				setRecording(false)
+				const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+				if (blob.size) void transcribeRecording(blob)
+			}
+			recorderRef.current = recorder
+			recorder.start()
+			setRecording(true)
+			recorderTimeoutRef.current = window.setTimeout(() => {
+				if (recorder.state === 'recording') recorder.stop()
+			}, 20_000)
+		} catch {
+			setNewChatError('Mikrofon belum bisa diakses. Izinkan akses mikrofon di browser lalu coba lagi.')
 		}
-	}
+	}, [recording, transcribeRecording])
+
+	const createConversation = useCallback(async () => {
+		setCreatingChat(true)
+		setNewChatError(null)
+		try {
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/start`, {
+				method: 'POST',
+				headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+				body: JSON.stringify({ phoneNumber: newPhoneNumber, name: newContactName || undefined }),
+			})
+			const payload = (await readApiResponse(response)) as { data?: { id?: string }; error?: string }
+			if (!response.ok || !payload.data?.id) throw new Error(payload.error || 'Percakapan belum dapat dibuat')
+			await loadConversations()
+			setSelectedId(payload.data.id)
+			setNewChatOpen(false)
+			setNewContactName('')
+			setNewPhoneNumber('')
+			setVoiceTranscript('')
+		} catch (reason) {
+			setNewChatError(reason instanceof Error ? reason.message : 'Percakapan belum dapat dibuat')
+		} finally {
+			setCreatingChat(false)
+		}
+	}, [loadConversations, newContactName, newPhoneNumber])
+
+	const sendOutbound = useCallback(async (content: string, media?: OutboundMedia) => {
+		if (!selectedId || (!content.trim() && !media) || sendingMessage) return false
+		setSendingMessage(true)
+		setComposerError(null)
+		try {
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/${selectedId}/messages`, {
+				method: 'POST',
+				headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+				body: JSON.stringify({ content: content.trim(), media, replyToMessageId: replyTarget?.id }),
+			})
+			const payload = (await readApiResponse(response)) as { error?: string }
+			if (!response.ok) throw new Error(payload.error || 'Pesan belum dapat dikirim')
+			await Promise.all([loadMessages(selectedId), loadConversations()])
+			setReplyTarget(null)
+			return true
+		} catch (reason) {
+			setComposerError(reason instanceof Error ? reason.message : 'Pesan belum dapat dikirim')
+			return false
+		} finally {
+			setSendingMessage(false)
+		}
+	}, [loadConversations, loadMessages, replyTarget, selectedId, sendingMessage])
+
+	const sendTextMessage = useCallback(async () => {
+		if (await sendOutbound(draft)) setDraft('')
+	}, [draft, sendOutbound])
+
+	const uploadMedia = useCallback(async (file: File, purpose: MediaPurpose): Promise<OutboundMedia> => {
+		if (file.size > 25 * 1024 * 1024) {
+			throw new Error(`${file.name}: ukuran file maksimal 25 MB.`)
+		}
+		const formData = new FormData()
+		formData.append('file', file)
+		formData.append('platform', 'whatsapp')
+		formData.append('purpose', purpose)
+		const response = await fetch(`${API_BASE}/media/upload`, { method: 'POST', headers: authHeaders(), body: formData })
+		const payload = (await readApiResponse(response)) as { data?: { url: string; type: string; mimeType: string; fileName: string }; error?: string }
+		if (!response.ok || !payload.data) throw new Error(payload.error || 'Media belum dapat diunggah')
+		const kind: OutboundMedia['kind'] = purpose === 'voice' || purpose === 'gif' || purpose === 'sticker'
+			? purpose
+			: payload.data.type === 'image' || payload.data.type === 'video' || payload.data.type === 'audio' ? payload.data.type : 'document'
+		return { url: payload.data.url, kind, mimeType: payload.data.mimeType, fileName: payload.data.fileName }
+	}, [])
+
+	const uploadAndSend = useCallback(async (file: File, purpose: MediaPurpose) => {
+		setUploadingMedia(true)
+		setComposerError(null)
+		try {
+			const media = await uploadMedia(file, purpose)
+			await sendOutbound(purpose === 'sticker' || purpose === 'voice' ? '' : draft, media)
+		} catch (reason) {
+			setComposerError(reason instanceof Error ? reason.message : 'Media belum dapat dikirim')
+		} finally {
+			setUploadingMedia(false)
+		}
+	}, [draft, sendOutbound, uploadMedia])
+
+	const addDraftFiles = useCallback((files: File[], purpose: MediaPurpose) => {
+		const accepted = files.filter((file) => file.size <= 25 * 1024 * 1024).slice(0, 10)
+		if (accepted.length !== files.length) setComposerError('Sebagian file dilewati. Maksimal 10 file, masing-masing 25 MB.')
+		setPendingAttachments((current) => [
+			...current,
+			...accepted.slice(0, Math.max(0, 10 - current.length)).map((file) => ({
+				id: crypto.randomUUID(),
+				file,
+				purpose: file.type === 'image/gif' && purpose === 'attachment' ? 'gif' : purpose,
+				previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/') ? URL.createObjectURL(file) : null,
+			})),
+		])
+	}, [])
+
+	const removeDraftAttachment = useCallback((id: string) => {
+		setPendingAttachments((current) => {
+			const removed = current.find((attachment) => attachment.id === id)
+			if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+			return current.filter((attachment) => attachment.id !== id)
+		})
+	}, [])
+
+	const sendDraftMessage = useCallback(async () => {
+		if (!pendingAttachments.length) {
+			await sendTextMessage()
+			return
+		}
+		if (!selectedId || sendingMessage || uploadingMedia) return
+		setSendingMessage(true)
+		setUploadingMedia(true)
+		setComposerError(null)
+		try {
+			for (let index = 0; index < pendingAttachments.length; index += 1) {
+				const attachment = pendingAttachments[index]
+				const media = await uploadMedia(attachment.file, attachment.purpose)
+				const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/${selectedId}/messages`, {
+					method: 'POST',
+					headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+					body: JSON.stringify({ content: index === 0 ? draft.trim() : '', media, replyToMessageId: index === 0 ? replyTarget?.id : undefined }),
+				})
+				const payload = (await readApiResponse(response)) as { error?: string }
+				if (!response.ok) throw new Error(payload.error || 'Lampiran belum dapat dikirim')
+			}
+			for (const attachment of pendingAttachments) if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+			setPendingAttachments([])
+			setDraft('')
+			setReplyTarget(null)
+			await Promise.all([loadMessages(selectedId), loadConversations()])
+		} catch (reason) {
+			setComposerError(reason instanceof Error ? reason.message : 'Lampiran belum dapat dikirim')
+		} finally {
+			setSendingMessage(false)
+			setUploadingMedia(false)
+		}
+	}, [draft, loadConversations, loadMessages, pendingAttachments, replyTarget, selectedId, sendTextMessage, sendingMessage, uploadMedia, uploadingMedia])
+
+	const pickMedia = useCallback((purpose: MediaPurpose, accept: string) => {
+		mediaPurposeRef.current = purpose
+		if (!fileInputRef.current) return
+		fileInputRef.current.accept = accept
+		fileInputRef.current.click()
+	}, [])
+
+	const toggleVoiceNote = useCallback(async () => {
+		if (voiceRecording) {
+			voiceRecorderRef.current?.stop()
+			return
+		}
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+			const recorder = new MediaRecorder(stream)
+			const chunks: BlobPart[] = []
+			recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+			recorder.onstop = () => {
+				stream.getTracks().forEach((track) => track.stop())
+				setVoiceRecording(false)
+				const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+				if (blob.size) void uploadAndSend(new File([blob], `voice-${Date.now()}.webm`, { type: blob.type }), 'voice')
+			}
+			voiceRecorderRef.current = recorder
+			recorder.start()
+			setVoiceRecording(true)
+		} catch {
+			setComposerError('Mikrofon belum bisa diakses. Izinkan mikrofon lalu coba lagi.')
+		}
+	}, [uploadAndSend, voiceRecording])
+
+	const deleteMessage = useCallback(async () => {
+		const ids = bulkDeleteIds.length ? bulkDeleteIds : deleteTarget ? [deleteTarget.id] : []
+		if (!selectedId || !ids.length || deletingMessage) return
+		setDeletingMessage(true)
+		try {
+			const bulk = ids.length > 1
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/${selectedId}/messages${bulk ? '/bulk-delete' : `/${ids[0]}`}`, {
+				method: 'DELETE',
+				headers: bulk ? { ...authHeaders(), 'Content-Type': 'application/json' } : authHeaders(),
+				...(bulk ? { body: JSON.stringify({ messageIds: ids }) } : {}),
+			})
+			const payload = (await readApiResponse(response)) as { error?: string }
+			if (!response.ok) throw new Error(payload.error || 'Pesan belum dapat dihapus')
+			setMessages((current) => current.filter((message) => !ids.includes(message.id)))
+			setDeleteTarget(null)
+			setBulkDeleteIds([])
+			setSelectedMessageIds(new Set())
+			await loadConversations()
+		} catch (reason) {
+			setComposerError(reason instanceof Error ? reason.message : 'Pesan belum dapat dihapus')
+		} finally {
+			setDeletingMessage(false)
+		}
+	}, [bulkDeleteIds, deleteTarget, deletingMessage, loadConversations, selectedId])
+
+	const toggleMessageSelection = useCallback((messageId: string) => {
+		setSelectedMessageIds((current) => {
+			const next = new Set(current)
+			if (next.has(messageId)) next.delete(messageId)
+			else next.add(messageId)
+			return next
+		})
+	}, [])
+
+	const copyMessages = useCallback(async (ids: Iterable<string>) => {
+		const selected = new Set(ids)
+		const text = messages.filter((message) => selected.has(message.id)).map((message) => {
+			const sender = message.message_type === 'outgoing' || message.sender_type === 'user' ? currentUserName : selectedName
+			return `[${formatCopyTimestamp(message.created_at)}] ${sender}: ${message.content || `[${message.content_type || 'media'}]`}`
+		}).join('\n')
+		if (text) await navigator.clipboard.writeText(text)
+		setContextMenu(null)
+	}, [currentUserName, messages, selectedName])
+
+	const filtered = useMemo(() => {
+		const needle = query.trim().toLowerCase()
+		return conversations.filter((item) => {
+			const matchesFilter = filter === 'all' || (filter === 'unread' ? item.unread > 0 : item.workflow === filter)
+			const matchesQuery = !needle || `${item.name} ${item.phone} ${item.preview}`.toLowerCase().includes(needle)
+			return matchesFilter && matchesQuery
+		})
+	}, [conversations, filter, query])
+
+	const filterCounts = useMemo(() => ({
+		all: conversations.length,
+		ai: conversations.filter((item) => item.workflow === 'ai').length,
+		handover: conversations.filter((item) => item.workflow === 'handover').length,
+		human: conversations.filter((item) => item.workflow === 'human').length,
+		unread: conversations.filter((item) => item.unread > 0).length,
+	}), [conversations])
+
+	const active = conversations.find((item) => item.id === selectedId) || null
+	const visibleMessages = messages.filter((message) => message.content_type !== 'reaction')
+	const singleSelectedMessage = selectedMessageIds.size === 1
+		? messages.find((message) => selectedMessageIds.has(message.id)) || null
+		: null
+	const reactionsByTarget = messages.reduce<Record<string, string[]>>((result, message) => {
+		if (message.content_type === 'reaction' && message.reply_to_message_id && message.content) {
+			result[message.reply_to_message_id] = [...(result[message.reply_to_message_id] || []), message.content]
+		}
+		return result
+	}, {})
+	const filters = [
+		['all', 'Semua percakapan'],
+		['ai', 'Ditangani AI'],
+		['handover', 'Menunggu handover'],
+		['human', 'Ditangani sales'],
+		['unread', 'Belum dibaca'],
+	] as const
 
 	return (
-		<main className="flex min-h-0 flex-1 p-3 lg:p-4">
-			<div className="flex min-h-0 w-full overflow-hidden rounded-xl border border-[var(--ocm-line)] bg-[var(--ocm-surface)] shadow-[0_10px_30px_-22px_rgb(0_0_0_/_45%)]">
-				<aside
-					className={cn(
-						'min-h-0 flex-col bg-[var(--ocm-surface)] md:flex md:w-[320px] md:min-w-[300px] md:border-r md:border-[var(--ocm-line)]',
-						activeConversation ? 'hidden' : 'flex w-full',
-					)}
-				>
-					<div className="border-b border-[var(--ocm-line)] p-3">
-						<div className="mb-2.5 flex items-center gap-2">
-							<p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ocm-text-muted)]">
-								Inbox
-							</p>
-							<span className="rounded-md border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ocm-text-muted)]">
-								{counts.all}
-							</span>
-							<div className="flex-1" />
-							<button
-								type="button"
-								onClick={handleOpenFilterDialog}
-								className="ocm-btn !h-8 !px-2.5"
+		<div className="relative flex h-full min-h-0 w-full overflow-hidden bg-background text-foreground">
+			<aside
+				className={cn(
+					'relative flex w-full shrink-0 flex-col bg-background md:w-[370px] md:border-r md:border-border lg:w-[410px]',
+					active && 'hidden md:flex',
+				)}
+			>
+				<header className="border-b border-border px-3 py-2.5 md:px-4">
+					<div className="flex items-center gap-2">
+						<Popover open={menuOpen} onOpenChange={setMenuOpen}>
+							<PopoverTrigger
+								className="relative grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								aria-label="Buka navigasi dan filter percakapan"
 							>
-								<Filter size={13} />
-							</button>
-							<button
-								type="button"
-								onClick={handleOpenNewChatDialog}
-								className="ocm-btn !h-8 !px-2.5"
-							>
-								<Plus size={13} />
-							</button>
-						</div>
-						<div className="flex items-center gap-2 rounded-md border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-2 py-1.5">
-							<Search size={13} className="text-[var(--ocm-text-muted)]" />
-							<input
-								value={searchQuery}
-								onChange={(event) => setSearchQuery(event.target.value)}
-								placeholder="Cari pelanggan..."
-								className="w-full bg-transparent text-xs text-[var(--ocm-text)] outline-none placeholder:text-[var(--ocm-text-muted)]"
-							/>
-							<span className="ocm-kbd">⌘K</span>
-						</div>
-						<div className="mt-2 flex items-center gap-1 overflow-x-auto pb-0.5">
-							{[
-								{ id: 'all', label: 'Semua WA' },
-								{ id: 'official', label: 'Official WABA' },
-								{ id: 'baileys', label: 'Baileys' },
-							].map((item) => (
+								<Menu className="size-5" />
+								{filter !== 'all' && <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />}
+							</PopoverTrigger>
+							<PopoverContent align="start" sideOffset={8} className="w-[min(18rem,calc(100vw-2rem))] gap-1 p-1.5">
 								<button
-									type="button"
-									key={item.id}
 									onClick={() => {
-										void navigate({
-											to: '/chat',
-											search: (prev) => ({
-												...prev,
-												provider: item.id as WhatsAppProviderFilter,
-												conversation_id: undefined,
-											}),
-											replace: true,
-										})
+										setMenuOpen(false)
+										void navigate({ to: '/dashboard' })
 									}}
-									className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-										selectedProvider === item.id
-											? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-											: 'border-transparent bg-transparent text-[var(--ocm-text-muted)]'
-									}`}
+									className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								>
-									{item.label}
+									<LayoutDashboard className="size-4 text-muted-foreground" />
+									Kembali ke dashboard
 								</button>
-							))}
-						</div>
-						<div className="mt-2 flex items-center gap-1 overflow-x-auto pb-0.5">
-							{[
-								{ id: 'all', label: 'Semua', value: counts.all },
-								{ id: 'ai', label: 'AI', value: counts.ai },
-								{ id: 'handover', label: 'Handover', value: counts.handover },
-								{ id: 'human', label: 'CS', value: counts.human },
-								{ id: 'unread', label: 'Unread', value: counts.unread },
-							].map((item) => (
-								<button
-									type="button"
-									key={item.id}
-									onClick={() => setFilter(item.id as ChatFilter)}
-									className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
-										filter === item.id
-											? 'border-[var(--ocm-line-strong)] bg-[var(--ocm-surface-soft)] text-[var(--ocm-text)]'
-											: 'border-transparent bg-transparent text-[var(--ocm-text-muted)]'
-									}`}
-								>
-									{item.label} <span className="opacity-70">{item.value}</span>
-								</button>
-							))}
-						</div>
+								<div className="my-1 h-px bg-border" />
+								<p className="px-3 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">Tampilkan</p>
+								{filters.map(([id, label]) => (
+									<button
+										key={id}
+										onClick={() => {
+											setFilter(id)
+											setMenuOpen(false)
+										}}
+										className={cn(
+											'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+											filter === id && 'bg-muted font-medium text-foreground',
+										)}
+									>
+										<span className="min-w-0 flex-1 truncate">{label}</span>
+										<span className="text-xs tabular-nums text-muted-foreground">{filterCounts[id]}</span>
+										<Check className={cn('size-4 text-primary', filter === id ? 'opacity-100' : 'opacity-0')} />
+									</button>
+								))}
+							</PopoverContent>
+						</Popover>
+						<label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg bg-muted px-3 md:max-w-[280px] focus-within:ring-2 focus-within:ring-ring">
+							<Search className="size-4 text-muted-foreground" />
+							<input
+								value={query}
+								onChange={(event) => setQuery(event.target.value)}
+								className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+								placeholder="Cari percakapan"
+							/>
+						</label>
+						<button
+							onClick={() => void repairAndRefresh()}
+							disabled={repairing}
+							className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+							aria-label="Perbaiki antrean dan muat ulang"
+						>
+							<RefreshCw className={cn('size-4', repairing && 'animate-spin')} />
+						</button>
 					</div>
+				</header>
 
-					<div className="min-h-0 flex-1 overflow-y-auto">
-						{loadingConversations ? (
-							<p className="px-4 py-3 text-xs text-[var(--ocm-text-muted)]">
-								Memuat percakapan...
-							</p>
-						) : (
-							<>
-								{filteredConversations.length === 0 ? (
-									<p className="px-4 py-3 text-xs text-[var(--ocm-text-muted)]">
-										Tidak ada percakapan.
-									</p>
-								) : (
-									filteredConversations.map((row) => (
-								<button
-									type="button"
-									key={row.id}
-									onClick={() => handleSelectConversation(row.id)}
-									className={`relative flex w-full items-start gap-3 border-b border-[var(--ocm-line)] px-3 py-3 text-left transition-colors ${
-										activeConversation?.id === row.id
-											? 'bg-[var(--ocm-surface-soft)]'
-											: 'bg-transparent hover:bg-[var(--ocm-surface-soft)]/70'
-									}`}
-								>
-									{activeConversation?.id === row.id ? (
-										<span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[var(--ocm-accent)]" />
-									) : null}
-									<CrmAvatar
-										name={row.name}
-										size={36}
-										online={row.online}
-									/>
-									<div className="min-w-0 flex-1">
-										<div className="mb-0.5 flex items-center gap-1.5">
-											<p className="truncate text-[13px] font-semibold text-[var(--ocm-text)]">
-												{row.name}
-											</p>
-											{row.pinned ? (
-												<Pin
-													size={10}
-													className="text-[var(--ocm-text-muted)]"
-												/>
-											) : null}
-											<span className="ml-auto text-[10px] text-[var(--ocm-text-muted)]">
-												{row.time}
-											</span>
-										</div>
-										<p className="mb-1 truncate text-xs text-[var(--ocm-text-muted)]">
-											{row.preview}
-										</p>
-											<div className="flex items-center gap-1.5">
-												<span
-													className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold border ${statusChipClass(row.status)}`}
-												>
-												{row.status === 'ai' ? <Sparkles size={9} /> : null}
-												{row.status === 'handover' ? (
-													<Handshake size={9} />
-												) : null}
-												{row.status === 'human' ? <User size={9} /> : null}
-												{row.status === 'done' ? <Check size={9} /> : null}
-												{statusLabel(row.status, row.handler)}
-												</span>
-												{row.provider ? (
-													<span
-														className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
-															row.provider === 'baileys'
-																? 'border-amber-200 bg-amber-50 text-amber-700'
-																: 'border-emerald-200 bg-emerald-50 text-emerald-700'
-														}`}
-													>
-														{row.provider === 'baileys'
-															? 'Baileys'
-															: 'Official'}
-													</span>
-												) : null}
-												<span className="truncate text-[10px] text-[var(--ocm-text-muted)]">
-													{row.intent}
-												</span>
-											<div className="ml-auto inline-flex items-center gap-1">
-												<MessageCircle size={12} className="text-emerald-500" />
-												{row.unread > 0 ? (
-													<span className="rounded-full bg-[var(--ocm-accent)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ocm-accent-fg)]">
-														{row.unread}
-													</span>
-												) : null}
-											</div>
-										</div>
+				<div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+					{loading ? (
+						<ListSkeleton />
+					) : error ? (
+						<State icon={AlertCircle} title="Kotak masuk belum dapat dibuka" body={error} />
+					) : filtered.length === 0 ? (
+						<State
+							icon={Inbox}
+							title={query ? 'Tidak ada hasil' : 'Belum ada percakapan'}
+							body={
+								query
+									? 'Coba cari dengan nama atau nomor lain.'
+									: connected
+										? `${diagnostic?.storedMessages || 0} pesan tersimpan. Pesan baru akan muncul otomatis.`
+										: 'Hubungkan WhatsApp agar pesan pelanggan muncul di sini.'
+							}
+						/>
+					) : (
+						filtered.map((item) => (
+							<button
+								key={item.id}
+								onClick={() => setSelectedId(item.id)}
+								className={cn(
+									'group flex w-full gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+									selectedId === item.id && 'bg-muted hover:bg-muted',
+								)}
+							>
+								<Avatar conversation={item} />
+								<div className="min-w-0 flex-1 border-b border-border/70 pb-2.5 group-last:border-0">
+									<div className="flex items-baseline justify-between gap-3">
+										<p className="truncate text-sm font-semibold text-foreground">{item.name}</p>
+										<time className="shrink-0 text-xs text-muted-foreground">{formatListTime(item.lastMessageAt)}</time>
 									</div>
-								</button>
+									<div className="mt-1 flex items-center gap-2">
+										<p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{item.preview}</p>
+										{item.unread > 0 && (
+											<span className="grid min-w-5 place-items-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+												{item.unread}
+											</span>
+										)}
+									</div>
+									<div className="mt-1 flex items-center justify-between gap-2">
+										<p className="min-w-0 truncate text-xs text-muted-foreground/80">{item.phone}</p>
+										<WorkflowBadge workflow={item.workflow} />
+									</div>
+								</div>
+							</button>
+						))
+					)}
+				</div>
+				<button
+					onClick={() => setNewChatOpen(true)}
+					className="absolute bottom-4 right-4 grid size-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-[0_4px_8px_rgb(15_23_42/0.2)] transition-transform hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95 motion-reduce:transform-none"
+					aria-label="Mulai percakapan baru"
+				>
+					<Plus className="size-5" />
+				</button>
+			</aside>
+
+			<main
+				className={cn('relative min-w-0 flex-1 flex-col bg-muted/30', active ? 'flex' : 'hidden md:flex')}
+				onDragEnter={(event) => {
+					if (!active || !connected) return
+					event.preventDefault()
+					dragDepthRef.current += 1
+					setDragActive(true)
+				}}
+				onDragOver={(event) => {
+					if (!active || !connected) return
+					event.preventDefault()
+					event.dataTransfer.dropEffect = 'copy'
+				}}
+				onDragLeave={(event) => {
+					if (!active || !connected) return
+					event.preventDefault()
+					dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+					if (dragDepthRef.current === 0) setDragActive(false)
+				}}
+				onDrop={(event) => {
+					event.preventDefault()
+					dragDepthRef.current = 0
+					setDragActive(false)
+					if (!active || !connected || uploadingMedia || sendingMessage) return
+					const files = Array.from(event.dataTransfer.files || [])
+					if (files.length) addDraftFiles(files, 'attachment')
+				}}
+			>
+				{active ? (
+					<>
+						<header className="flex h-[64px] shrink-0 items-center gap-3 border-b border-border bg-background px-4 md:px-6">
+							{selectedMessageIds.size ? (
+								<>
+									<button onClick={() => setSelectedMessageIds(new Set())} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Batalkan pilihan"><X className="size-5" /></button>
+									<p className="min-w-0 flex-1 text-sm font-semibold">{selectedMessageIds.size} dipilih</p>
+									{singleSelectedMessage?.content_type !== 'revoked' && singleSelectedMessage && (
+										<button onClick={() => { setReplyTarget(singleSelectedMessage); setSelectedMessageIds(new Set()) }} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Balas pesan terpilih"><Reply className="size-4" /></button>
+									)}
+									<button onClick={() => setSelectedMessageIds(new Set(visibleMessages.map((message) => message.id)))} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Pilih semua pesan"><CheckSquare className="size-4" /></button>
+									<button onClick={() => void copyMessages(selectedMessageIds)} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted" aria-label="Salin pesan terpilih"><Copy className="size-4" /></button>
+									<button onClick={() => setBulkDeleteIds([...selectedMessageIds])} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive" aria-label="Hapus pesan terpilih"><Trash2 className="size-4" /></button>
+								</>
+							) : (
+								<>
+									<button
+										onClick={() => setSelectedId(null)}
+										className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+										aria-label="Kembali ke daftar percakapan"
+									>
+										<ArrowLeft className="size-5" />
+									</button>
+									<button type="button" onClick={() => setProfileOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Lihat profil ${active.name}`}>
+										<Avatar conversation={active} size="sm" />
+										<div className="min-w-0 flex-1">
+											<h2 className="truncate text-sm font-semibold text-foreground">{active.name}</h2>
+											<p className={cn('truncate text-xs', contactPresence === 'composing' || contactPresence === 'recording' ? 'font-medium text-primary' : 'text-muted-foreground')}>
+												{contactPresence === 'composing' ? 'sedang mengetik…' : contactPresence === 'recording' ? 'sedang merekam audio…' : active.phone}
+											</p>
+										</div>
+										<Info className="mr-1 size-4 shrink-0 text-muted-foreground" />
+									</button>
+								</>
+							)}
+						</header>
+
+						<div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-4 md:px-6">
+							<div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end gap-1.5">
+								{messages.length === 0 ? (
+									<State icon={MessageCircle} title="Belum ada pesan tersimpan" body="Pesan pertama dari kontak ini akan muncul otomatis." />
+								) : (
+									visibleMessages.map((message) => (
+									<MessageBubble
+											key={message.id}
+											message={message}
+											selected={selectedMessageIds.has(message.id)}
+											selectionMode={selectedMessageIds.size > 0}
+										reactions={reactionsByTarget[message.id] || []}
+										quotedMessage={messages.find((candidate) => candidate.id === message.reply_to_message_id) || null}
+											onSelect={() => toggleMessageSelection(message.id)}
+											onContextMenu={(x, y) => setContextMenu({ x, y, message })}
+										/>
 									))
 								)}
-
-								{conversationRows.length > 0 ? (
-									<div className="border-t border-[var(--ocm-line)] px-3 py-3">
-										<div className="mb-2 text-[10px] text-[var(--ocm-text-muted)]">
-											Menampilkan {conversationRows.length} dari {counts.all}{' '}
-											percakapan
-										</div>
-										{loadingMoreConversations ? (
-											<p className="text-xs text-[var(--ocm-text-muted)]">
-												Memuat 10 percakapan lagi...
-											</p>
-										) : hasMoreConversations ? (
-											<button
-												type="button"
-												onClick={handleLoadMoreConversations}
-												className="w-full rounded-lg border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-3 py-2 text-xs font-semibold text-[var(--ocm-text)] transition hover:bg-[var(--ocm-surface)]"
-											>
-												Muat 10 percakapan lagi
-											</button>
-										) : (
-											<p className="text-xs text-[var(--ocm-text-muted)]">
-												Semua percakapan sudah dimuat.
-											</p>
-										)}
-									</div>
-								) : null}
-							</>
-						)}
-					</div>
-				</aside>
-
-				<section
-					className={cn(
-						'min-w-0 flex-1 flex-col bg-[var(--ocm-bg)]',
-						activeConversation ? 'flex' : 'hidden md:flex',
-					)}
-				>
-					{activeConversation ? (
-						<>
-							<header className="flex flex-wrap items-center gap-3 border-b border-[var(--ocm-line)] px-4 py-3 lg:flex-nowrap lg:px-5">
-								<button
-									type="button"
-									onClick={handleBackToConversationList}
-									aria-label="Kembali ke daftar chat"
-									title="Kembali ke daftar chat"
-									className="ocm-btn !h-9 !w-9 !px-0 md:!hidden"
-								>
-									<ArrowLeft size={15} />
-								</button>
-								<CrmAvatar
-									name={displayName || 'Pelanggan'}
-									size={36}
-									online={activeConversation?.online}
-								/>
-								<div className="min-w-0 flex-1">
-									<div className="mb-0.5 flex items-center gap-2">
-										<p className="truncate text-sm font-semibold text-[var(--ocm-text)]">
-											{displayName || 'Pelanggan'}
-										</p>
-										{detailBadges?.vip ? (
-											<span className="ocm-tag !text-[10px]">VIP</span>
-										) : null}
-										<span className="ocm-tag !text-[10px]">
-											Repeat ×
-											{detailBadges
-												? Math.max(0, detailBadges.repeat_orders || 0)
-												: '-'}
-										</span>
-										<span className="ocm-tag ocm-tag-success !text-[10px]">
-											Lifetime{' '}
-											{detailBadges
-												? formatCurrencyIdrCompact(detailBadges.lifetime_value)
-												: '-'}
-										</span>
-									</div>
-									<p className="truncate text-[11px] text-[var(--ocm-text-muted)]">
-										{displayPhone || '-'} · WhatsApp · Jakarta WIB
-									</p>
-								</div>
-								<div className="flex items-center gap-1.5">
-									<button
-										type="button"
-										onClick={() => setAiMode((current) => !current)}
-										className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold ${
-											aiMode
-												? 'border-[color:color-mix(in_oklab,var(--ocm-warning)_30%,transparent)] bg-[color:color-mix(in_oklab,var(--ocm-warning)_18%,transparent)] text-[var(--ocm-warning)]'
-												: 'border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] text-[var(--ocm-text-muted)]'
-										}`}
-									>
-										<Sparkles size={12} />
-										<span className="hidden sm:inline">AI Mode</span>
-									</button>
-									<button type="button" className="ocm-btn !h-8 !px-3">
-										<Handshake size={13} />
-										<span className="hidden sm:inline">Takeover</span>
-									</button>
-									<button
-										type="button"
-										title="Mark as Resolved"
-										onClick={() => void handleResolveConversation()}
-										disabled={
-											resolvingConversation ||
-											activeConversation?.status === 'done'
-										}
-										className={`ocm-btn !h-8 !px-2.5 ${
-											resolvingConversation ||
-											activeConversation?.status === 'done'
-												? 'cursor-not-allowed opacity-60'
-												: ''
-										}`}
-									>
-										{resolvingConversation ? (
-											<Loader2
-												size={13}
-												className="animate-spin text-emerald-400"
-											/>
-										) : (
-											<Check size={13} className="text-emerald-400" />
-										)}
-									</button>
-									<button
-										type="button"
-										onClick={() => setPanelOpen((current) => !current)}
-										className="ocm-btn !hidden !h-8 !px-2.5 xl:!inline-flex"
-									>
-										<User size={13} />
-									</button>
-									<button type="button" className="ocm-btn !h-8 !px-2.5">
-										<MoreHorizontal size={13} />
-									</button>
-								</div>
-							</header>
-
-							{activeConversation?.status === 'ai' && activeAiBanner ? (
-								<div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--ocm-line)] bg-[var(--ocm-surface)]/85 px-4 py-2 text-[11px] text-[var(--ocm-text-muted)]">
-									<Bot size={13} className="text-[var(--ocm-accent)]" />
-									<span className="truncate">
-										AI handling · confidence{' '}
-										<b className="text-emerald-500">
-											{toConfidenceLabel(activeAiBanner.analytics.confidence)}
-										</b>{' '}
-										· intent{' '}
-										<b className="text-[var(--ocm-text)]">
-											{activeAiBanner.analytics.intent || '-'}
-										</b>
-									</span>
-									<div className="hidden flex-1 md:block" />
-									<span className="truncate">
-										Workflow: {activeAiBanner.analytics.workflowName || '-'}
-									</span>
-									<span>·</span>
-									<span className="truncate">
-										RAG: {activeAiBanner.analytics.ragLabel || '-'}
-									</span>
-								</div>
-							) : null}
-
-							<div
-								ref={messagesContainerRef}
-								onScroll={handleMessagesScroll}
-								className="min-h-0 flex-1 overflow-y-auto px-4 py-4 lg:px-8"
-							>
-								<div className="mb-4 text-center">
-									{loadingOlderMessages ? (
-										<span className="inline-flex items-center gap-2 rounded-full border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[var(--ocm-text-muted)]">
-											<Loader2 size={11} className="animate-spin" />
-											Memuat 10 pesan sebelumnya...
-										</span>
-									) : hasOlderMessages && activeConversationBackendId ? (
-										<button
-											type="button"
-											onClick={() =>
-												void loadOlderMessages(activeConversationBackendId)
-											}
-											className="inline-flex items-center gap-2 rounded-full border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ocm-text-muted)] transition hover:text-[var(--ocm-text)]"
-										>
-											Scroll ke atas atau muat 10 pesan sebelumnya
-										</button>
-									) : messages.length > 0 ? (
-										<span className="inline-flex items-center gap-2 rounded-full border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-[var(--ocm-text-muted)]">
-											Awal percakapan yang dimuat
-										</span>
-									) : null}
-								</div>
-
-								<div className="mb-4 text-center">
-									<span className="ocm-tag">Hari ini</span>
-								</div>
-
-								{loadingMessages && messages.length === 0 ? (
-									<p className="text-center text-xs text-[var(--ocm-text-muted)]">
-										Memuat pesan...
-									</p>
-								) : messages.length === 0 ? (
-									<p className="text-center text-xs text-[var(--ocm-text-muted)]">
-										Belum ada pesan di conversation ini.
-									</p>
-								) : (
-									messages.map((message) => {
-										const isCustomer = message.from === 'customer'
-										return (
-											<div
-												key={message.id}
-												className={`mb-2 flex ${isCustomer ? 'justify-start' : 'justify-end'}`}
-											>
-												<div
-													className={`flex max-w-[74%] flex-col ${
-														isCustomer ? 'items-start' : 'items-end'
-													}`}
-												>
-													{message.kind === 'image' ? (
-														<div className="grid h-40 w-60 place-items-center rounded-lg border border-dashed border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] text-[10px] uppercase tracking-[0.08em] text-[var(--ocm-text-muted)]">
-															{message.text}
-														</div>
-													) : (
-														<div
-															className={`rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
-																isCustomer
-																	? 'rounded-tl-sm border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] text-[var(--ocm-text)]'
-																	: 'rounded-tr-sm border border-[color:color-mix(in_oklab,var(--ocm-warning)_35%,transparent)] bg-[color:color-mix(in_oklab,var(--ocm-warning)_16%,transparent)] text-[var(--ocm-text)]'
-															}`}
-														>
-															{message.text}
-														</div>
-													)}
-
-													<div className="mt-1 flex items-center gap-1 text-[10px] text-[var(--ocm-text-muted)]">
-														{!isCustomer && message.model ? (
-															<>
-																<Sparkles
-																	size={9}
-																	className="text-[var(--ocm-accent)]"
-																/>
-																<span>{message.model}</span>
-																<span>·</span>
-																<span>{message.tokens || 0}tok</span>
-																<span>·</span>
-																<span>{message.latency || 0}ms</span>
-																<span>·</span>
-																<span>conf {message.confidence ?? '-'}</span>
-																<span>·</span>
-															</>
-														) : null}
-														<span>{message.time}</span>
-														{!isCustomer ? (
-															message.status === 'read' ? (
-																<CheckCheck
-																	size={11}
-																	className="text-sky-400"
-																/>
-															) : (
-																<Check size={11} />
-															)
-														) : null}
-													</div>
-												</div>
-											</div>
-										)
-									})
-								)}
-								<div ref={messagesEndRef} />
 							</div>
+						</div>
 
-							<div className="border-t border-[var(--ocm-line)] px-4 pb-0 pt-2 lg:px-5">
-								<div className="mb-2 flex items-center gap-1.5 overflow-x-auto">
-									<span className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] uppercase tracking-[0.12em] text-[var(--ocm-text-muted)]">
-										<Sparkles size={10} className="text-[var(--ocm-accent)]" />
-										AI Suggest
-									</span>
-									{aiSuggestions.map((item) => (
-										<button
-											type="button"
-											key={`${item.intentKey}-${item.label}`}
-											onClick={() => setDraft(item.text)}
-											className="whitespace-nowrap rounded-md border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-2.5 py-1 text-[11px] text-[var(--ocm-text-muted)] hover:text-[var(--ocm-text)]"
-										>
-											{item.label}
-										</button>
-									))}
-								</div>
-							</div>
-
+						<footer className="shrink-0 border-t border-border bg-background px-3 py-3 md:px-6">
 							<form
-								onSubmit={handleSend}
-								className="border-t border-[var(--ocm-line)] px-4 py-3 lg:px-5"
+								onSubmit={(event) => {
+									event.preventDefault()
+									void sendDraftMessage()
+								}}
+								className="mx-auto max-w-3xl"
 							>
-								<div className="rounded-lg border border-[var(--ocm-line)] bg-[var(--ocm-surface)] px-3 py-2">
-									<input
-										ref={attachmentInputRef}
-										type="file"
-										className="hidden"
-										accept="image/*,application/pdf,.pdf"
-										onChange={handleAttachmentFileChange}
-									/>
+								<input
+									ref={fileInputRef}
+									type="file"
+									multiple
+									className="sr-only"
+									onChange={(event) => {
+										const files = Array.from(event.target.files || [])
+										if (files.length) addDraftFiles(files, mediaPurposeRef.current)
+										event.currentTarget.value = ''
+									}}
+								/>
+								{pendingAttachments.length > 0 && (
+									<div className="scrollbar-hidden mb-2 flex gap-2 overflow-x-auto overscroll-x-contain pb-1">
+										{pendingAttachments.map((attachment) => <AttachmentDraft key={attachment.id} attachment={attachment} onRemove={() => removeDraftAttachment(attachment.id)} />)}
+										<button type="button" onClick={() => pickMedia('attachment', 'image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip')} className="grid size-20 shrink-0 place-items-center rounded-xl border border-dashed border-input text-muted-foreground hover:border-primary hover:text-primary" aria-label="Tambah lampiran lain"><Plus className="size-5" /></button>
+									</div>
+								)}
+								{replyTarget && (
+									<div className="mb-2 flex items-center gap-3 rounded-lg bg-accent px-3 py-2">
+										<div className="min-w-0 flex-1">
+											<p className="text-xs font-semibold text-primary">{replyTarget.message_type === 'outgoing' || replyTarget.sender_type === 'user' ? 'Kamu' : active.name}</p>
+											<p className="truncate text-xs text-muted-foreground">{replyTarget.content || `[${replyTarget.content_type || 'media'}]`}</p>
+										</div>
+										<button type="button" onClick={() => setReplyTarget(null)} className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Batalkan balasan"><X className="size-4" /></button>
+									</div>
+								)}
+								<div className="flex items-end gap-2">
+									<Popover>
+										<PopoverTrigger
+											disabled={!connected || uploadingMedia || sendingMessage}
+											className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+											aria-label="Lampirkan media"
+										>
+											<Paperclip className={cn('size-4', uploadingMedia && 'animate-pulse')} />
+										</PopoverTrigger>
+										<PopoverContent align="start" side="top" className="w-56 p-1.5">
+											<MediaOption icon={ImageIcon} label="Foto atau gambar" onClick={() => pickMedia('attachment', 'image/*')} />
+											<MediaOption icon={Video} label="Video" onClick={() => pickMedia('attachment', 'video/*')} />
+											<MediaOption icon={FileText} label="Dokumen" onClick={() => pickMedia('attachment', '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip')} />
+											<MediaOption icon={Sticker} label="Buat sticker" onClick={() => pickMedia('sticker', 'image/*')} />
+											<MediaOption icon={Video} label="Kirim sebagai GIF" onClick={() => pickMedia('gif', 'image/gif,video/*')} />
+										</PopoverContent>
+									</Popover>
+									<Popover>
+										<PopoverTrigger className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Pilih emoji">
+											<Smile className="size-4" />
+										</PopoverTrigger>
+										<PopoverContent align="start" side="top" className="w-64 p-2">
+											<div className="grid grid-cols-8 gap-1">
+												{['😀','😂','🥰','😍','😊','🙏','👍','👏','🎉','❤️','🔥','✨','😅','😭','🤔','👌','💪','🙌','📌','✅','❌','👀','💯','🤝'].map((emoji) => (
+													<button key={emoji} type="button" onClick={() => setDraft((current) => `${current}${emoji}`)} className="grid size-7 place-items-center rounded-md text-lg hover:bg-muted">{emoji}</button>
+												))}
+											</div>
+										</PopoverContent>
+									</Popover>
 									<textarea
 										value={draft}
-										onChange={(event) => setDraft(event.target.value)}
-										placeholder={
-											aiMode
-												? 'AI sedang handle, ketik untuk takeover...'
-												: 'Balas sebagai CS, ketik / untuk snippet...'
-										}
-										rows={2}
-										className="w-full resize-none bg-transparent text-sm text-[var(--ocm-text)] outline-none placeholder:text-[var(--ocm-text-muted)]"
+										onChange={(event) => {
+											setDraft(event.target.value)
+											if (composerError) setComposerError(null)
+										}}
+										onKeyDown={(event) => {
+											if (event.key === 'Enter' && !event.shiftKey) {
+												event.preventDefault()
+														void sendDraftMessage()
+											}
+										}}
+										rows={1}
+										maxLength={4096}
+										placeholder={connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
+										disabled={!connected || sendingMessage || uploadingMedia || voiceRecording}
+										className="max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-muted px-4 py-3 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
 									/>
-									<div className="mt-2 flex flex-wrap items-center gap-1.5">
-										<button
-											type="button"
-											className="ocm-btn !h-8 !px-2.5"
-											onClick={handleAttachmentButtonClick}
-											disabled={uploadingAttachment}
-											title="Kirim PDF / gambar"
-										>
-											<Paperclip size={13} />
-										</button>
-										<button type="button" className="ocm-btn !h-8 !px-2.5">
-											<Smile size={13} />
-										</button>
-										<button
-											type="button"
-											className="ocm-btn !h-8 !px-2.5"
-											onClick={handleTemplateButtonClick}
-										>
-											<Zap size={13} />
-											Template
-										</button>
-										
-										<div className="flex-1" />
-										<span className="text-[10px] text-[var(--ocm-text-muted)]">
-											{draft.length}/4096
-										</span>
-										<button
-											type="submit"
-											className="ocm-btn ocm-btn-primary !h-8 !px-3.5"
-										>
-											<Send size={13} />
-											Kirim
-										</button>
-									</div>
+									<button
+										type={draft.trim() || pendingAttachments.length ? 'submit' : 'button'}
+										onClick={draft.trim() || pendingAttachments.length ? undefined : () => void toggleVoiceNote()}
+										disabled={!connected || sendingMessage || uploadingMedia}
+										className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 motion-reduce:transform-none"
+										aria-label={draft.trim() || pendingAttachments.length ? 'Kirim pesan' : voiceRecording ? 'Selesai merekam voice note' : 'Rekam voice note'}
+									>
+										{draft.trim() || pendingAttachments.length ? <SendHorizontal className={cn('size-4', sendingMessage && 'animate-pulse')} /> : voiceRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
+									</button>
 								</div>
+								{voiceRecording && <p className="mt-2 text-xs font-medium text-destructive">Merekam voice note… tekan tombol merah untuk mengirim.</p>}
+								{uploadingMedia && <p className="mt-2 text-xs text-muted-foreground">Menyiapkan dan mengunggah media…</p>}
+								{composerError && <p className="mt-2 text-xs leading-5 text-destructive" role="alert">{composerError}</p>}
 							</form>
-						</>
-					) : (
-						<div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
-							<div className="max-w-sm">
-								<div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full border border-[var(--ocm-line)] bg-[var(--ocm-surface)] text-[var(--ocm-text-muted)]">
-									<MessageCircle size={20} />
-								</div>
-								<p className="text-sm font-semibold text-[var(--ocm-text)]">
-									Pilih percakapan
-								</p>
-								<p className="mt-1 text-xs leading-relaxed text-[var(--ocm-text-muted)]">
-									Inbox siap, belum ada chatroom yang dibuka.
-								</p>
-							</div>
+						</footer>
+					</>
+				) : (
+					<State icon={MessageCircle} title="Buka sebuah percakapan" body="Pilih pelanggan di sebelah kiri untuk membaca riwayat pesannya." />
+				)}
+				{dragActive && (
+					<div className="pointer-events-none absolute inset-3 z-40 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-background/90 p-6 text-center shadow-lg backdrop-blur-sm">
+						<div>
+							<div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary"><Paperclip className="size-5" /></div>
+							<p className="mt-3 text-sm font-semibold">Lepaskan file untuk mengirim</p>
+							<p className="mt-1 text-xs text-muted-foreground">Foto, video, audio, atau dokumen hingga 25 MB.</p>
 						</div>
-					)}
-				</section>
+					</div>
+				)}
+			</main>
 
-				{isTemplateModalOpen ? (
-					<TemplateSelector
-						inboxId={activeConversationInboxId}
-						onClose={() => setIsTemplateModalOpen(false)}
-						onSend={handleSendTemplate}
-					/>
-				) : null}
+			{active && profileOpen && (
+				<ContactProfilePanel
+					conversation={active}
+					onClose={() => setProfileOpen(false)}
+					onCopyPhone={() => void navigator.clipboard.writeText(active.phone)}
+				/>
+			)}
 
-				{panelOpen && activeConversation ? (
-					<aside className="hidden min-h-0 w-[336px] min-w-[320px] flex-col border-l border-[var(--ocm-line)] bg-[var(--ocm-surface)] xl:flex">
-						<div className="border-b border-[var(--ocm-line)] px-5 py-4 text-center">
-							<CrmAvatar
-								name={displayName || 'Pelanggan'}
-								size={64}
-								online={activeConversation?.online}
-								className="mx-auto"
-							/>
-							<p className="mt-2 text-sm font-semibold">{displayName || '-'}</p>
-							<p className="text-xs text-[var(--ocm-text-muted)]">
-								{displayPhone || '-'}
-							</p>
-							<div className="mt-2 flex items-center justify-center gap-1.5">
-								{detailBadges?.vip ? (
-									<span className="ocm-tag">VIP</span>
-								) : null}
-								<span className="ocm-tag">
-									Repeat ×
-									{detailBadges
-										? Math.max(0, detailBadges.repeat_orders || 0)
-										: '-'}
-								</span>
-								<span className="ocm-tag ocm-tag-success">
-									Lifetime{' '}
-									{detailBadges
-										? formatCurrencyIdrCompact(detailBadges.lifetime_value)
-										: '-'}
-								</span>
-							</div>
-						</div>
-
-						<div className="min-h-0 flex-1 overflow-y-auto">
-							<section className="border-b border-[var(--ocm-line)] p-4">
-								<PanelLabel icon={<Sparkles size={11} />}>
-									AI Summary
-								</PanelLabel>
-								{loadingContactDetail ? (
-									<div className="rounded-md border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-2.5 py-2 text-xs text-[var(--ocm-text-muted)]">
-										Memuat AI summary...
-									</div>
-								) : (
-									<div className="rounded-md border border-[color:color-mix(in_oklab,var(--ocm-warning)_32%,transparent)] bg-[color:color-mix(in_oklab,var(--ocm-warning)_14%,transparent)] px-2.5 py-2 text-xs leading-relaxed text-[var(--ocm-text)]">
-										{contactDetail?.ai_summary?.text || 'Belum ada AI summary.'}
-									</div>
-								)}
-							</section>
-
-							<section className="border-b border-[var(--ocm-line)] p-4">
-								<PanelLabel icon={<Zap size={11} />}>Live Signals</PanelLabel>
-								<SignalRow
-									label="Sentiment"
-									value={contactDetail?.live_signals?.sentiment?.value || '-'}
-									tone={resolveSignalTone(
-										contactDetail?.live_signals?.sentiment?.tone,
-									)}
-								/>
-								<SignalRow
-									label="Intent"
-									value={contactDetail?.live_signals?.intent?.value || '-'}
-									tone={resolveSignalTone(
-										contactDetail?.live_signals?.intent?.tone,
-									)}
-								/>
-								<SignalRow
-									label="Buying Stage"
-									value={
-										contactDetail?.live_signals?.buying_stage?.value || '-'
-									}
-									tone={resolveSignalTone(
-										contactDetail?.live_signals?.buying_stage?.tone,
-									)}
-								/>
-								<SignalRow
-									label="Churn Risk"
-									value={contactDetail?.live_signals?.churn_risk?.value || '-'}
-									tone={resolveSignalTone(
-										contactDetail?.live_signals?.churn_risk?.tone,
-									)}
-									isLast
-								/>
-							</section>
-
-							{backendNotes.length > 0 ? (
-								<section className="p-4">
-									<PanelLabel icon={<AlertCircle size={11} />}>
-										Backend Gap Notes
-									</PanelLabel>
-									<div className="space-y-2">
-										{backendNotes.map((note) => (
-											<div
-												key={note}
-												className="rounded-md border border-[var(--ocm-line)] bg-[var(--ocm-surface-soft)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--ocm-text-muted)]"
-											>
-												{note}
-											</div>
-										))}
-									</div>
-								</section>
-							) : null}
-						</div>
-					</aside>
-				) : null}
-			</div>
-
-			<Dialog open={isFilterDialogOpen} onOpenChange={setIsFilterDialogOpen}>
-				<DialogContent
-					showCloseButton={false}
-					className="max-h-[calc(100vh-1rem)] w-[min(980px,calc(100vw-1rem))] max-w-none gap-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-0 text-slate-900 sm:w-[min(980px,calc(100vw-2rem))]"
+			{contextMenu && (
+				<div
+					className="fixed z-50 w-48 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-md"
+					style={{ left: Math.min(contextMenu.x, window.innerWidth - 208), top: Math.min(contextMenu.y, window.innerHeight - 170) }}
+					onClick={(event) => event.stopPropagation()}
+					role="menu"
 				>
-					<div className="flex items-center justify-between px-5 pb-5 pt-5 sm:px-7">
-						<DialogTitle className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-[32px]">
-							Filter
-						</DialogTitle>
-						<button
-							type="button"
-							onClick={() => setIsFilterDialogOpen(false)}
-							className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-						>
-							<X size={22} />
-						</button>
-					</div>
+					{contextMenu.message.content_type !== 'revoked' && <ContextAction icon={Reply} label="Balas pesan" onClick={() => {
+						setReplyTarget(contextMenu.message)
+						setContextMenu(null)
+					}} />}
+					<ContextAction icon={Copy} label="Salin pesan" onClick={() => void copyMessages([contextMenu.message.id])} />
+					<ContextAction icon={CheckSquare} label="Pilih pesan" onClick={() => {
+						setSelectedMessageIds(new Set([contextMenu.message.id]))
+						setContextMenu(null)
+					}} />
+					<div className="my-1 h-px bg-border" />
+					<ContextAction icon={Trash2} label="Hapus dari CRM" destructive onClick={() => {
+						setDeleteTarget(contextMenu.message)
+						setContextMenu(null)
+					}} />
+				</div>
+			)}
 
-					<div className="overflow-y-auto px-5 pb-7 sm:px-7">
-						<div className="grid gap-x-8 gap-y-6 md:grid-cols-2">
-							<div className="space-y-2.5">
-								<p className="text-sm font-semibold text-slate-700">
-									Date Range
-								</p>
-								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<ChatFilterDateField
-										value={draftFilters.dateFrom}
-										placeholder="Start date"
-										onChange={(nextValue) =>
-											setDraftFilters((current) => ({
-												...current,
-												dateFrom: nextValue,
-											}))
-										}
-									/>
-									<ChatFilterDateField
-										value={draftFilters.dateTo}
-										placeholder="End date"
-										onChange={(nextValue) =>
-											setDraftFilters((current) => ({
-												...current,
-												dateTo: nextValue,
-											}))
-										}
-									/>
-								</div>
-							</div>
-
-							<ChatFilterSelectField
-								label="Inbox"
-								value={draftFilters.inboxId}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										inboxId: nextValue,
-									}))
-								}
-								placeholder="All Inboxes"
-								options={inboxOptions}
-								disabled={filterOptionsLoading}
-							/>
-
-							<ChatFilterSelectField
-								label="Label"
-								value={draftFilters.labelId}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										labelId: nextValue,
-									}))
-								}
-								placeholder="All Labels"
-								options={labelOptions}
-								disabled={filterOptionsLoading}
-							/>
-
-							<ChatFilterSelectField
-								label="Resolved By"
-								value={draftFilters.resolvedById}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										resolvedById: nextValue,
-									}))
-								}
-								placeholder="Choose Agent"
-								options={agentOptions}
-								disabled={filterOptionsLoading}
-							/>
-
-							<ChatFilterSelectField
-								label="Agent"
-								value={draftFilters.agentId}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										agentId: nextValue,
-									}))
-								}
-								placeholder="Choose Agent"
-								options={agentOptions}
-								disabled={filterOptionsLoading}
-							/>
-
-							<ChatFilterSelectField
-								label="AI Agent"
-								value={draftFilters.aiAgentId}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										aiAgentId: nextValue,
-									}))
-								}
-								placeholder="Choose AI Agent"
-								options={aiAgentOptions}
-								disabled={filterOptionsLoading}
-							/>
-
-							<ChatFilterSelectField
-								label="Status"
-								value={draftFilters.status}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										status: nextValue as AdvancedChatFilters['status'],
-									}))
-								}
-								placeholder="All Statuses"
-								options={CHAT_STATUS_FILTER_OPTIONS}
-							/>
-
-							<ChatFilterSelectField
-								label="Pipeline Status"
-								value={draftFilters.pipelineStageId}
-								onChange={(nextValue) =>
-									setDraftFilters((current) => ({
-										...current,
-										pipelineStageId: nextValue,
-									}))
-								}
-								placeholder="All Statuses"
-								options={pipelineStageOptions}
-								disabled={filterOptionsLoading}
-							/>
-						</div>
-					</div>
-
-					<div className="grid grid-cols-2 gap-3 border-t border-slate-200 px-5 py-5 sm:flex sm:justify-end sm:px-7">
-						<button
-							type="button"
-							onClick={handleResetAdvancedFilters}
-							className="ocm-btn !h-10 !rounded-xl !border-slate-300 !bg-white !px-5 !text-sm !font-semibold !text-slate-700 sm:min-w-[120px]"
-						>
-							Reset
-						</button>
-						<button
-							type="button"
-							onClick={handleApplyAdvancedFilters}
-							className="ocm-btn ocm-btn-primary !h-10 !rounded-xl !px-5 !text-sm !font-semibold sm:min-w-[120px]"
-						>
-							Apply
-						</button>
-					</div>
-				</DialogContent>
-			</Dialog>
-
-			<Dialog open={isNewChatDialogOpen} onOpenChange={setIsNewChatDialogOpen}>
-				<DialogContent
-					showCloseButton={false}
-					className="flex max-h-[calc(100vh-1rem)] w-[min(920px,calc(100vw-1rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-0 text-gray-900 shadow-2xl sm:w-[min(920px,calc(100vw-2rem))]"
-				>
-					<DialogHeader className="border-b border-gray-100 px-5 py-4 sm:px-6">
-						<div className="flex items-start justify-between gap-4">
-							<div className="min-w-0">
-								<DialogTitle className="text-xl font-bold tracking-tight text-gray-900">
-									New Chat
-								</DialogTitle>
-								<p className="mt-1 text-sm text-gray-500">
-									Buat percakapan WhatsApp baru dengan template yang sudah
-									disetujui.
-								</p>
-							</div>
-							<button
-								type="button"
-								onClick={handleCloseNewChatDialog}
-								className="rounded-xl p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
-							>
-								<X size={20} />
-							</button>
-						</div>
+			<Dialog open={newChatOpen} onOpenChange={(open) => {
+				if (recording || transcribing || creatingChat) return
+				setNewChatOpen(open)
+				if (!open) setNewChatError(null)
+			}}>
+				<DialogContent className="max-w-md gap-4 p-5 sm:max-w-md">
+					<DialogHeader className="pr-8">
+						<DialogTitle className="text-lg">Mulai percakapan</DialogTitle>
+						<DialogDescription>Ketik nomor WhatsApp atau ucapkan digitnya. Kamu tetap bisa mengecek hasilnya sebelum membuka chat.</DialogDescription>
 					</DialogHeader>
-
-					<div className="flex-1 overflow-y-auto p-5 sm:p-6">
-						<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.85fr)]">
-							<div className="space-y-5">
-								<div className="space-y-2">
-									<label
-										htmlFor="new-chat-inbox"
-										className="text-xs font-black uppercase tracking-widest text-gray-400"
-									>
-										Select Inbox
-									</label>
-									<select
-										id="new-chat-inbox"
-										value={newChatForm.inboxId}
-										onChange={(event) =>
-											setNewChatForm((current) => ({
-												...current,
-												inboxId: event.target.value,
-											}))
-										}
-										disabled={filterOptionsLoading || submittingNewChat}
-										className={NEW_CHAT_FIELD_CLASSNAME}
-									>
-										<option value="">Choose Inbox</option>
-										{inboxOptions.map((item) => (
-											<option key={item.id} value={item.id}>
-												{item.label}
-											</option>
-										))}
-									</select>
-									{selectedNewChatInbox?.provider ? (
-										<div className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600">
-											{selectedNewChatInbox.provider === 'official'
-												? 'Official WABA'
-												: 'Baileys'}
-										</div>
-									) : null}
-								</div>
-
-								<div className="space-y-2">
-									<label
-										htmlFor="new-chat-name"
-										className="text-xs font-black uppercase tracking-widest text-gray-400"
-									>
-										Name
-									</label>
-									<input
-										id="new-chat-name"
-										type="text"
-										value={newChatForm.name}
-										onChange={(event) =>
-											setNewChatForm((current) => ({
-												...current,
-												name: event.target.value,
-											}))
-										}
-										placeholder="Input Name"
-										disabled={submittingNewChat}
-										className={NEW_CHAT_FIELD_CLASSNAME}
-									/>
-								</div>
-
-								<div className="space-y-2">
-									<label
-										htmlFor="new-chat-phone"
-										className="text-xs font-black uppercase tracking-widest text-gray-400"
-									>
-										Phone Number
-									</label>
-									<input
-										id="new-chat-phone"
-										type="tel"
-										value={newChatForm.phoneNumber}
-										onChange={(event) =>
-											setNewChatForm((current) => ({
-												...current,
-												phoneNumber: formatPhoneForInput(event.target.value),
-											}))
-										}
-										placeholder="+62 85710369281"
-										disabled={submittingNewChat}
-										className={NEW_CHAT_FIELD_CLASSNAME}
-									/>
-								</div>
-
-								<div className="space-y-2">
-									<label
-										htmlFor="new-chat-template"
-										className="text-xs font-black uppercase tracking-widest text-gray-400"
-									>
-										Select Template
-									</label>
-									<select
-										id="new-chat-template"
-										value={newChatForm.templateId}
-										onChange={(event) =>
-											setNewChatForm((current) => ({
-												...current,
-												templateId: event.target.value,
-											}))
-										}
-										disabled={
-											loadingNewChatTemplates ||
-											submittingNewChat ||
-											!newChatForm.inboxId
-										}
-										className={NEW_CHAT_FIELD_CLASSNAME}
-									>
-										<option value="">
-											{loadingNewChatTemplates
-												? 'Loading templates...'
-												: 'Choose Template'}
-										</option>
-										{newChatTemplates.map((item) => (
-											<option key={item.id} value={item.id}>
-												{item.name} ({item.language})
-											</option>
-										))}
-									</select>
-									{newChatTemplateError ? (
-										<p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-600">
-											{newChatTemplateError}
-										</p>
-									) : null}
-									{hasUnsupportedNewChatTemplateVariables ? (
-										<p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-											Template ini butuh variabel tambahan dan belum bisa
-											dikirim dari modal chat ini.
-										</p>
-									) : null}
-								</div>
-							</div>
-
-							<section className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
-								<div className="flex items-center justify-between gap-3">
-									<div>
-										<h3 className="text-sm font-bold text-gray-900">Preview</h3>
-										<p className="mt-1 text-xs text-gray-500">
-											Tampilan pesan yang akan dikirim.
-										</p>
-									</div>
-									<MessageCircle className="h-5 w-5 text-blue-500" />
-								</div>
-								<div className="mt-4 rounded-2xl border border-gray-200 bg-[#e5ddd5] p-3 shadow-inner">
-									<div className="mb-3 flex items-center gap-2 rounded-xl bg-[#075e54] px-3 py-2 text-white">
-										<div className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-xs font-bold">
-											W
-										</div>
-										<div className="min-w-0">
-											<p className="truncate text-sm font-semibold">
-												WhatsApp Business
-											</p>
-											<p className="text-[11px] text-white/70">Template</p>
-										</div>
-									</div>
-									{selectedNewChatTemplate ? (
-										<div className="max-w-[90%] rounded-lg bg-white px-3 py-2 text-sm leading-6 text-gray-800 shadow-sm">
-											{newChatPreviewHeader ? (
-												<p className="mb-2 break-words font-semibold text-gray-900">
-													{newChatPreviewHeader}
-												</p>
-											) : null}
-											<p className="whitespace-pre-wrap break-words text-gray-700">
-												{newChatPreviewBody}
-											</p>
-											{newChatPreviewFooter ? (
-												<p className="mt-3 border-t border-gray-100 pt-3 text-xs leading-5 text-gray-400">
-													{newChatPreviewFooter}
-												</p>
-											) : null}
-											{newChatPreviewButtons.length > 0 ? (
-												<div className="mt-3 space-y-2">
-													{newChatPreviewButtons.map((item) => (
-														<div
-															key={item}
-															className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-center text-sm font-semibold text-blue-600"
-														>
-															{item}
-														</div>
-													))}
-												</div>
-											) : null}
-										</div>
-									) : (
-										<div className="rounded-xl border border-dashed border-white/80 bg-white/70 p-5 text-center text-sm text-gray-500">
-											Pilih template untuk melihat preview chat.
-										</div>
+					<div className="space-y-3">
+						<label className="block space-y-1.5">
+							<span className="text-sm font-medium text-foreground">Nama kontak <span className="font-normal text-muted-foreground">(opsional)</span></span>
+							<input
+								value={newContactName}
+								onChange={(event) => setNewContactName(event.target.value)}
+								placeholder="Misalnya, Budi"
+								className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+							/>
+						</label>
+						<label className="block space-y-1.5">
+							<span className="text-sm font-medium text-foreground">Nomor WhatsApp</span>
+							<div className="flex gap-2">
+								<input
+									value={newPhoneNumber}
+									onChange={(event) => setNewPhoneNumber(event.target.value)}
+									inputMode="tel"
+									placeholder="0812 3456 7890"
+									className="h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+								/>
+								<button
+									type="button"
+									onClick={() => void toggleRecording()}
+									disabled={transcribing}
+									className={cn(
+										'grid size-11 shrink-0 place-items-center rounded-lg border border-input text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60',
+										recording ? 'border-destructive bg-destructive text-destructive-foreground' : 'hover:bg-muted hover:text-foreground',
 									)}
-								</div>
-							</section>
+									aria-label={recording ? 'Selesai merekam' : 'Ucapkan nomor WhatsApp'}
+								>
+									{recording ? <Square className="size-4 fill-current" /> : <Mic className={cn('size-4', transcribing && 'animate-pulse')} />}
+								</button>
+							</div>
+						</label>
+						<div className="min-h-10 rounded-lg bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground" aria-live="polite">
+							{recording ? 'Sedang mendengarkan… ucapkan nomor digit demi digit.' : transcribing ? 'Deepgram sedang menuliskan nomornya…' : voiceTranscript ? `Terdengar: “${voiceTranscript}”` : 'Tip: ucapkan “nol delapan satu dua…” dengan jeda yang natural.'}
 						</div>
+						{newChatError && <p className="text-sm leading-5 text-destructive" role="alert">{newChatError}</p>}
+						<button
+							type="button"
+							onClick={() => void createConversation()}
+							disabled={!newPhoneNumber.trim() || recording || transcribing || creatingChat}
+							className="flex h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{creatingChat ? 'Membuka percakapan…' : 'Buka percakapan'}
+						</button>
 					</div>
-
-					<DialogFooter className="mx-0 mb-0 gap-3 rounded-none rounded-b-2xl border-gray-100 bg-gray-50 px-5 py-4 sm:px-6">
-						<Button
-							type="button"
-							variant="outline"
-							onClick={handleCloseNewChatDialog}
-							className="h-11 rounded-xl border-gray-200 px-6 font-bold text-gray-600 hover:bg-white sm:min-w-[120px]"
-						>
-							Cancel
-						</Button>
-						<Button
-							type="button"
-							onClick={() => void handleStartNewChat()}
-							disabled={!canSubmitNewChat}
-							className="h-11 rounded-xl bg-blue-600 px-6 font-bold text-white shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:shadow-none sm:min-w-[120px]"
-						>
-							{submittingNewChat ? 'Starting...' : 'Start Chat'}
-						</Button>
-					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</main>
-	)
-}
 
-function PanelLabel({
-	icon,
-	children,
-}: {
-	icon: React.ReactNode
-	children: React.ReactNode
-}) {
-	return (
-		<div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ocm-text-muted)]">
-			{icon}
-			<span>{children}</span>
+			<AlertDialog open={Boolean(deleteTarget) || bulkDeleteIds.length > 0} onOpenChange={(open) => {
+				if (!open && !deletingMessage) {
+					setDeleteTarget(null)
+					setBulkDeleteIds([])
+				}
+			}}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>{bulkDeleteIds.length > 1 ? `Hapus ${bulkDeleteIds.length} pesan dari chat?` : 'Hapus pesan dari chat?'}</AlertDialogTitle>
+						<AlertDialogDescription>Pesan tidak akan hilang permanen. Salinannya tetap tersimpan di trash untuk audit teknis, tetapi tidak lagi terlihat di percakapan ini.</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={deletingMessage}>Batal</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => void deleteMessage()}
+							disabled={deletingMessage}
+							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+						>
+							{deletingMessage ? 'Menghapus…' : 'Hapus pesan'}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	)
 }
 
-function SignalRow({
-	label,
-	value,
-	tone,
-	isLast = false,
-}: {
-	label: string
-	value: string
-	tone: 'success' | 'warning' | 'info' | 'neutral'
-	isLast?: boolean
-}) {
-	const toneClass =
-		tone === 'success'
-			? 'text-emerald-500'
-			: tone === 'warning'
-				? 'text-[var(--ocm-warning)]'
-				: tone === 'info'
-					? 'text-sky-400'
-					: 'text-[var(--ocm-text)]'
+function Avatar({ conversation, size = 'md' }: { conversation: Conversation; size?: 'sm' | 'md' }) {
+	const sizeClass = size === 'sm' ? 'size-10' : 'size-11'
+	if (conversation.avatarUrl) {
+		return <img src={conversation.avatarUrl} alt="" className={cn(sizeClass, 'shrink-0 rounded-full object-cover')} />
+	}
+	return (
+		<div className={cn(sizeClass, 'grid shrink-0 place-items-center rounded-full bg-muted text-sm font-semibold text-muted-foreground')}>
+			{conversation.name.slice(0, 1).toUpperCase()}
+		</div>
+	)
+}
 
+function WorkflowBadge({ workflow }: { workflow: Conversation['workflow'] }) {
+	const label = workflow === 'ai' ? 'AI' : workflow === 'handover' ? 'Handover' : 'Sales'
+	return (
+		<span className={cn(
+			'shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium',
+			workflow === 'ai' && 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
+			workflow === 'handover' && 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
+			workflow === 'human' && 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
+		)}>
+			{label}
+		</span>
+	)
+}
+
+function MessageBubble({
+	message,
+	quotedMessage,
+	selected,
+	selectionMode,
+	reactions,
+	onSelect,
+	onContextMenu,
+}: {
+	message: ChatMessage
+	quotedMessage: ChatMessage | null
+	selected: boolean
+	selectionMode: boolean
+	reactions: string[]
+	onSelect: () => void
+	onContextMenu: (x: number, y: number) => void
+}) {
+	const outbound = message.message_type === 'outgoing' || message.sender_type === 'user'
+	const longPressRef = useRef<number | null>(null)
+	const longPressOriginRef = useRef<{ x: number; y: number } | null>(null)
+	const longPressTriggeredRef = useRef(false)
+	const startLongPress = (x: number, y: number) => {
+		longPressOriginRef.current = { x, y }
+		longPressTriggeredRef.current = false
+		longPressRef.current = window.setTimeout(() => {
+			longPressTriggeredRef.current = true
+			onSelect()
+		}, 520)
+	}
+	const cancelLongPress = () => {
+		if (longPressRef.current) window.clearTimeout(longPressRef.current)
+		longPressRef.current = null
+		longPressOriginRef.current = null
+	}
 	return (
 		<div
-			className={`flex items-center justify-between py-1.5 text-xs ${
-				isLast ? '' : 'border-b border-dashed border-[var(--ocm-line)]'
-			}`}
+			className={cn('group/message flex cursor-default items-center gap-2 rounded-lg px-1 py-0.5', outbound ? 'justify-end' : 'justify-start', selected && 'bg-primary/10')}
+			onContextMenu={(event) => {
+				event.preventDefault()
+				onContextMenu(event.clientX, event.clientY)
+			}}
+			onPointerDown={(event) => { if (event.pointerType === 'touch' && !selectionMode) startLongPress(event.clientX, event.clientY) }}
+			onPointerUp={cancelLongPress}
+			onPointerCancel={cancelLongPress}
+			onPointerMove={(event) => {
+				const origin = longPressOriginRef.current
+				if (origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 12) cancelLongPress()
+			}}
+			onClick={() => {
+				if (longPressTriggeredRef.current) {
+					longPressTriggeredRef.current = false
+					return
+				}
+				if (selectionMode) onSelect()
+			}}
 		>
-			<span className="text-[var(--ocm-text-muted)]">{label}</span>
-			<span className={toneClass}>{value}</span>
+			{selectionMode && !outbound && <SelectionMark selected={selected} />}
+			<div
+				className={cn(
+					'max-w-[84%] overflow-hidden rounded-xl px-3.5 py-2 text-sm leading-relaxed md:max-w-[72%]',
+					outbound
+						? 'rounded-br-sm bg-primary text-primary-foreground'
+						: 'rounded-bl-sm bg-card text-card-foreground shadow-[0_1px_3px_rgb(15_23_42/0.12)] dark:shadow-[0_1px_3px_rgb(0_0_0/0.45)]',
+				)}
+			>
+				{message.reply_to_message_id && (
+					<div className={cn('mb-2 rounded-md px-2.5 py-1.5', outbound ? 'bg-black/10' : 'bg-muted')}>
+						<p className={cn('text-[11px] font-semibold', outbound ? 'text-primary-foreground/90' : 'text-primary')}>
+							{(quotedMessage?.message_type === 'outgoing' || quotedMessage?.sender_type === 'user' || message.content_attributes?.quote?.sender_type === 'user') ? 'Kamu' : 'Kontak'}
+						</p>
+						<p className={cn('max-w-72 truncate text-xs', outbound ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
+							{quotedMessage?.content || message.content_attributes?.quote?.content || `[${quotedMessage?.content_type || message.content_attributes?.quote?.content_type || 'pesan tidak tersedia'}]`}
+						</p>
+					</div>
+				)}
+				<MessageContent message={message} />
+				<div className={cn('mt-1 flex items-center justify-end gap-1 text-[11px]', outbound ? 'text-primary-foreground/75' : 'text-muted-foreground')}>
+					<span>{formatTime(message.created_at)}</span>
+					{outbound && (message.status === 'delivered' || message.status === 'read'
+						? <CheckCheck className={cn('size-3.5', message.status === 'read' && 'text-sky-300')} />
+						: <Check className="size-3.5" />)}
+				</div>
+				{reactions.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{reactions.map((reaction, index) => <span key={`${reaction}-${index}`} className="rounded-full bg-background/80 px-1.5 py-0.5 text-xs text-foreground shadow-sm">{reaction}</span>)}</div>}
+			</div>
+			{selectionMode && outbound && <SelectionMark selected={selected} />}
+		</div>
+	)
+}
+
+function SelectionMark({ selected }: { selected: boolean }) {
+	return <span className={cn('grid size-5 shrink-0 place-items-center rounded-full border', selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50 bg-background')}>{selected && <Check className="size-3" />}</span>
+}
+
+function AttachmentDraft({ attachment, onRemove }: { attachment: PendingAttachment; onRemove: () => void }) {
+	const visual = attachment.file.type.startsWith('image/') || attachment.file.type.startsWith('video/')
+	return (
+		<div className="relative size-20 shrink-0 overflow-hidden rounded-xl bg-muted">
+			{attachment.previewUrl && attachment.file.type.startsWith('image/') && <img src={attachment.previewUrl} alt={attachment.file.name} className="size-full object-cover" />}
+			{attachment.previewUrl && attachment.file.type.startsWith('video/') && <video src={attachment.previewUrl} muted className="size-full object-cover" />}
+			{!visual && (
+				<div className="flex size-full flex-col items-center justify-center gap-1 px-2 text-center text-muted-foreground">
+					<FileText className="size-5" />
+					<span className="w-full truncate text-[10px]">{attachment.file.name}</span>
+				</div>
+			)}
+			<button type="button" onClick={onRemove} className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-background/90 text-foreground shadow-sm hover:bg-background" aria-label={`Hapus ${attachment.file.name} dari draft`}><X className="size-3.5" /></button>
+		</div>
+	)
+}
+
+function contactSourceLabel(source: string | null) {
+	if (!source) return 'Pesan masuk WhatsApp'
+	if (source === 'manual_whatsapp') return 'Ditambahkan oleh sales'
+	if (source === 'baileys' || source.includes('sync') || source.includes('history')) return 'Sinkronisasi WhatsApp'
+	if (source.includes('inbound') || source.includes('whatsapp')) return 'Pesan masuk WhatsApp'
+	return source.replaceAll('_', ' ')
+}
+
+function ContactProfilePanel({ conversation, onClose, onCopyPhone }: { conversation: Conversation; onClose: () => void; onCopyPhone: () => void }) {
+	const [copied, setCopied] = useState(false)
+	const [photoOpen, setPhotoOpen] = useState(false)
+	const copyPhone = () => {
+		onCopyPhone()
+		setCopied(true)
+		window.setTimeout(() => setCopied(false), 1_600)
+	}
+	return (
+		<aside className="absolute inset-0 z-30 flex min-h-0 w-full shrink-0 flex-col border-l border-border bg-background md:static md:z-auto md:w-[340px] lg:w-[380px]">
+			<header className="flex h-[64px] shrink-0 items-center gap-3 border-b border-border px-4">
+				<button type="button" onClick={onClose} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Tutup profil kontak"><X className="size-5" /></button>
+				<h2 className="text-sm font-semibold">Info kontak</h2>
+			</header>
+			<div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+				<div className="flex flex-col items-center px-6 pb-7 pt-8 text-center">
+					{conversation.avatarUrl ? (
+						<button type="button" onClick={() => setPhotoOpen(true)} className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4" aria-label="Perbesar foto profil">
+							<img src={conversation.avatarUrl} alt={`Foto profil ${conversation.name}`} className="size-36 rounded-full object-cover shadow-[0_2px_8px_rgb(15_23_42/0.18)]" />
+						</button>
+					) : (
+						<div className="grid size-36 place-items-center rounded-full bg-muted text-4xl font-semibold text-muted-foreground">{conversation.name.slice(0, 1).toUpperCase()}</div>
+					)}
+					<h3 className="mt-5 max-w-full truncate text-xl font-semibold">{conversation.name}</h3>
+					<p className="mt-1 text-sm text-muted-foreground">+{conversation.phone}</p>
+				</div>
+				<div className="border-y border-border">
+					<div className="flex items-center gap-3 px-5 py-4">
+						<Phone className="size-4 shrink-0 text-muted-foreground" />
+						<div className="min-w-0 flex-1">
+							<p className="text-xs text-muted-foreground">Nomor WhatsApp</p>
+							<p className="mt-0.5 truncate text-sm font-medium">+{conversation.phone}</p>
+						</div>
+						<button type="button" onClick={copyPhone} className="flex h-9 items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Salin nomor WhatsApp">{copied ? <Check className="size-4" /> : <Copy className="size-4" />}{copied ? 'Tersalin' : 'Salin'}</button>
+					</div>
+					<div className="flex items-center gap-3 border-t border-border px-5 py-4">
+						<UserRound className="size-4 shrink-0 text-muted-foreground" />
+						<div className="min-w-0">
+							<p className="text-xs text-muted-foreground">Sumber kontak</p>
+							<p className="mt-0.5 truncate text-sm font-medium capitalize">{contactSourceLabel(conversation.source)}</p>
+						</div>
+					</div>
+				</div>
+			</div>
+			{photoOpen && conversation.avatarUrl && (
+				<div className="fixed inset-0 z-50 grid place-items-center bg-black/85 p-4" role="dialog" aria-modal="true" aria-label={`Foto profil ${conversation.name}`}>
+					<button type="button" onClick={() => setPhotoOpen(false)} className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Tutup foto profil"><X className="size-5" /></button>
+					<img src={conversation.avatarUrl} alt={`Foto profil besar ${conversation.name}`} className="max-h-[85vh] max-w-[min(90vw,48rem)] object-contain" />
+				</div>
+			)}
+		</aside>
+	)
+}
+
+function MessageContent({ message }: { message: ChatMessage }) {
+	const media = message.content_attributes?.media
+	const url = media?.url
+	const type = message.content_type || 'text'
+	const [downloading, setDownloading] = useState(false)
+	const [downloadError, setDownloadError] = useState<string | null>(null)
+	const downloadDocument = async () => {
+		if (downloading) return
+		setDownloading(true)
+		setDownloadError(null)
+		try {
+			const response = await fetch(`${API_BASE}/media/messages/${message.id}/download`, { headers: authHeaders() })
+			if (!response.ok) {
+				const payload = (await readApiResponse(response)) as { error?: string }
+				throw new Error(payload.error || 'File belum dapat diunduh')
+			}
+			const blob = await response.blob()
+			const objectUrl = URL.createObjectURL(blob)
+			const anchor = document.createElement('a')
+			anchor.href = objectUrl
+			anchor.download = media?.file_name || media?.filename || 'dokumen'
+			document.body.appendChild(anchor)
+			anchor.click()
+			anchor.remove()
+			window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
+		} catch (reason) {
+			setDownloadError(reason instanceof Error ? reason.message : 'File belum dapat diunduh')
+		} finally {
+			setDownloading(false)
+		}
+	}
+	if (type === 'revoked') return <p className="italic opacity-75">Pesan ini telah dihapus di WhatsApp</p>
+	return (
+		<div className="space-y-1.5">
+			{url && (type === 'image' || type === 'sticker') && (
+				<img src={url} alt={type === 'sticker' ? 'Sticker' : message.content || 'Gambar WhatsApp'} className={cn('block max-h-72 w-auto max-w-full object-contain', type === 'sticker' ? 'max-h-40 bg-transparent' : 'rounded-lg')} />
+			)}
+			{url && (type === 'video' || type === 'gif') && (
+				<video src={url} controls={type !== 'gif'} autoPlay={type === 'gif'} loop={type === 'gif'} muted={type === 'gif'} playsInline className="max-h-72 max-w-full rounded-lg" />
+			)}
+			{url && (type === 'audio' || type === 'voice') && <audio src={url} controls preload="metadata" className="h-10 max-w-full" />}
+			{url && (type === 'document' || type === 'file') && (
+				<div>
+					<button type="button" onClick={() => void downloadDocument()} disabled={downloading} className="flex w-full items-center gap-3 rounded-lg bg-background/15 px-3 py-2.5 text-left transition-colors hover:bg-background/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70">
+						<FileText className="size-5 shrink-0" />
+						<span className="min-w-0 flex-1">
+							<span className="block truncate font-medium">{media.file_name || media.filename || 'Dokumen'}</span>
+							<span className="block text-[11px] opacity-70">{downloading ? 'Mengunduh file…' : 'Unduh untuk membuka'}</span>
+						</span>
+						{downloading ? <RefreshCw className="size-4 shrink-0 animate-spin" /> : <Download className="size-4 shrink-0" />}
+					</button>
+					{downloadError && <p className="mt-1.5 text-xs text-destructive" role="alert">{downloadError}</p>}
+				</div>
+			)}
+			{message.content && !(/^\[(IMAGE|VIDEO|AUDIO|DOCUMENT|STICKER)\]$/i.test(message.content)) && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+			{!message.content && !url && <p>[{type}]</p>}
+		</div>
+	)
+}
+
+function MediaOption({ icon: Icon, label, onClick }: { icon: typeof Paperclip; label: string; onClick: () => void }) {
+	return <button type="button" onClick={onClick} className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm hover:bg-muted"><Icon className="size-4 text-muted-foreground" />{label}</button>
+}
+
+function ContextAction({ icon: Icon, label, onClick, destructive = false }: { icon: typeof Copy; label: string; onClick: () => void; destructive?: boolean }) {
+	return <button type="button" role="menuitem" onClick={onClick} className={cn('flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted', destructive && 'text-destructive')}><Icon className="size-4" />{label}</button>
+}
+
+function State({ icon: Icon, title, body }: { icon: typeof Inbox; title: string; body: string }) {
+	return (
+		<div className="m-auto flex max-w-sm flex-col items-center px-8 py-16 text-center">
+			<div className="grid size-11 place-items-center rounded-xl bg-muted text-muted-foreground">
+				<Icon className="size-5" />
+			</div>
+			<h3 className="mt-4 text-sm font-semibold text-foreground">{title}</h3>
+			<p className="mt-1.5 text-sm leading-6 text-muted-foreground">{body}</p>
+		</div>
+	)
+}
+
+function ListSkeleton() {
+	return (
+		<div className="space-y-px p-3">
+			{Array.from({ length: 7 }).map((_, index) => (
+				<div key={index} className="flex gap-3 p-3">
+					<div className="size-11 animate-pulse rounded-full bg-muted" />
+					<div className="flex-1 space-y-2 py-1">
+						<div className="h-3 w-2/5 animate-pulse rounded bg-muted" />
+						<div className="h-3 w-4/5 animate-pulse rounded bg-muted/60" />
+					</div>
+				</div>
+			))}
 		</div>
 	)
 }

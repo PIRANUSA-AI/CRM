@@ -1481,6 +1481,16 @@ export const knowledge = {
 
 // WhatsApp Channels
 export const whatsappChannels = {
+	getMyConnection: () =>
+		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
+			'/whatsapp-channels/me/connection',
+		),
+
+	startMyConnection: () =>
+		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
+			'/whatsapp-channels/me/connection/start',
+			{ method: 'POST' },
+		),
 	sync: (channelId: string) =>
 		apiRequest(`/whatsapp/${channelId}/sync`, {
 			method: 'POST',
@@ -1633,6 +1643,19 @@ export const whatsappChannels = {
 		apiRequest(`/whatsapp-channels/${channelId}`, {
 			method: 'DELETE',
 		}),
+}
+
+export type PersonalWhatsAppConnection = {
+	channelId: string | null
+	phoneNumber: string | null
+	status: string
+	pairingCode: string | null
+	qrCode: string | null
+	lastError: string | null
+	lastConnectedAt: string | null
+	isConnected: boolean
+	requiresPairing: boolean
+	hasConnectedBefore: boolean
 }
 
 export const whatsappTemplates = {

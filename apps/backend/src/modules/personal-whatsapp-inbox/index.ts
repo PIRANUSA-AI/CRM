@@ -1,0 +1,533 @@
+import { Elysia, t } from 'elysia'
+import prisma from '../../lib/prisma'
+import { incomingMessageQueue, webhookQueue } from '../../lib/queue'
+import { appContext } from '../../plugins'
+import { WebhookService } from '../webhook/service'
+import { WhatsAppService } from '../whatsapp/service'
+import { transcribePhoneNumber } from '../../services/deepgram'
+import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
+import { getRealtimeIO } from '../../lib/realtime'
+import { requireRole } from '../../lib/require-role'
+import { normalizeS3PublicUrl } from '../../lib/s3'
+import { enqueueProfileContact, enqueueProfileSweep } from './profile-sync'
+
+function asRecord(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+	return value as Record<string, unknown>
+}
+
+function normalizeMessageMediaAttributes(value: unknown) {
+	const attributes = asRecord(value)
+	const media = asRecord(attributes.media)
+	const currentUrl = typeof media.url === 'string' ? media.url : null
+	const normalizedUrl = normalizeS3PublicUrl(currentUrl)
+	if (!currentUrl || !normalizedUrl || normalizedUrl === currentUrl) return { value, changed: false }
+	return { value: { ...attributes, media: { ...media, url: normalizedUrl } }, changed: true }
+}
+
+function normalizePhoneNumber(value: string) {
+	let digits = String(value || '').replace(/\D/g, '')
+	if (digits.startsWith('0')) digits = `62${digits.slice(1)}`
+	else if (digits.startsWith('8')) digits = `62${digits}`
+	return /^\d{8,15}$/.test(digits) ? digits : null
+}
+
+async function resolveOwnedChannel(appId: string, userId: string) {
+	const session = await prisma.baileys_sessions.findFirst({
+		where: { app_id: appId, owner_user_id: userId },
+		select: { channel_id: true, provider_channel_key: true, status: true, phone_number: true, last_seen_at: true },
+	})
+	if (!session) return { session: null, channel: null }
+	const channel = await prisma.whatsapp_channels.findFirst({
+		where: { id: session.channel_id, app_id: appId, provider: 'baileys', deleted_at: null },
+		select: { id: true, inbox_id: true, api_key: true },
+	})
+	return { session, channel }
+}
+
+export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-inbox' })
+	.use(appContext)
+	.post('/ingest', async ({ body, headers, set }) => {
+		const payload = body as Record<string, any>
+		const channelKey = String(payload?.channelKey || '').trim()
+		const authorization = String(headers.authorization || '')
+		const bearer = authorization.toLowerCase().startsWith('bearer ')
+			? authorization.slice(7).trim()
+			: ''
+		const secret = String(headers['x-crm-channel-secret'] || bearer).trim()
+		if (!channelKey || !secret) { set.status = 403; return { error: 'Channel authentication required' } }
+		const channel = await WhatsAppService.authenticateBaileysChannel(channelKey, secret)
+		if (!channel) { set.status = 403; return { error: 'Invalid channel credentials' } }
+		if (!channel.app_id) { set.status = 422; return { error: 'Channel is not assigned to a CRM app' } }
+		if (String(payload?.event || '') === 'presence.update') {
+			getRealtimeIO()?.to(`app:${channel.app_id}`).emit('whatsapp:presence', {
+				phone: String(payload.phone || '').replace(/\D/g, ''),
+				presence: String(payload.presence || 'unavailable'),
+				timestamp: Number(payload.timestamp || Date.now()),
+			})
+			return { success: true, realtime: true }
+		}
+		if (String(payload?.event || '') === 'contact.profile_changed') {
+			const phone = String(payload.phone || '').replace(/\D/g, '')
+			const contact = await prisma.contacts.findFirst({
+				where: { app_id: channel.app_id, deleted_at: null, OR: [{ phone_number: phone }, { whatsapp_id: phone }] }, select: { id: true },
+			})
+			if (contact) await enqueueProfileContact(channel.app_id, channel.id, contact.id, true)
+			return { success: true, queued: Boolean(contact) }
+		}
+		if (String(payload?.event || '') === 'message.deleted') {
+			const externalIds = Array.isArray(payload.externalIds)
+				? payload.externalIds.map((id: unknown) => String(id || '').trim()).filter(Boolean).slice(0, 500)
+				: []
+			if (!externalIds.length) return { success: true, updated: 0 }
+			const messages = await prisma.messages.findMany({
+				where: { app_id: channel.app_id, inbox_id: channel.inbox_id, external_id: { in: externalIds }, deleted_at: null },
+				select: { id: true, content: true, content_type: true, content_attributes: true },
+			})
+			for (const message of messages) {
+				await prisma.messages.update({
+					where: { id: message.id },
+					data: {
+						content: null,
+						content_type: 'revoked',
+						status: 'deleted',
+						content_attributes: {
+							...asRecord(message.content_attributes),
+							whatsapp_revoke: { original_content: message.content, original_content_type: message.content_type, detected_at: new Date().toISOString() },
+						} as any,
+						updated_at: new Date(),
+					},
+				})
+			}
+			if (messages.length) getRealtimeIO()?.to(`app:${channel.app_id}`).emit('message:revoked', { messageIds: messages.map((message) => message.id) })
+			return { success: true, updated: messages.length }
+		}
+		const result = await WebhookService.handleWhatsAppInbound(payload)
+		if (!result.success) { set.status = 422; return result }
+		const inboundPhone = String(payload?.contact?.waId || payload?.contact?.wa_id || payload?.message?.from || '').replace(/\D/g, '')
+		if (inboundPhone) {
+			const contact = await prisma.contacts.findFirst({
+				where: { app_id: channel.app_id, deleted_at: null, OR: [{ phone_number: inboundPhone }, { whatsapp_id: inboundPhone }] }, select: { id: true },
+			})
+			if (contact) void enqueueProfileContact(channel.app_id, channel.id, contact.id, false).catch(() => undefined)
+		}
+		return { success: true, direct: true, result }
+	}, { body: t.Any() })
+	.post('/repair-queue', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+
+		const queues = [incomingMessageQueue, webhookQueue]
+		let retried = 0
+		let promoted = 0
+		let waiting = 0
+		let active = 0
+		for (const queue of queues) {
+			const jobs = await queue.getJobs(['failed', 'delayed', 'waiting', 'active'], 0, 1999, true)
+			for (const job of jobs) {
+				const payload = (job.data as any)?.payload ?? job.data
+				if (String(payload?.channelKey || '') !== session.provider_channel_key) continue
+				const state = await job.getState()
+				if (state === 'failed') { await job.retry(); retried += 1 }
+				else if (state === 'delayed') { await job.promote(); promoted += 1 }
+				else if (state === 'waiting') waiting += 1
+				else if (state === 'active') active += 1
+			}
+		}
+		return { data: { retried, promoted, waiting, active } }
+	})
+	.post('/sync-profiles', async ({ resolvedAppId, userId, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		await enqueueProfileSweep(resolvedAppId, session.channel_id, body.force === true)
+		return { success: true, queued: true }
+	}, { body: t.Object({ force: t.Optional(t.Boolean()) }) })
+	.get('/conversations', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) {
+			set.status = 401
+			return { error: 'Sesi CRM tidak valid' }
+		}
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session || !channel?.inbox_id) {
+			return { data: [], diagnostic: { connection: session?.status || 'not_paired', storedMessages: 0 } }
+		}
+		const [rows, storedMessages] = await Promise.all([
+			prisma.conversations.findMany({
+				where: { app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+				orderBy: { last_message_at: 'desc' },
+				take: 100,
+				include: {
+					contacts: { select: { name: true, phone_number: true, whatsapp_id: true, avatar_url: true, source: true } },
+					messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true, created_at: true } },
+				},
+			}),
+			prisma.messages.count({ where: { app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null } }),
+		])
+		return {
+			data: rows.map((row) => ({
+				id: row.id,
+				contactId: row.contact_id || null,
+				workflow: row.status === 'pending' ? 'handover' : row.assignee_id ? 'human' : 'ai',
+				name: row.contacts?.name || row.contacts?.phone_number || 'Kontak WhatsApp',
+				phone: row.contacts?.phone_number || row.contacts?.whatsapp_id || '',
+				avatarUrl: normalizeS3PublicUrl(row.contacts?.avatar_url) || null,
+				source: row.contacts?.source || null,
+				preview: row.messages[0]?.content || 'Belum ada isi pesan',
+				lastMessageAt: row.messages[0]?.created_at || row.last_message_at,
+				unread: row.unread_count || 0,
+			})),
+			diagnostic: { connection: session.status, storedMessages, lastSeenAt: session.last_seen_at },
+		}
+	})
+	.post('/:conversationId/read', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			include: {
+				contacts: { select: { phone_number: true, whatsapp_id: true } },
+				messages: { where: { deleted_at: null, message_type: 'incoming', external_id: { not: null } }, orderBy: { created_at: 'desc' }, take: 100, select: { external_id: true } },
+			},
+		})
+		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		const recipient = normalizePhoneNumber(conversation.contacts?.phone_number || conversation.contacts?.whatsapp_id || '')
+		const messageIds = conversation.messages.map((message) => message.external_id).filter((id): id is string => Boolean(id))
+		if (session && channel.api_key && recipient && messageIds.length) {
+			void BaileysServiceClient.markMessagesRead({ channelKey: session.provider_channel_key, recipientWhatsAppId: recipient, messageIds }, {
+				Authorization: `Bearer ${channel.api_key}`, 'X-Crm-Channel-Secret': channel.api_key,
+			}).catch((error) => console.warn('[PersonalWhatsAppInbox] WhatsApp read receipt failed:', error))
+		}
+		const updated = await prisma.conversations.updateMany({
+			where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			data: { unread_count: 0, agent_last_seen_at: new Date(), updated_at: new Date() },
+		})
+		if (!updated.count) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		return { success: true }
+	}, { params: t.Object({ conversationId: t.String() }) })
+	.post('/:conversationId/presence', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session || !channel?.inbox_id || !channel.api_key) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			include: { contacts: { select: { phone_number: true, whatsapp_id: true } } },
+		})
+		const recipient = normalizePhoneNumber(conversation?.contacts?.phone_number || conversation?.contacts?.whatsapp_id || '')
+		if (!recipient) { set.status = 404; return { error: 'Kontak WhatsApp tidak ditemukan' } }
+		await BaileysServiceClient.sendPresence({ channelKey: session.provider_channel_key, recipientWhatsAppId: recipient, presence: body.presence }, {
+			Authorization: `Bearer ${channel.api_key}`, 'X-Crm-Channel-Secret': channel.api_key,
+		})
+		return { success: true }
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Object({ presence: t.Union([t.Literal('composing'), t.Literal('recording'), t.Literal('paused')]) }),
+	})
+	.post('/start', async ({ resolvedAppId, userId, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const phoneNumber = normalizePhoneNumber(body.phoneNumber)
+		if (!phoneNumber) { set.status = 400; return { error: 'Nomor WhatsApp tidak valid' } }
+		const identifier = `wa:${resolvedAppId}:${phoneNumber}`
+		const now = new Date()
+		const conversation = await prisma.$transaction(async (tx) => {
+			const existingContact = await tx.contacts.findFirst({
+				where: { app_id: resolvedAppId, deleted_at: null, OR: [{ identifier }, { whatsapp_id: phoneNumber }, { phone_number: phoneNumber }] },
+			})
+			const contact = existingContact
+				? await tx.contacts.update({
+					where: { id: existingContact.id },
+					data: { identifier: existingContact.identifier || identifier, name: body.name?.trim() || existingContact.name || phoneNumber, phone_number: phoneNumber, whatsapp_id: phoneNumber, channel_type: 'whatsapp', deleted_at: null, updated_at: now },
+				})
+				: await tx.contacts.create({
+					data: { app_id: resolvedAppId, identifier, name: body.name?.trim() || phoneNumber, phone_number: phoneNumber, whatsapp_id: phoneNumber, channel_type: 'whatsapp', source: 'manual_whatsapp', first_contact_at: now, created_at: now, updated_at: now },
+				})
+			const existingConversation = await tx.conversations.findFirst({
+				where: { app_id: resolvedAppId, inbox_id: channel.inbox_id, contact_id: contact.id, channel_type: 'whatsapp', deleted_at: null, status: { not: 'resolved' } },
+				orderBy: { updated_at: 'desc' },
+			})
+			if (existingConversation) return existingConversation
+			return tx.conversations.create({
+				data: { app_id: resolvedAppId, inbox_id: channel.inbox_id, contact_id: contact.id, channel_type: 'whatsapp', status: 'open', unread_count: 0, last_message_at: now, last_activity_at: now, created_at: now, updated_at: now },
+			})
+		})
+		return { data: { id: conversation.id, phoneNumber } }
+	}, { body: t.Object({ phoneNumber: t.String({ minLength: 1 }), name: t.Optional(t.String()) }) })
+	.post('/transcribe-number', async ({ resolvedAppId, userId, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const audio = body.audio
+		if (audio.size > 8 * 1024 * 1024) { set.status = 413; return { error: 'Rekaman terlalu besar' } }
+		try {
+			const result = await transcribePhoneNumber({
+				appId: resolvedAppId,
+				audio: await audio.arrayBuffer(),
+				mimeType: audio.type || 'audio/webm',
+				language: body.language,
+			})
+			return { data: result }
+		} catch (error) {
+			set.status = 502
+			return { error: error instanceof Error ? error.message : 'Transkripsi suara gagal' }
+		}
+	}, { body: t.Object({ audio: t.File(), language: t.Optional(t.Union([t.Literal('id'), t.Literal('en'), t.Literal('auto')])) }) })
+	.get('/trash', async ({ resolvedAppId, userId, query, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const guard = await requireRole(userId, ['superadmin'])
+		if (!guard.ok) { set.status = guard.status; return { error: guard.error } }
+		const channels = await prisma.whatsapp_channels.findMany({
+			where: { app_id: resolvedAppId, provider: 'baileys', deleted_at: null, inbox_id: { not: null } },
+			select: { inbox_id: true },
+		})
+		const inboxIds = channels.map((channel) => channel.inbox_id).filter((id): id is string => Boolean(id))
+		if (!inboxIds.length) return { data: [] }
+		const limit = Math.min(100, Math.max(1, Number(query.limit || 50)))
+		const rows = await prisma.messages.findMany({
+			where: { app_id: resolvedAppId, inbox_id: { in: inboxIds }, deleted_at: { not: null } },
+			orderBy: { deleted_at: 'desc' },
+			take: limit,
+			select: { id: true, conversation_id: true, content: true, content_type: true, message_type: true, sender_type: true, created_at: true, deleted_at: true, additional_attributes: true },
+		})
+		return { data: rows }
+	}, { query: t.Object({ limit: t.Optional(t.Numeric({ minimum: 1, maximum: 100 })) }) })
+	.post('/trash/:messageId/restore', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const guard = await requireRole(userId, ['superadmin'])
+		if (!guard.ok) { set.status = guard.status; return { error: guard.error } }
+		const message = await prisma.messages.findFirst({
+			where: { id: params.messageId, app_id: resolvedAppId, deleted_at: { not: null }, conversations: { is: { channel_type: 'whatsapp' } } },
+			select: { id: true, conversation_id: true, additional_attributes: true },
+		})
+		if (!message) { set.status = 404; return { error: 'Pesan trash tidak ditemukan' } }
+		const attributes = asRecord(message.additional_attributes)
+		const { trash: _trash, ...restoredAttributes } = attributes
+		const now = new Date()
+		await prisma.$transaction(async (tx) => {
+			await tx.messages.update({
+				where: { id: message.id },
+				data: {
+					deleted_at: null,
+					additional_attributes: { ...restoredAttributes, last_restore: { restored_by: userId, restored_at: now.toISOString() } } as any,
+					updated_at: now,
+				},
+			})
+			if (message.conversation_id) {
+				const latest = await tx.messages.findFirst({
+					where: { conversation_id: message.conversation_id, deleted_at: null },
+					orderBy: { created_at: 'desc' },
+					select: { created_at: true },
+				})
+				await tx.conversations.update({
+					where: { id: message.conversation_id },
+					data: { last_message_at: latest?.created_at || now, updated_at: now },
+				})
+			}
+		})
+		if (message.conversation_id) {
+			const payload = { messageId: message.id, conversationId: message.conversation_id }
+			const io = getRealtimeIO()
+			io?.to(`app:${resolvedAppId}`).emit('message:restored', payload)
+			io?.to(`conversation:${message.conversation_id}`).emit('message:restored', payload)
+		}
+		return { success: true }
+	}, { params: t.Object({ messageId: t.String() }) })
+	.post('/:conversationId/messages', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session || !channel?.inbox_id || !channel.api_key) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		if (session.status !== 'connected') { set.status = 409; return { error: 'WhatsApp sedang tidak terhubung' } }
+		const content = String(body.content || '').trim()
+		const media = body.media
+		if (!content && !media?.url) { set.status = 400; return { error: 'Pesan tidak boleh kosong' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			include: { contacts: { select: { id: true, phone_number: true, whatsapp_id: true } } },
+		})
+		const recipient = normalizePhoneNumber(conversation?.contacts?.phone_number || conversation?.contacts?.whatsapp_id || '')
+		if (!conversation || !recipient) { set.status = 404; return { error: 'Kontak WhatsApp tidak ditemukan' } }
+		const quotedMessage = body.replyToMessageId
+			? await prisma.messages.findFirst({
+					where: { id: body.replyToMessageId, conversation_id: conversation.id, app_id: resolvedAppId, deleted_at: null, content_type: { not: 'revoked' } },
+					select: { id: true, external_id: true, content: true, content_type: true, message_type: true, sender_type: true, created_at: true },
+				})
+			: null
+		if (body.replyToMessageId && (!quotedMessage || !quotedMessage.external_id)) {
+			set.status = 409
+			return { error: 'Pesan asli sudah tidak tersedia untuk dibalas' }
+		}
+		try {
+			const outboundType = media?.kind === 'voice' ? 'audio' : media?.kind === 'gif' ? 'video' : media?.kind || 'text'
+			const sent = await BaileysServiceClient.sendMessage({
+				channelKey: session.provider_channel_key,
+				recipientWhatsAppId: recipient,
+				recipientAddressingMode: 'pn',
+				type: outboundType,
+				text: { body: content },
+				...(media ? {
+					media: { url: media.url, mimeType: media.mimeType, fileName: media.fileName, caption: content },
+					ptt: media.kind === 'voice',
+					gifPlayback: media.kind === 'gif',
+					isAnimated: media.kind === 'sticker' && media.animated === true,
+				} : {}),
+				...(quotedMessage ? {
+					quote: {
+						externalId: quotedMessage.external_id,
+						fromMe: quotedMessage.message_type === 'outgoing' || quotedMessage.sender_type === 'user',
+						content: quotedMessage.content,
+						contentType: quotedMessage.content_type,
+						timestamp: quotedMessage.created_at ? Math.floor(quotedMessage.created_at.getTime() / 1000) : undefined,
+					},
+				} : {}),
+			}, {
+				Authorization: `Bearer ${channel.api_key}`,
+				'X-Crm-Channel-Secret': channel.api_key,
+			})
+			const now = new Date()
+			const created = await prisma.$transaction(async (tx) => {
+				const message = await tx.messages.create({
+					data: {
+						conversation_id: conversation.id, app_id: resolvedAppId, inbox_id: channel.inbox_id,
+						message_type: 'outgoing', sender_type: 'user', sender_id: userId,
+						content, content_type: media?.kind || 'text', status: 'sent', external_id: sent.externalId || null,
+						content_attributes: {
+							...(media ? { media: { url: media.url, mime_type: media.mimeType, file_name: media.fileName, purpose: media.kind } } : {}),
+							...(quotedMessage ? { quote: { message_id: quotedMessage.id, external_id: quotedMessage.external_id, content: quotedMessage.content, content_type: quotedMessage.content_type, sender_type: quotedMessage.sender_type } } : {}),
+						},
+						reply_to_message_id: quotedMessage?.id || null,
+						created_at: now, updated_at: now,
+					},
+				})
+				if (media?.url) {
+					await tx.media_files.updateMany({
+						where: { app_id: resolvedAppId, message_id: null, OR: [{ media_url: media.url }, { local_url: media.url }] },
+						data: { message_id: message.id, updated_at: now },
+					})
+				}
+				await tx.conversations.update({ where: { id: conversation.id }, data: { last_message_at: now, last_activity_at: now, updated_at: now } })
+				await tx.contacts.update({ where: { id: conversation.contacts!.id }, data: { last_message_at: now, last_activity_at: now, updated_at: now } })
+				return message
+			})
+			const realtimePayload = { message: created, conversation: { id: conversation.id, app_id: resolvedAppId, channel_type: 'whatsapp' } }
+			const io = getRealtimeIO()
+			io?.to(`app:${resolvedAppId}`).emit('message:created', realtimePayload)
+			io?.to(`conversation:${conversation.id}`).emit('message:created', realtimePayload)
+			return { data: created }
+		} catch (error) {
+			set.status = 503
+			return { error: error instanceof Error ? error.message : 'Pesan gagal dikirim' }
+		}
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Object({
+			content: t.Optional(t.String({ maxLength: 4096 })),
+			replyToMessageId: t.Optional(t.String()),
+			media: t.Optional(t.Object({
+				url: t.String({ minLength: 1 }),
+				kind: t.Union([t.Literal('image'), t.Literal('video'), t.Literal('audio'), t.Literal('document'), t.Literal('voice'), t.Literal('gif'), t.Literal('sticker')]),
+				mimeType: t.String({ minLength: 1 }),
+				fileName: t.String({ minLength: 1 }),
+				animated: t.Optional(t.Boolean()),
+			})),
+		}),
+	})
+	.delete('/:conversationId/messages/bulk-delete', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const ids = [...new Set(body.messageIds)].slice(0, 100)
+		const messages = await prisma.messages.findMany({
+			where: { id: { in: ids }, conversation_id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			select: { id: true, additional_attributes: true },
+		})
+		if (!messages.length) { set.status = 404; return { error: 'Pesan tidak ditemukan' } }
+		const now = new Date()
+		await prisma.$transaction(async (tx) => {
+			for (const message of messages) {
+				await tx.messages.update({
+					where: { id: message.id },
+					data: {
+						deleted_at: now,
+						additional_attributes: { ...asRecord(message.additional_attributes), trash: { deleted_by: userId, deleted_at: now.toISOString(), scope: 'crm_only' } } as any,
+						updated_at: now,
+					},
+				})
+			}
+			const latest = await tx.messages.findFirst({
+				where: { conversation_id: params.conversationId, deleted_at: null }, orderBy: { created_at: 'desc' }, select: { created_at: true },
+			})
+			await tx.conversations.update({ where: { id: params.conversationId }, data: { last_message_at: latest?.created_at || now, updated_at: now } })
+		})
+		const payload = { messageIds: messages.map((message) => message.id), conversationId: params.conversationId }
+		const io = getRealtimeIO()
+		io?.to(`app:${resolvedAppId}`).emit('message:deleted', payload)
+		io?.to(`conversation:${params.conversationId}`).emit('message:deleted', payload)
+		return { success: true, deleted: messages.length }
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Object({ messageIds: t.Array(t.String(), { minItems: 1, maxItems: 100 }) }),
+	})
+	.delete('/:conversationId/messages/:messageId', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const message = await prisma.messages.findFirst({
+			where: { id: params.messageId, conversation_id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			select: { id: true, conversation_id: true, additional_attributes: true },
+		})
+		if (!message) { set.status = 404; return { error: 'Pesan tidak ditemukan' } }
+		const now = new Date()
+		await prisma.$transaction(async (tx) => {
+			await tx.messages.update({
+				where: { id: message.id },
+				data: {
+					deleted_at: now,
+					additional_attributes: {
+						...asRecord(message.additional_attributes),
+						trash: { deleted_by: userId, deleted_at: now.toISOString(), scope: 'crm_only' },
+					} as any,
+					updated_at: now,
+				},
+			})
+			const latest = await tx.messages.findFirst({
+				where: { conversation_id: params.conversationId, deleted_at: null },
+				orderBy: { created_at: 'desc' },
+				select: { created_at: true },
+			})
+			await tx.conversations.update({
+				where: { id: params.conversationId },
+				data: { last_message_at: latest?.created_at || now, updated_at: now },
+			})
+		})
+		const payload = { messageId: message.id, conversationId: params.conversationId }
+		const io = getRealtimeIO()
+		io?.to(`app:${resolvedAppId}`).emit('message:deleted', payload)
+		io?.to(`conversation:${params.conversationId}`).emit('message:deleted', payload)
+		return { success: true }
+	}, { params: t.Object({ conversationId: t.String(), messageId: t.String() }) })
+	.get('/:conversationId/messages', async ({ resolvedAppId, userId, params, query, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const conversation = await prisma.conversations.findFirst({ where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null }, select: { id: true } })
+		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		const before = query.before ? new Date(query.before) : null
+		const rows = await prisma.messages.findMany({
+			where: { conversation_id: conversation.id, deleted_at: null, ...(before && !Number.isNaN(before.valueOf()) ? { created_at: { lt: before } } : {}) },
+			orderBy: { created_at: 'desc' }, take: 50,
+			select: { id: true, external_id: true, content: true, content_type: true, content_attributes: true, message_type: true, sender_type: true, status: true, reply_to_message_id: true, created_at: true },
+		})
+		const nextCursor = rows.length === 50 ? rows[rows.length - 1]?.created_at : null
+		const data = rows.reverse().map((message) => {
+			const normalized = normalizeMessageMediaAttributes(message.content_attributes)
+			if (normalized.changed) {
+				void prisma.messages.update({
+					where: { id: message.id },
+					data: { content_attributes: normalized.value as any, updated_at: new Date() },
+				}).catch(() => undefined)
+			}
+			return { ...message, content_attributes: normalized.value }
+		})
+		return { data, nextCursor }
+	}, { params: t.Object({ conversationId: t.String() }), query: t.Object({ before: t.Optional(t.String()) }) })

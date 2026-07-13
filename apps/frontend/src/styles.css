@@ -147,13 +147,13 @@
   html.theme-transitioning *::before,
   html.theme-transitioning *::after {
     transition:
-      background-color 250ms ease,
-      border-color 250ms ease,
-      color 250ms ease,
-      fill 250ms ease,
-      stroke 250ms ease,
-      box-shadow 250ms ease,
-      opacity 250ms ease !important;
+      background-color 400ms ease,
+      border-color 400ms ease,
+      color 400ms ease,
+      fill 400ms ease,
+      stroke 400ms ease,
+      box-shadow 400ms ease,
+      opacity 400ms ease !important;
   }
   body {
     @apply font-sans bg-background text-foreground;
@@ -161,6 +161,15 @@
 }
 
 @layer utilities {
+  .scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-hidden::-webkit-scrollbar {
+    display: none;
+  }
+
   .payment-success-badge {
     animation: payment-success-pop 420ms cubic-bezier(0.16, 1, 0.3, 1)
       both;

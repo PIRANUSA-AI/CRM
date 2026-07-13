@@ -56,6 +56,46 @@ function isBaileysStorageBootstrapError(error: unknown) {
 
 export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	.use(appContext)
+	.get('/me/connection', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) {
+			set.status = 401
+			return { error: 'Unauthorized' }
+		}
+		const data = await WhatsAppService.getPersonalBaileysConnection(resolvedAppId, userId)
+		return {
+			success: true,
+			data: data || {
+				status: 'not_paired', isConnected: false, requiresPairing: true,
+				hasConnectedBefore: false, channelId: null, phoneNumber: null,
+				pairingCode: null, qrCode: null, lastError: null, lastConnectedAt: null,
+			},
+		}
+	})
+	.post('/me/connection/start', async ({ resolvedAppId, userId, request, headers, set }) => {
+		if (!resolvedAppId || !userId) {
+			set.status = 401
+			return { error: 'Unauthorized' }
+		}
+		try {
+			const user = await (await import('../../lib/prisma')).default.users.findUnique({
+				where: { id: userId }, select: { name: true },
+			})
+			const connection = await WhatsAppService.ensurePersonalBaileysConnection({
+				appId: resolvedAppId,
+				userId,
+				userName: user?.name || 'Sales',
+				providerWebhookUrl: getBaileysProviderWebhookUrl(request, headers as Record<string, unknown>) || getBaileysWhatsappWebhookCallbackUrl(request, headers as Record<string, unknown>),
+			})
+			if (!connection?.channelId) throw new Error('Personal WhatsApp connection could not be created')
+			void BaileysServiceClient.startSession(connection.channelId).catch((error) => {
+				console.error('[WhatsApp] Personal session warm-up continues asynchronously:', error)
+			})
+			return { success: true, data: connection }
+		} catch (error: any) {
+			set.status = 400
+			return { error: error?.message || 'Tidak dapat memulai koneksi WhatsApp' }
+		}
+	})
 	.get(
 		'/',
 		async ({ resolvedAppId, query, userId, set }) => {
@@ -117,7 +157,7 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 					},
 					resolvedAppId,
 				)
-				let session = await WhatsAppService.getBaileysSessionSnapshot(
+				let session: Awaited<ReturnType<typeof WhatsAppService.getBaileysSessionSnapshot>> | Awaited<ReturnType<typeof BaileysServiceClient.getSession>> = await WhatsAppService.getBaileysSessionSnapshot(
 					result.channel.id,
 				)
 				try {
@@ -207,7 +247,11 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	)
 	.get(
 		'/:id/baileys/session',
-		async ({ params, set }) => {
+		async ({ params, resolvedAppId, userId, set }) => {
+			if (!resolvedAppId || !userId || !(await WhatsAppService.canAccessBaileysConnection(params.id, resolvedAppId, userId))) {
+				set.status = 404
+				return { error: 'Baileys channel not found' }
+			}
 			const channel = await WhatsAppService.getChannelById(params.id)
 			if (!channel || channel.provider !== 'baileys') {
 				set.status = 404
@@ -243,7 +287,11 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	)
 	.post(
 		'/:id/baileys/session/start',
-		async ({ params, set }) => {
+		async ({ params, resolvedAppId, userId, set }) => {
+			if (!resolvedAppId || !userId || !(await WhatsAppService.canAccessBaileysConnection(params.id, resolvedAppId, userId))) {
+				set.status = 404
+				return { error: 'Baileys channel not found' }
+			}
 			const channel = await WhatsAppService.getChannelById(params.id)
 			if (!channel || channel.provider !== 'baileys') {
 				set.status = 404

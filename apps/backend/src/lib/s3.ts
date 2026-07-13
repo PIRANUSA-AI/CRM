@@ -84,6 +84,7 @@ function shouldUsePathStylePublicUrl(base: string): boolean {
 			return false
 		}
 		if (host.endsWith('.r2.cloudflarestorage.com')) return true
+		if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
 		if (host === 's3.amazonaws.com') return true
 		if (
 			(host.startsWith('s3.') || host.startsWith('s3-')) &&
@@ -105,6 +106,43 @@ export function buildS3PublicUrl(key: string): string | null {
 		return `${s3PublicBase}/${BUCKET_NAME}/${normalizedKey}`
 	}
 	return `${s3PublicBase}/${normalizedKey}`
+}
+
+export function normalizeS3PublicUrl(value: string | null | undefined): string | null {
+	const current = String(value || '').trim()
+	if (!current || !s3PublicBase) return current || null
+	try {
+		const currentUrl = new URL(current)
+		const baseUrl = new URL(s3PublicBase)
+		if (currentUrl.origin !== baseUrl.origin) return current
+		const basePath = baseUrl.pathname.replace(/^\/+|\/+$/g, '')
+		let key = currentUrl.pathname.replace(/^\/+|\/+$/g, '')
+		if (basePath && key.startsWith(`${basePath}/`)) key = key.slice(basePath.length + 1)
+		if (key === BUCKET_NAME) return current
+		if (key.startsWith(`${BUCKET_NAME}/`)) key = key.slice(BUCKET_NAME.length + 1)
+		return buildS3PublicUrl(key) || current
+	} catch {
+		return current
+	}
+}
+
+export function getS3KeyFromPublicUrl(value: string | null | undefined): string | null {
+	const normalized = normalizeS3PublicUrl(value)
+	if (!normalized || !s3PublicBase) return null
+	try {
+		const objectUrl = new URL(normalized)
+		const baseUrl = new URL(s3PublicBase)
+		if (objectUrl.origin !== baseUrl.origin) return null
+		const basePath = baseUrl.pathname.replace(/^\/+|\/+$/g, '')
+		let key = objectUrl.pathname.replace(/^\/+|\/+$/g, '')
+		if (basePath && key.startsWith(`${basePath}/`)) key = key.slice(basePath.length + 1)
+		if (key.startsWith(`${BUCKET_NAME}/`)) key = key.slice(BUCKET_NAME.length + 1)
+		key = decodeURIComponent(key)
+		if (!key || key.split('/').some((part) => part === '..')) return null
+		return key
+	} catch {
+		return null
+	}
 }
 
 export function isS3UploadConfigured(): boolean {

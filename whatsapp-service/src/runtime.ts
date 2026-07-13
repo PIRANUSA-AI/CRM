@@ -1,4 +1,5 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import makeWASocket, {
 	BufferJSON,
 	Browsers,
@@ -62,6 +63,7 @@ type BaileysSessionRow = {
 	qr_code: string | null
 	last_error: string | null
 	last_connected_at: Date | string | null
+	first_connected_at: Date | string | null
 	last_seen_at: Date | string | null
 	metadata: unknown
 	created_at: Date | string | null
@@ -71,6 +73,40 @@ type BaileysSessionRow = {
 type PersistedAuthEnvelope = {
 	creds?: unknown
 	keys?: Record<string, Record<string, unknown | null>>
+}
+
+type EncryptedAuthEnvelope = { encrypted: true; iv: string; tag: string; data: string }
+
+function authEncryptionKey() {
+	const secret = String(process.env.BAILEYS_AUTH_ENCRYPTION_KEY || '').trim()
+	if (!secret) {
+		if (process.env.NODE_ENV === 'production') {
+			throw new Error('BAILEYS_AUTH_ENCRYPTION_KEY is required in production')
+		}
+		return null
+	}
+	return createHash('sha256').update(secret).digest()
+}
+
+function encryptAuthState(value: unknown): unknown {
+	const key = authEncryptionKey()
+	if (!key) return serializeBufferJson(value)
+	const iv = randomBytes(12)
+	const cipher = createCipheriv('aes-256-gcm', key, iv)
+	const plaintext = Buffer.from(JSON.stringify(value, BufferJSON.replacer), 'utf8')
+	const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
+	return { encrypted: true, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') } satisfies EncryptedAuthEnvelope
+}
+
+function decryptAuthState<T>(value: unknown): T {
+	const record = asRecord(value)
+	if (record.encrypted !== true) return deserializeBufferJson<T>(value)
+	const key = authEncryptionKey()
+	if (!key) throw new Error('Encrypted Baileys session cannot be read without BAILEYS_AUTH_ENCRYPTION_KEY')
+	const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(String(record.iv), 'base64'))
+	decipher.setAuthTag(Buffer.from(String(record.tag), 'base64'))
+	const plaintext = Buffer.concat([decipher.update(Buffer.from(String(record.data), 'base64')), decipher.final()]).toString('utf8')
+	return JSON.parse(plaintext, BufferJSON.reviver) as T
 }
 
 type RuntimeEntry = {
@@ -99,6 +135,18 @@ export type BaileysSessionSnapshot = {
 }
 
 const runtimeEntries = new Map<string, RuntimeEntry>()
+const messageContentCache = new Map<string, proto.IMessage>()
+const unresolvedIdentityCounts = new Map<string, number>()
+
+function rememberMessage(message: WAMessage) {
+	const id = String(message.key?.id || '').trim()
+	if (!id || !message.message) return
+	messageContentCache.set(id, message.message)
+	if (messageContentCache.size > 2_000) {
+		const oldest = messageContentCache.keys().next().value
+		if (oldest) messageContentCache.delete(oldest)
+	}
+}
 
 const baileysLogger = {
 	level: 'silent',
@@ -498,7 +546,7 @@ async function upsertSessionRecord(channel: BaileysChannelRecord) {
 }
 
 function buildAuthState(sessionRow: BaileysSessionRow) {
-	const restored = deserializeBufferJson<PersistedAuthEnvelope>(
+	const restored = decryptAuthState<PersistedAuthEnvelope>(
 		sessionRow.auth_state,
 	)
 	const persisted: PersistedAuthEnvelope = {
@@ -514,7 +562,7 @@ function buildAuthState(sessionRow: BaileysSessionRow) {
 
 	const persist = async () => {
 		await updateSessionById(sessionRow.id, {
-			auth_state: serializeBufferJson(persisted),
+			auth_state: encryptAuthState(persisted),
 			updated_at: new Date(),
 			last_seen_at: new Date(),
 		})
@@ -837,10 +885,27 @@ export abstract class BaileysServiceRuntime {
 		if (!recipientJid) throw new Error('recipientWhatsAppId is required')
 
 		const messageBody = await this.buildOutboundMessage(payload)
+		const quote = asRecord(payload.quote)
+		const quotedExternalId = asString(quote.externalId)
+		const quoted = quotedExternalId ? {
+			key: {
+				remoteJid: recipientJid,
+				id: quotedExternalId,
+				fromMe: quote.fromMe === true,
+			},
+			message: {
+				extendedTextMessage: {
+					text: asString(quote.content) || `[${asString(quote.contentType) || 'pesan'}]`,
+				},
+			},
+			messageTimestamp: Number(quote.timestamp || Math.floor(Date.now() / 1000)),
+		} as WAMessage : undefined
 		const sent = await entry.socket.sendMessage(
 			recipientJid,
 			messageBody as any,
+			quoted ? { quoted } : undefined,
 		)
+		if (sent) rememberMessage(sent)
 
 		await updateSessionByChannelId(channel.id, {
 			last_seen_at: new Date(),
@@ -854,6 +919,61 @@ export abstract class BaileysServiceRuntime {
 				asString(payload.messageId) ||
 				asString(payload.message_id) ||
 				'',
+		}
+	}
+
+	static async markMessagesRead(payload: Record<string, unknown>) {
+		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
+		if (!channelKey) throw new Error('channelKey is required')
+		const channel = await getChannelByProviderKey(channelKey)
+		if (!channel?.id) throw new Error(`Baileys channel ${channelKey} not found`)
+		const session = await this.ensureChannel(channel.id, { waitForReadyMs: 8_000 })
+		if (session.status !== 'connected') throw new Error(`Baileys session is ${session.status}`)
+		const socket = runtimeEntries.get(channel.id)?.socket
+		if (!socket) throw new Error('Baileys runtime socket is not available')
+		const recipient = normalizeDigits(asString(payload.recipientWhatsAppId) || asString(payload.to))
+		const remoteJid = buildWhatsappJid(recipient, 'pn')
+		const messageIds = Array.isArray(payload.messageIds)
+			? payload.messageIds.map((id) => String(id || '').trim()).filter(Boolean).slice(0, 100)
+			: []
+		if (!remoteJid || !messageIds.length) return { read: 0 }
+		await socket.readMessages(messageIds.map((id) => ({ remoteJid, id, fromMe: false })))
+		return { read: messageIds.length }
+	}
+
+	static async sendPresence(payload: Record<string, unknown>) {
+		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
+		if (!channelKey) throw new Error('channelKey is required')
+		const channel = await getChannelByProviderKey(channelKey)
+		if (!channel?.id) throw new Error(`Baileys channel ${channelKey} not found`)
+		const session = await this.ensureChannel(channel.id, { waitForReadyMs: 5_000 })
+		if (session.status !== 'connected') return { sent: false }
+		const socket = runtimeEntries.get(channel.id)?.socket
+		if (!socket) return { sent: false }
+		const remoteJid = buildWhatsappJid(normalizeDigits(asString(payload.recipientWhatsAppId) || asString(payload.to)), 'pn')
+		const allowed = new Set(['available', 'unavailable', 'composing', 'recording', 'paused'])
+		const presence = String(payload.presence || 'paused')
+		if (!remoteJid || !allowed.has(presence)) return { sent: false }
+		await socket.sendPresenceUpdate(presence as 'available' | 'unavailable' | 'composing' | 'recording' | 'paused', remoteJid)
+		return { sent: true }
+	}
+
+	static async getProfilePicture(payload: Record<string, unknown>) {
+		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
+		if (!channelKey) throw new Error('channelKey is required')
+		const channel = await getChannelByProviderKey(channelKey)
+		if (!channel?.id) throw new Error(`Baileys channel ${channelKey} not found`)
+		const session = await this.ensureChannel(channel.id, { waitForReadyMs: 8_000 })
+		if (session.status !== 'connected') throw new Error(`Baileys session is ${session.status}`)
+		const socket = runtimeEntries.get(channel.id)?.socket
+		if (!socket) throw new Error('Baileys runtime socket is not available')
+		const jid = buildWhatsappJid(normalizeDigits(asString(payload.phoneNumber) || asString(payload.to)), 'pn')
+		if (!jid) throw new Error('phoneNumber is required')
+		try {
+			const url = await socket.profilePictureUrl(jid, 'image', 10_000)
+			return { url: url || null, available: Boolean(url) }
+		} catch {
+			return { url: null, available: false }
 		}
 	}
 
@@ -882,6 +1002,7 @@ export abstract class BaileysServiceRuntime {
 					? { caption: asString(mediaRecord.caption) }
 					: {}),
 				ptv: false,
+				gifPlayback: payload.gifPlayback === true,
 			}
 		}
 
@@ -893,6 +1014,16 @@ export abstract class BaileysServiceRuntime {
 				...(asString(mediaRecord.mimeType)
 					? { mimetype: asString(mediaRecord.mimeType) }
 					: {}),
+				ptt: payload.ptt === true,
+			}
+		}
+
+		if (type === 'sticker') {
+			const url = asString(mediaRecord.url)
+			if (!url) throw new Error('Baileys outbound sticker url is required')
+			return {
+				sticker: { url },
+				isAnimated: payload.isAnimated === true,
 			}
 		}
 
@@ -945,7 +1076,7 @@ export abstract class BaileysServiceRuntime {
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
-			getMessage: async () => undefined,
+			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
 		})
 
 		entry.socket = socket
@@ -969,11 +1100,62 @@ export abstract class BaileysServiceRuntime {
 
 		socket.ev.on('messages.upsert', ({ messages, type }) => {
 			if (type !== 'notify') return
-			void this.handleMessagesUpsert(entry, socket, messages)
+			void this.handleMessagesUpsert(entry, socket, messages, true)
+		})
+
+		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings }) => {
+			void (async () => {
+				if (lidPnMappings?.length) {
+					await socket.signalRepository.lidMapping.storeLIDPNMappings(lidPnMappings)
+				}
+				await this.handleMessagesUpsert(entry, socket, messages, false)
+			})().catch((error) => {
+				console.error('[BaileysService] Failed processing history batch', error)
+			})
 		})
 
 		socket.ev.on('messages.update', (updates) => {
 			void this.handleMessageStatusUpdates(entry, updates)
+		})
+
+		socket.ev.on('messages.delete', (event) => {
+			if (!('keys' in event) || !event.keys.length) return
+			const externalIds = event.keys.map((key) => String(key.id || '').trim()).filter(Boolean)
+			if (!externalIds.length) return
+			void postWebhookToCrm(entry, {
+				event: 'message.deleted',
+				channelKey: entry.providerChannelKey,
+				externalIds,
+				timestamp: Date.now(),
+			}).catch((error) => console.warn('[BaileysService] Message delete event failed', error))
+		})
+
+		socket.ev.on('presence.update', ({ id, presences }) => {
+			void (async () => {
+				const candidates = [id, ...Object.keys(presences || {})].map(normalizeWhatsappJid).filter((jid): jid is string => Boolean(jid))
+				let phoneJid = candidates.find((jid) => jid.endsWith('@s.whatsapp.net')) || null
+				if (!phoneJid) {
+					const lid = candidates.find((jid) => jid.endsWith('@lid'))
+					if (lid) phoneJid = await socket.signalRepository.lidMapping.getPNForLID(lid)
+				}
+				const phone = getWaIdFromJid(phoneJid)
+				const presence = Object.values(presences || {})[0]?.lastKnownPresence
+				if (!phone || !presence) return
+				await postWebhookToCrm(entry, { event: 'presence.update', channelKey: entry.providerChannelKey, phone, presence, timestamp: Date.now() })
+			})().catch((error) => console.warn('[BaileysService] Presence update failed', error))
+		})
+
+		socket.ev.on('contacts.update', (contacts) => {
+			for (const contact of contacts) {
+				if (contact.imgUrl !== 'changed') continue
+				void (async () => {
+					let jid = normalizeWhatsappJid(contact.phoneNumber || contact.id)
+					if (jid?.endsWith('@lid')) jid = await socket.signalRepository.lidMapping.getPNForLID(jid)
+					const phone = getWaIdFromJid(jid)
+					if (!phone) return
+					await postWebhookToCrm(entry, { event: 'contact.profile_changed', channelKey: entry.providerChannelKey, phone, timestamp: Date.now() })
+				})().catch((error) => console.warn('[BaileysService] Contact profile event failed', error))
+			}
 		})
 	}
 
@@ -1044,15 +1226,26 @@ export abstract class BaileysServiceRuntime {
 
 		if (update.connection === 'open') {
 			entry.pairingCodeRequested = false
+			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
 				pairing_code: null,
 				qr_code: null,
 				last_error: null,
 				last_connected_at: new Date(),
+				first_connected_at: sessionRow.first_connected_at || new Date(),
+				phone_number: connectedPhoneNumber || sessionRow.phone_number,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
+			if (connectedPhoneNumber) {
+				await execute(
+					`UPDATE public.whatsapp_channels
+					 SET phone_number = $2::text, display_phone_number = $2::text, updated_at = now()
+					 WHERE id = $1`,
+					[channel.id, connectedPhoneNumber],
+				)
+			}
 			return
 		}
 
@@ -1097,10 +1290,7 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
-		if (
-			disconnectCode === DisconnectReason.loggedOut ||
-			disconnectCode === DisconnectReason.badSession
-		) {
+		if (disconnectCode === DisconnectReason.loggedOut) {
 			await updateSessionById(sessionRow.id, {
 				status: 'logged_out',
 				auth_state: null,
@@ -1109,6 +1299,22 @@ export abstract class BaileysServiceRuntime {
 				last_error: formattedDisconnectMessage,
 				updated_at: new Date(),
 			})
+			return
+		}
+
+		if (disconnectCode === DisconnectReason.badSession) {
+			// A bad-session signal can be transient during process restarts or
+			// concurrent socket replacement. Never destroy account-owned credentials
+			// automatically; only an explicit WhatsApp logout may clear auth_state.
+			await updateSessionById(sessionRow.id, {
+				status: 'recovery_required',
+				pairing_code: null,
+				qr_code: null,
+				last_error: formattedDisconnectMessage,
+				last_seen_at: new Date(),
+				updated_at: new Date(),
+			})
+			this.scheduleRestart(entry.channelId, 5_000)
 			return
 		}
 
@@ -1132,10 +1338,12 @@ export abstract class BaileysServiceRuntime {
 		entry: RuntimeEntry,
 		socket: WASocket,
 		messages: WAMessage[],
+		downloadMedia: boolean,
 	) {
 		for (const message of messages) {
 			try {
 				if (!message.message || !message.key?.id) continue
+				rememberMessage(message)
 				if (message.key.fromMe) continue
 				const remoteJid = message.key.remoteJid || undefined
 				if (
@@ -1149,13 +1357,27 @@ export abstract class BaileysServiceRuntime {
 				const contentType = getContentType(normalizedContent)
 				if (!contentType) continue
 
-				const senderJid =
-					normalizeWhatsappJid(message.key.participant) ||
-					normalizeWhatsappJid(message.key.remoteJid)
+				const key = message.key as typeof message.key & { remoteJidAlt?: string; participantAlt?: string }
+				const candidates = [key.participantAlt, key.remoteJidAlt, key.participant, key.remoteJid]
+					.map(normalizeWhatsappJid)
+					.filter((value): value is string => Boolean(value))
+				let senderJid = candidates.find((value) => value.endsWith('@s.whatsapp.net')) || null
+				if (!senderJid) {
+					const lidJid = candidates.find((value) => value.endsWith('@lid'))
+					if (lidJid) {
+						senderJid = await socket.signalRepository.lidMapping.getPNForLID(lidJid)
+					}
+				}
+				if (!senderJid) {
+					const unresolvedCount = (unresolvedIdentityCounts.get(entry.channelId) || 0) + 1
+					unresolvedIdentityCounts.set(entry.channelId, unresolvedCount)
+					if (unresolvedCount === 1 || unresolvedCount % 100 === 0) {
+						console.warn('[BaileysService] Holding messages until phone-number identities are available', { channelId: entry.channelId, heldMessages: unresolvedCount })
+					}
+					continue
+				}
 				const senderWaId =
-					getWaIdFromJid(senderJid) ||
-					getWaIdFromJid(message.key.participant) ||
-					getWaIdFromJid(message.key.remoteJid)
+					getWaIdFromJid(senderJid)
 				if (!senderWaId) continue
 
 				const normalized = await this.normalizeInboundMessage({
@@ -1167,6 +1389,7 @@ export abstract class BaileysServiceRuntime {
 					normalizedContent: normalizedContent as Record<string, any>,
 					senderWaId,
 					senderJid,
+					downloadMedia,
 				})
 				if (!normalized) continue
 
@@ -1186,13 +1409,14 @@ export abstract class BaileysServiceRuntime {
 		normalizedContent: Record<string, any>
 		senderWaId: string
 		senderJid?: string | null
+		downloadMedia: boolean
 	}) {
 		const { message, contentType, normalizedContent } = params
 		const externalMessageId = String(message.key.id || '').trim()
 		if (!externalMessageId) return null
 		const messageTimestamp = getMessageTimestamp(message.messageTimestamp)
 		const pushName = asString(message.pushName) || params.senderWaId
-		let type: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text'
+		let type: 'text' | 'image' | 'video' | 'gif' | 'audio' | 'voice' | 'document' | 'sticker' | 'reaction' = 'text'
 		let text = ''
 		let mediaUrl: string | null = null
 		let mimeType: string | null = null
@@ -1213,42 +1437,42 @@ export abstract class BaileysServiceRuntime {
 			mimeType = asString(normalizedContent.imageMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.imageMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = params.downloadMedia ? await this.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
 				message,
 				mimeType,
 				fileName: null,
-			})
+			}) : null
 		} else if (contentType === 'videoMessage') {
-			type = 'video'
+			type = normalizedContent.videoMessage?.gifPlayback === true ? 'gif' : 'video'
 			text = asString(normalizedContent.videoMessage?.caption) || ''
 			mimeType = asString(normalizedContent.videoMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.videoMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = params.downloadMedia ? await this.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
 				message,
 				mimeType,
 				fileName: null,
-			})
+			}) : null
 		} else if (contentType === 'audioMessage') {
-			type = 'audio'
+			type = normalizedContent.audioMessage?.ptt === true ? 'voice' : 'audio'
 			text = ''
 			mimeType = asString(normalizedContent.audioMessage?.mimetype)
 			replyToExternalId =
 				asString(normalizedContent.audioMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = params.downloadMedia ? await this.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
 				message,
 				mimeType,
 				fileName: null,
-			})
+			}) : null
 		} else if (contentType === 'documentMessage') {
 			type = 'document'
 			text = asString(normalizedContent.documentMessage?.caption) || ''
@@ -1256,14 +1480,30 @@ export abstract class BaileysServiceRuntime {
 			fileName = asString(normalizedContent.documentMessage?.fileName)
 			replyToExternalId =
 				asString(normalizedContent.documentMessage?.contextInfo?.stanzaId) || null
-			mediaUrl = await this.resolveInboundMediaUrl({
+			mediaUrl = params.downloadMedia ? await this.resolveInboundMediaUrl({
 				channelId: params.channelId,
 				externalMessageId,
 				socket: params.socket,
 				message,
 				mimeType,
 				fileName,
-			})
+			}) : null
+		} else if (contentType === 'stickerMessage') {
+			type = 'sticker'
+			text = '[STICKER]'
+			mimeType = asString(normalizedContent.stickerMessage?.mimetype) || 'image/webp'
+			mediaUrl = params.downloadMedia ? await this.resolveInboundMediaUrl({
+				channelId: params.channelId,
+				externalMessageId,
+				socket: params.socket,
+				message,
+				mimeType,
+				fileName: `${externalMessageId}.webp`,
+			}) : null
+		} else if (contentType === 'reactionMessage') {
+			type = 'reaction'
+			text = asString(normalizedContent.reactionMessage?.text) || ''
+			replyToExternalId = asString(normalizedContent.reactionMessage?.key?.id)
 		} else {
 			return null
 		}
@@ -1275,14 +1515,12 @@ export abstract class BaileysServiceRuntime {
 			message: {
 				id: externalMessageId,
 				from: params.senderWaId,
-				...(params.senderJid ? { fromJid: params.senderJid } : {}),
 				type,
 				text,
 				timestamp: messageTimestamp,
 			},
 			contact: {
 				waId: params.senderWaId,
-				...(params.senderJid ? { waJid: params.senderJid } : {}),
 				name: pushName,
 			},
 		}

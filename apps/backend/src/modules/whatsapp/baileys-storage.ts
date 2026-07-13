@@ -36,6 +36,7 @@ async function createBaileysSessionsTable() {
 			"id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			"channel_id" UUID NOT NULL,
 			"app_id" UUID NOT NULL,
+			"owner_user_id" UUID,
 			"provider_channel_key" VARCHAR(191) NOT NULL,
 			"phone_number" VARCHAR(50),
 			"status" VARCHAR(50) DEFAULT 'pending',
@@ -44,6 +45,7 @@ async function createBaileysSessionsTable() {
 			"qr_code" TEXT,
 			"last_error" TEXT,
 			"last_connected_at" TIMESTAMPTZ(6),
+			"first_connected_at" TIMESTAMPTZ(6),
 			"last_seen_at" TIMESTAMPTZ(6),
 			"metadata" JSONB DEFAULT '{}'::jsonb,
 			"created_at" TIMESTAMPTZ(6) DEFAULT NOW(),
@@ -65,6 +67,16 @@ async function createBaileysSessionsTable() {
 	await prisma.$executeRawUnsafe(`
 		CREATE INDEX IF NOT EXISTS "idx_baileys_sessions_status"
 		ON "baileys_sessions"("status")
+	`)
+	await prisma.$executeRawUnsafe(`
+		ALTER TABLE "baileys_sessions"
+		ADD COLUMN IF NOT EXISTS "owner_user_id" UUID,
+		ADD COLUMN IF NOT EXISTS "first_connected_at" TIMESTAMPTZ(6)
+	`)
+	await prisma.$executeRawUnsafe(`
+		CREATE UNIQUE INDEX IF NOT EXISTS "baileys_sessions_app_owner_key"
+		ON "baileys_sessions"("app_id", "owner_user_id")
+		WHERE "owner_user_id" IS NOT NULL
 	`)
 }
 

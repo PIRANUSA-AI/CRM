@@ -165,4 +165,24 @@ export abstract class BaileysServiceClient {
 		})
 		return unwrapData<{ externalId?: string }>(payload)
 	}
+
+	static async markMessagesRead(
+		body: Record<string, unknown>,
+		headers?: Record<string, string>,
+	) {
+		const payload = await requestBaileysService('/api/v1/read', {
+			method: 'POST', headers, bodyJson: body,
+		})
+		return unwrapData<{ read: number }>(payload)
+	}
+
+	static async sendPresence(body: Record<string, unknown>, headers?: Record<string, string>) {
+		const payload = await requestBaileysService('/api/v1/presence', { method: 'POST', headers, bodyJson: body })
+		return unwrapData<{ sent: boolean }>(payload)
+	}
+
+	static async getProfilePicture(body: Record<string, unknown>, headers?: Record<string, string>) {
+		const payload = await requestBaileysService('/api/v1/profile-picture', { method: 'POST', headers, bodyJson: body })
+		return unwrapData<{ url: string | null; available: boolean }>(payload)
+	}
 }
