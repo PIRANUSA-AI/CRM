@@ -1,0 +1,2303 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================
+// Better Auth Models
+// ============================
+
+model session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String   @db.Uuid
+  user                 users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+
+  @@map("session")
+}
+
+model account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
+}
+
+model organization {
+  id                       String   @id
+  name                     String
+  slug                     String?  @unique
+  logo                     String?
+  description              String?
+  createdBy                String?  @map("created_by")
+  createdAt                DateTime @default(now())
+  metadata                 String?
+  appId                    String?  @unique @db.Uuid
+  aiCredits                Decimal? @default(0.0) @map("ai_credits") @db.Decimal(10, 2)
+  aiCreditWarningThreshold Decimal? @default(5.0) @map("ai_credit_warning_threshold") @db.Decimal(10, 2)
+  aiLowCreditAlertSent     Boolean? @default(false) @map("ai_low_credit_alert_sent")
+
+  members            member[]
+  invitations        invitation[]
+  app                apps?                 @relation(fields: [appId], references: [id])
+  creditTransactions credit_transactions[]
+
+  @@map("organization")
+}
+
+model member {
+  id             String       @id
+  organizationId String
+  organization   organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @db.Uuid
+  user           users        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime     @default(now())
+
+  @@map("member")
+}
+
+model invitation {
+  id             String       @id
+  organizationId String
+  organization   organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  inviterId      String       @db.Uuid
+  inviter        users        @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@map("invitation")
+}
+
+model accounts {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String             @db.VarChar(255)
+  created_at       DateTime?          @default(now()) @db.Timestamp(6)
+  automation_rules automation_rules[]
+  broadcasts       broadcasts[]
+  canned_responses canned_responses[]
+  contacts         contacts[]
+  conversations    conversations[]
+  inboxes          inboxes[]
+  labels           labels[]
+  teams            teams[]
+  webhooks         webhooks[]
+}
+
+model agent_availability {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id               String
+  app_id                String    @db.Uuid
+  is_available          Boolean?  @default(true)
+  max_conversations     Int?      @default(5)
+  current_conversations Int?      @default(0)
+  skills                String[]  @default([])
+  languages             String[]  @default(["en"])
+  last_assigned_at      DateTime? @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+  apps                  apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, app_id])
+  @@index([app_id, is_available], map: "idx_agent_availability_app")
+}
+
+model agent_channel_accounts {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String
+  channel_type     String           @db.VarChar(50)
+  account_id       String           @db.Uuid
+  created_at       DateTime?        @default(now()) @db.Timestamp(6)
+  channel_accounts channel_accounts @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, account_id])
+  @@index([account_id], map: "idx_agent_channel_accounts_account")
+  @@index([user_id], map: "idx_agent_channel_accounts_user")
+}
+
+model agent_channels {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String    @db.Uuid
+  channel_type String    @db.VarChar(50)
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([user_id, channel_type])
+  @@index([channel_type], map: "idx_agent_channels_type")
+  @@index([user_id], map: "idx_agent_channels_user")
+}
+
+model agent_divisions {
+  user_id     String    @db.Uuid
+  division_id String    @db.Uuid
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  divisions   divisions @relation(fields: [division_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, division_id])
+  @@index([division_id], map: "idx_agent_divisions_division")
+  @@index([user_id], map: "idx_agent_divisions_user")
+}
+
+model agent_inbox_assignments {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String?   @db.Uuid
+  inbox_id    String?   @db.Uuid
+  is_active   Boolean?  @default(true)
+  assigned_at DateTime? @default(now()) @db.Timestamp(6)
+  assigned_by String?   @db.Uuid
+
+  @@unique([user_id, inbox_id])
+  @@index([is_active], map: "idx_agent_inbox_active")
+  @@index([inbox_id], map: "idx_agent_inbox_inbox")
+  @@index([user_id], map: "idx_agent_inbox_user")
+}
+
+model agent_presence {
+  user_id      String    @id @db.Uuid
+  status       String?   @default("offline") @db.VarChar(20)
+  last_seen_at DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model agent_settings {
+  id                                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                                String    @unique @db.Uuid
+  default_ticket_board_id               String?   @db.Uuid
+  auto_assign_agent                     Boolean?  @default(false)
+  agent_can_takeover_unserved           Boolean?  @default(true)
+  agent_can_access_customers            Boolean?  @default(true)
+  agent_can_import_export_customers     Boolean?  @default(false)
+  agent_can_send_broadcast              Boolean?  @default(true)
+  agent_can_broadcast_in_service_window Boolean?  @default(false)
+  hide_agent_status_toggle              Boolean?  @default(false)
+  hide_customer_id                      Boolean?  @default(false)
+  agent_can_assign_chat                 Boolean?  @default(true)
+  agent_can_add_agents_to_chat          Boolean?  @default(true)
+  agent_can_leave_chat                  Boolean?  @default(true)
+  hide_handover_dialogue                Boolean?  @default(true)
+  agent_can_manage_quick_replies        Boolean?  @default(true)
+  created_at                            DateTime? @default(now()) @db.Timestamp(6)
+  updated_at                            DateTime? @default(now()) @db.Timestamp(6)
+  apps                                  apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_agent_settings_app_id")
+}
+
+model agent_settings_overrides {
+  id                                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                               String    @unique @db.Uuid
+  auto_assign_agent                     Boolean?
+  agent_can_takeover_unserved           Boolean?
+  agent_can_access_customers            Boolean?
+  agent_can_import_export_customers     Boolean?
+  agent_can_send_broadcast              Boolean?
+  agent_can_broadcast_in_service_window Boolean?
+  hide_agent_status_toggle              Boolean?
+  hide_customer_id                      Boolean?
+  agent_can_assign_chat                 Boolean?
+  agent_can_add_agents_to_chat          Boolean?
+  agent_can_leave_chat                  Boolean?
+  hide_handover_dialogue                Boolean?
+  agent_can_manage_quick_replies        Boolean?
+  updated_at                            DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([user_id], map: "idx_agent_settings_overrides_user_id")
+}
+
+model ai_conversation_contexts {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id   String    @unique @db.Uuid
+  context_summary   String?
+  entities          Json?     @default("{}")
+  ai_reply_count    Int?      @default(0)
+  last_ai_action    String?   @db.VarChar(50)
+  last_ai_action_at DateTime? @db.Timestamptz(6)
+  human_takeover    Boolean?  @default(false)
+  human_takeover_at DateTime? @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([conversation_id], map: "idx_ai_contexts_conversation")
+}
+
+model ai_evaluation_messages {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evaluation_id   String         @db.Uuid
+  role            String         @db.VarChar(20)
+  message         String
+  msg_id          String?        @db.VarChar(255)
+  media_url       String?
+  media_type      String?        @default("text") @db.VarChar(50)
+  conversation_id String?        @db.Uuid
+  msg_created_at  DateTime?      @db.Timestamptz(6)
+  created_at      DateTime?      @default(now()) @db.Timestamptz(6)
+  ai_evaluations  ai_evaluations @relation(fields: [evaluation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([evaluation_id], map: "idx_ai_eval_messages_eval")
+}
+
+model ai_evaluations {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                 String                   @db.Uuid
+  chatbot_id             String                   @db.Uuid
+  content                String?
+  type                   String?                  @default("evaluation") @db.VarChar(50)
+  metadata               Json?                    @default("{}")
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  deleted_at             DateTime?                @db.Timestamptz(6)
+  ai_evaluation_messages ai_evaluation_messages[]
+  apps                   apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots               chatbots                 @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_ai_evaluations_app")
+  @@index([chatbot_id], map: "idx_ai_evaluations_chatbot")
+}
+
+model ai_response_templates {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id      String    @db.Uuid
+  name        String    @db.VarChar(255)
+  template    String
+  variables   Json?     @default("[]")
+  category    String?   @db.VarChar(100)
+  language    String?   @default("en") @db.VarChar(10)
+  is_active   Boolean?  @default(true)
+  usage_count Int?      @default(0)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  apps        apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ai_settings {
+  id                              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                          String    @unique @db.Uuid
+  ai_mode                         String?   @default("assist") @db.VarChar(50)
+  model_provider                  String?   @default("openai") @db.VarChar(50)
+  model_name                      String?   @default("gpt-4o-mini") @db.VarChar(100)
+  temperature                     Decimal?  @default(0.7) @db.Decimal(2, 1)
+  max_tokens                      Int?      @default(500)
+  auto_reply_confidence           Decimal?  @default(0.85) @db.Decimal(3, 2)
+  handoff_keywords                String[]  @default(["speak to human", "talk to agent", "help"])
+  response_tone                   String?   @default("professional") @db.VarChar(50)
+  supported_languages             String[]  @default(["en", "id"])
+  auto_detect_language            Boolean?  @default(true)
+  max_ai_replies_per_conversation Int?      @default(5)
+  cooldown_after_limit_minutes    Int?      @default(30)
+  created_at                      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime? @default(now()) @db.Timestamptz(6)
+  use_platform_credentials        Boolean?  @default(false)
+  api_key                         String?
+  api_endpoint                    String?
+  api_version                     String?   @default("2024-02-15-preview") @db.VarChar(50)
+  deployment_name                 String?   @db.VarChar(255)
+  apps                            apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ai_model_pricing {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  model_name       String    @unique @db.VarChar(100)
+  cost_per_request Decimal   @db.Decimal(10, 4)
+  description      String?
+  is_active        Boolean?  @default(true)
+  updated_at       DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([model_name], map: "idx_ai_model_pricing_name")
+  @@index([is_active], map: "idx_ai_model_pricing_is_active")
+}
+
+model ai_response_logs {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                String    @db.Uuid
+  chatbot_id            String    @db.Uuid
+  conversation_id       String?   @db.Uuid
+  entrypoint            String    @db.VarChar(60)
+  provider              String?   @db.VarChar(80)
+  model_name            String?   @db.VarChar(200)
+  prompt_tokens         Int?      @default(0)
+  completion_tokens     Int?      @default(0)
+  total_tokens          Int?      @default(0)
+  usage_credits         Decimal?  @default(0) @db.Decimal(18, 6)
+  usage_usd             Decimal?  @default(0) @db.Decimal(18, 6)
+  usage_idr             Decimal?  @default(0) @db.Decimal(18, 6)
+  billed_credits        Decimal?  @default(0) @db.Decimal(18, 6)
+  knowledge_references  Json?     @default("[]")
+  rtk_summary           Json?     @default("{}")
+  message_ids           String[]  @default([])
+  status                String?   @default("generated") @db.VarChar(50)
+  retry_count           Int?      @default(0)
+  knowledge_snapshot_at DateTime? @db.Timestamptz(6)
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_ai_response_logs_app")
+  @@index([chatbot_id], map: "idx_ai_response_logs_chatbot")
+  @@index([conversation_id], map: "idx_ai_response_logs_conversation")
+  @@index([entrypoint], map: "idx_ai_response_logs_entrypoint")
+  @@index([created_at], map: "idx_ai_response_logs_created")
+}
+
+model ai_playground_models {
+  id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String                   @db.Uuid
+  model_key            String                   @db.VarChar(80)
+  name                 String                   @db.VarChar(160)
+  vendor               String                   @db.VarChar(120)
+  context_window       String                   @db.VarChar(32)
+  price_in             Decimal                  @db.Decimal(12, 6)
+  price_out            Decimal                  @db.Decimal(12, 6)
+  speed                String                   @db.VarChar(20)
+  tier                 String                   @db.VarChar(20)
+  connected            Boolean?                 @default(false)
+  latency_ms           Int?
+  usage_percent        Int?                     @default(0)
+  sort_order           Int?                     @default(0)
+  created_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  apps                 apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  selected_in_sessions ai_playground_sessions[] @relation("playground_selected_model")
+
+  @@unique([app_id, model_key], map: "uq_ai_playground_models_app_key")
+  @@index([app_id, sort_order], map: "idx_ai_playground_models_app_sort")
+  @@index([app_id, connected], map: "idx_ai_playground_models_app_connected")
+}
+
+model ai_playground_routing_strategies {
+  id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String                   @db.Uuid
+  strategy_key         String                   @db.VarChar(80)
+  label                String                   @db.VarChar(120)
+  description          String
+  routing_rules        Json                     @default("[]")
+  is_active            Boolean?                 @default(false)
+  sort_order           Int?                     @default(0)
+  created_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  apps                 apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  selected_in_sessions ai_playground_sessions[] @relation("playground_selected_strategy")
+
+  @@unique([app_id, strategy_key], map: "uq_ai_playground_routing_app_key")
+  @@index([app_id, sort_order], map: "idx_ai_playground_routing_app_sort")
+  @@index([app_id, is_active], map: "idx_ai_playground_routing_app_active")
+}
+
+model ai_playground_personas {
+  id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String                   @db.Uuid
+  persona_key          String                   @db.VarChar(80)
+  label                String                   @db.VarChar(160)
+  system_instruction   String
+  is_default           Boolean?                 @default(false)
+  sort_order           Int?                     @default(0)
+  created_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?                @default(now()) @db.Timestamptz(6)
+  apps                 apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  selected_in_sessions ai_playground_sessions[] @relation("playground_selected_persona")
+
+  @@unique([app_id, persona_key], map: "uq_ai_playground_personas_app_key")
+  @@index([app_id, sort_order], map: "idx_ai_playground_personas_app_sort")
+  @@index([app_id, is_default], map: "idx_ai_playground_personas_app_default")
+}
+
+model ai_playground_guardrails {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id        String    @db.Uuid
+  guardrail_key String    @db.VarChar(80)
+  label         String    @db.VarChar(180)
+  enabled       Boolean?  @default(true)
+  sort_order    Int?      @default(0)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  apps          apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([app_id, guardrail_key], map: "uq_ai_playground_guardrails_app_key")
+  @@index([app_id, sort_order], map: "idx_ai_playground_guardrails_app_sort")
+}
+
+model ai_playground_metric_items {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id        String    @db.Uuid
+  metric_key    String    @db.VarChar(80)
+  label         String    @db.VarChar(120)
+  value         String    @db.VarChar(120)
+  delta         String    @db.VarChar(120)
+  trend         String    @db.VarChar(20)
+  positive_when String    @db.VarChar(20)
+  sort_order    Int?      @default(0)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  apps          apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([app_id, metric_key], map: "uq_ai_playground_metrics_app_key")
+  @@index([app_id, sort_order], map: "idx_ai_playground_metrics_app_sort")
+}
+
+model ai_playground_sessions {
+  id                   String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String                            @db.Uuid
+  selected_model_id    String?                           @db.Uuid
+  selected_strategy_id String?                           @db.Uuid
+  selected_persona_id  String?                           @db.Uuid
+  status               String?                           @default("active") @db.VarChar(20)
+  created_at           DateTime?                         @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?                         @default(now()) @db.Timestamptz(6)
+  apps                 apps                              @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  selected_model       ai_playground_models?             @relation("playground_selected_model", fields: [selected_model_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  selected_strategy    ai_playground_routing_strategies? @relation("playground_selected_strategy", fields: [selected_strategy_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  selected_persona     ai_playground_personas?           @relation("playground_selected_persona", fields: [selected_persona_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  turns                ai_playground_turns[]
+
+  @@index([app_id, updated_at], map: "idx_ai_playground_sessions_app_updated")
+  @@index([app_id, status], map: "idx_ai_playground_sessions_app_status")
+}
+
+model ai_playground_turns {
+  id         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id     String                 @db.Uuid
+  session_id String                 @db.Uuid
+  role       String                 @db.VarChar(20)
+  content    String
+  model_name String?                @db.VarChar(160)
+  tokens_in  Int?
+  tokens_out Int?
+  latency_ms Int?
+  cost_usd   Decimal?               @db.Decimal(12, 6)
+  sort_order Int                    @default(0)
+  created_at DateTime?              @default(now()) @db.Timestamptz(6)
+  apps       apps                   @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sessions   ai_playground_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id, sort_order], map: "idx_ai_playground_turns_session_sort")
+  @@index([app_id, created_at], map: "idx_ai_playground_turns_app_created")
+}
+
+model top_up_packages {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  price_usd   Decimal  @db.Decimal(10, 2)
+  credits     Decimal  @db.Decimal(10, 2)
+  description String?
+  is_active   Boolean? @default(true)
+  sort_order  Int?     @default(0)
+
+  @@index([is_active], map: "idx_top_up_packages_active")
+  @@index([sort_order], map: "idx_top_up_packages_order")
+}
+
+model platform_settings {
+  key        String    @id @db.VarChar(100)
+  value      String
+  updated_by String?   @db.Uuid
+  updated_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([key], map: "idx_platform_settings_key")
+}
+
+model app_categories {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String       @db.VarChar(100)
+  slug        String       @unique @db.VarChar(100)
+  description String?
+  icon        String?      @db.VarChar(50)
+  sort_order  Int?         @default(0)
+  created_at  DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime?    @default(now()) @db.Timestamptz(6)
+  app_center  app_center[]
+}
+
+model app_center {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String              @db.VarChar(255)
+  slug              String              @unique @db.VarChar(255)
+  author            String              @default("CRM") @db.VarChar(255)
+  caption           String
+  description       String?
+  category_id       String?             @db.Uuid
+  icon_url          String?
+  banner_url        String?
+  version           String?             @default("1.0.0") @db.VarChar(50)
+  is_featured       Boolean?            @default(false)
+  is_active         Boolean?            @default(true)
+  pricing_type      String?             @default("free") @db.VarChar(50)
+  price             Decimal?            @default(0) @db.Decimal(10, 2)
+  setting_url       String?
+  settings_new_tab  Boolean?            @default(false)
+  webhook_url       String?
+  permissions       Json?               @default("[]")
+  metadata          Json?               @default("{}")
+  created_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  is_coming_soon    Boolean?            @default(false)
+  app_categories    app_categories?     @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  app_installations app_installations[]
+
+  @@index([is_active], map: "idx_app_center_active")
+  @@index([category_id], map: "idx_app_center_category")
+  @@index([is_featured], map: "idx_app_center_featured")
+  @@index([slug], map: "idx_app_center_slug")
+}
+
+model app_installations {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id       String     @db.Uuid
+  app_id_org   String     @db.VarChar(255)
+  status       String?    @default("pending") @db.VarChar(50)
+  is_enabled   Boolean?   @default(true)
+  installed_by String?    @db.Uuid
+  settings     Json?      @default("{}")
+  installed_at DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?  @default(now()) @db.Timestamptz(6)
+  app_center   app_center @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([app_id, app_id_org])
+  @@index([app_id], map: "idx_app_installations_app")
+  @@index([app_id_org], map: "idx_app_installations_org")
+  @@index([status], map: "idx_app_installations_status")
+}
+
+model app_usage_logs {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id           String?   @db.Uuid
+  endpoint         String?   @db.VarChar(255)
+  method           String?   @db.VarChar(10)
+  status_code      Int?
+  response_time_ms Int?
+  ip_address       String?   @db.VarChar(45)
+  user_agent       String?
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  apps             apps?     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_app_usage_app")
+  @@index([created_at], map: "idx_app_usage_created")
+}
+
+model apps {
+  id                               String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                           String                             @unique @db.VarChar(64)
+  app_secret_hash                  String?                            @db.VarChar(255)
+  app_name                         String                             @db.VarChar(255)
+  description                      String?
+  is_active                        Boolean?                           @default(true)
+  allowed_origins                  Json?                              @default("[]")
+  rate_limit_per_minute            Int?                               @default(60)
+  last_used_at                     DateTime?                          @db.Timestamp(6)
+  created_at                       DateTime?                          @default(now()) @db.Timestamp(6)
+  updated_at                       DateTime?                          @default(now()) @db.Timestamp(6)
+  created_by                       String?                            @db.Uuid
+  business_name                    String                             @db.VarChar(255)
+  deleted_at                       DateTime?                          @db.Timestamp(6)
+  ai_credits                       Decimal?                           @default(0.0) @db.Decimal(10, 2)
+  ai_credit_warning_threshold      Decimal?                           @default(5.0) @db.Decimal(10, 2)
+  ai_low_credit_alert_sent         Boolean?                           @default(false)
+  agent_availability               agent_availability[]
+  agent_settings                   agent_settings?
+  ai_evaluations                   ai_evaluations[]
+  ai_playground_guardrails         ai_playground_guardrails[]
+  ai_playground_metric_items       ai_playground_metric_items[]
+  ai_playground_models             ai_playground_models[]
+  ai_playground_personas           ai_playground_personas[]
+  ai_playground_routing_strategies ai_playground_routing_strategies[]
+  ai_playground_sessions           ai_playground_sessions[]
+  ai_playground_turns              ai_playground_turns[]
+  ai_response_templates            ai_response_templates[]
+  ai_settings                      ai_settings?
+  app_usage_logs                   app_usage_logs[]
+  auto_assign_rules                auto_assign_rules[]
+  auto_responder_rules             auto_responder_rules[]
+  automation_flows                 automation_flows[]
+  channel_accounts                 channel_accounts[]
+  chatbots                         chatbots[]
+  contact_custom_fields            contact_custom_fields[]
+  contact_tags                     contact_tags[]
+  credit_transactions              credit_transactions[]
+  customer_level_settings          customer_level_settings?
+  divisions                        divisions[]
+  forms                            forms[]
+  handover_requests                handover_requests[]
+  knowledge_categories             knowledge_categories[]
+  knowledge_faqs                   knowledge_faqs[]
+  knowledge_sources                knowledge_sources[]
+  knowledge_source_files           knowledge_source_files[]
+  knowledge_ingestion_jobs         knowledge_ingestion_jobs[]
+  knowledge_chunks                 knowledge_chunks[]
+  knowledge_query_logs             knowledge_query_logs[]
+  knowledge_query_chunks           knowledge_query_chunks[]
+  office_hours                     office_hours[]
+  pipelines                        pipelines[]
+  sla_policies                     sla_policies[]
+  template_variables               template_variables[]
+  webhooks                         webhooks[]
+  organization                     organization?
+
+  @@index([is_active], map: "idx_apps_active")
+  @@index([app_id], map: "idx_apps_app_id")
+}
+
+model customer_level_settings {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id             String    @unique @db.Uuid
+  vip_chatbot_id     String?   @db.Uuid
+  premium_chatbot_id String?   @db.Uuid
+  basic_chatbot_id   String?   @db.Uuid
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+  apps               apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_customer_level_settings_app_id")
+}
+
+model credit_transactions {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String?       @map("organization_id")
+  organization    organization? @relation(fields: [organization_id], references: [id])
+  app_id          String?       @map("app_id") @db.Uuid
+  apps            apps?         @relation(fields: [app_id], references: [id])
+  amount          Decimal       @db.Decimal(10, 2)
+  type            String        @db.VarChar(20)
+  description     String?
+  metadata        Json?         @default("{}")
+  created_at      DateTime      @default(now())
+  reservation_id  String?       @db.Uuid
+  external_id     String?       @map("external_id") @db.VarChar(255)
+  payment_status  String?       @default("completed") @map("payment_status") @db.VarChar(20)
+
+  @@index([organization_id], map: "idx_credit_transactions_org")
+  @@index([app_id], map: "idx_credit_transactions_app")
+  @@index([external_id], map: "idx_credit_transactions_external")
+  @@index([payment_status], map: "idx_credit_transactions_status")
+}
+
+model assignment_history {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id     String             @db.Uuid
+  assigned_to         String?            @db.Uuid
+  assigned_from       String?            @db.Uuid
+  assignment_type     String?            @db.VarChar(50)
+  auto_assign_rule_id String?            @db.Uuid
+  created_at          DateTime?          @default(now()) @db.Timestamptz(6)
+  auto_assign_rules   auto_assign_rules? @relation(fields: [auto_assign_rule_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([conversation_id], map: "idx_assignment_history_conv")
+}
+
+model auto_assign_rules {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id             String               @db.Uuid
+  name               String               @db.VarChar(255)
+  description        String?
+  rule_type          String               @default("round_robin") @db.VarChar(50)
+  priority           Int?                 @default(0)
+  conditions         Json?                @default("{}")
+  target_type        String?              @default("all") @db.VarChar(50)
+  target_ids         String[]             @default([]) @db.Uuid
+  fallback_action    String?              @default("queue") @db.VarChar(50)
+  fallback_agent_id  String?              @db.Uuid
+  is_active          Boolean?             @default(true)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  assignment_history assignment_history[]
+  handover_requests  handover_requests[]
+  apps               apps                 @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model handover_requests {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id            String             @db.Uuid
+  conversation_id   String             @db.Uuid
+  request_type      String             @default("take") @db.VarChar(20)
+  requested_by      String?            @db.Uuid
+  target_agent_id   String?            @db.Uuid
+  status            String             @default("pending") @db.VarChar(20)
+  request_note      String?
+  approval_note     String?
+  approved_by       String?            @db.Uuid
+  approved_at       DateTime?          @db.Timestamptz(6)
+  rejected_by       String?            @db.Uuid
+  rejected_at       DateTime?          @db.Timestamptz(6)
+  source_rule_id    String?            @db.Uuid
+  ai_reason         String?
+  ai_intent         String?            @db.VarChar(255)
+  sla_due_at        DateTime?          @db.Timestamptz(6)
+  created_at        DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?          @default(now()) @db.Timestamptz(6)
+  auto_assign_rules auto_assign_rules? @relation(fields: [source_rule_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  apps              apps               @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id, created_at], map: "idx_handover_requests_app_created")
+  @@index([app_id, status], map: "idx_handover_requests_app_status")
+  @@index([conversation_id, created_at], map: "idx_handover_requests_conversation")
+  @@index([source_rule_id, created_at], map: "idx_handover_requests_rule_created")
+  @@index([target_agent_id, created_at], map: "idx_handover_requests_target_agent")
+}
+
+model auto_responder_logs {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rule_id              String?               @db.Uuid
+  conversation_id      String?               @db.Uuid
+  message_id           String?               @db.Uuid
+  triggered_at         DateTime?             @default(now()) @db.Timestamp(6)
+  response_sent        Boolean?              @default(false)
+  response_message_id  String?               @db.Uuid
+  metadata             Json?                 @default("{}")
+  auto_responder_rules auto_responder_rules? @relation(fields: [rule_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([conversation_id], map: "idx_responder_logs_conversation")
+  @@index([rule_id], map: "idx_responder_logs_rule")
+  @@index([triggered_at], map: "idx_responder_logs_triggered")
+}
+
+model auto_responder_rules {
+  id                            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inbox_id                      String?               @db.Uuid
+  name                          String                @db.VarChar(255)
+  description                   String?
+  trigger_type                  String                @db.VarChar(50)
+  trigger_config                Json?                 @default("{}")
+  response_type                 String?               @default("text") @db.VarChar(50)
+  response_content              String
+  response_delay_seconds        Int?                  @default(0)
+  max_triggers_per_conversation Int?                  @default(1)
+  cooldown_minutes              Int?                  @default(60)
+  is_active                     Boolean?              @default(true)
+  priority                      Int?                  @default(0)
+  created_at                    DateTime?             @default(now()) @db.Timestamp(6)
+  updated_at                    DateTime?             @default(now()) @db.Timestamp(6)
+  app_id                        String                @db.Uuid
+  auto_responder_logs           auto_responder_logs[]
+  apps                          apps                  @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_auto_responder_rules_app")
+
+  @@index([is_active], map: "idx_auto_responder_active")
+  @@index([inbox_id], map: "idx_auto_responder_inbox")
+  @@index([app_id], map: "idx_auto_responder_rules_app")
+  @@index([trigger_type], map: "idx_auto_responder_trigger")
+}
+
+model automation_flows {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id      String    @db.Uuid
+  name        String
+  description String?
+  nodes       Json?     @default("[]")
+  edges       Json?     @default("[]")
+  active      Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  apps        apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([active], map: "idx_automation_flows_active")
+  @@index([app_id], map: "idx_automation_flows_app")
+}
+
+model automation_rules {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id  String?   @db.Uuid
+  name        String    @db.VarChar(255)
+  description String?
+  event_name  String    @db.VarChar(50)
+  conditions  Json?     @default("[]")
+  actions     Json?     @default("[]")
+  active      Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  accounts    accounts? @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model broadcast_logs {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  broadcast_id  String?     @db.Uuid
+  contact_id    String?     @db.Uuid
+  message_id    String?     @db.Uuid
+  status        String?     @default("queued") @db.VarChar(50)
+  error_message String?
+  created_at    DateTime?   @default(now()) @db.Timestamp(6)
+  broadcasts    broadcasts? @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  contacts      contacts?   @relation(fields: [contact_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages      messages?   @relation(fields: [message_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model broadcasts {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id       String?          @db.Uuid
+  title            String           @db.VarChar(255)
+  message_type     String?          @default("text") @db.VarChar(50)
+  message_content  String?
+  template_params  Json?            @default("{}")
+  target_audience  Json?            @default("{}")
+  status           String?          @default("draft") @db.VarChar(50)
+  scheduled_at     DateTime?        @db.Timestamp(6)
+  total_recipients Int?             @default(0)
+  success_count    Int?             @default(0)
+  failed_count     Int?             @default(0)
+  created_at       DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at       DateTime?        @default(now()) @db.Timestamp(6)
+  app_id           String?          @db.Uuid
+  deleted_at       DateTime?        @db.Timestamp(6)
+  broadcast_logs   broadcast_logs[]
+  accounts         accounts?        @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model canned_responses {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id String?   @db.Uuid
+  short_code String    @db.VarChar(50)
+  content    String
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  app_id     String?   @db.Uuid
+  accounts   accounts? @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model channel_accounts {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                 String                   @db.Uuid
+  channel_type           String                   @db.VarChar(50)
+  name                   String                   @db.VarChar(255)
+  account_data           Json?                    @default("{}")
+  active                 Boolean?                 @default(true)
+  created_at             DateTime?                @default(now()) @db.Timestamp(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamp(6)
+  agent_channel_accounts agent_channel_accounts[]
+  apps                   apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_channel_accounts_app")
+  @@index([channel_type], map: "idx_channel_accounts_type")
+}
+
+model chatbots {
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                   String                     @db.Uuid
+  name                     String                     @db.VarChar(255)
+  description              String?
+  model                    String?                    @default("gpt-4o-mini") @db.VarChar(100)
+  prompt                   String?
+  welcome_msg              String?
+  agent_transfer           String?
+  temperature              Decimal?                   @default(0.2) @db.Decimal(3, 2)
+  history_limit            Int?                       @default(50)
+  context_limit            Int?                       @default(50)
+  message_await            Int?                       @default(30)
+  message_limit            Int?                       @default(1000)
+  is_silent_handoff_agent  Boolean?                   @default(false)
+  watcher_enabled          Boolean?                   @default(false)
+  session_only_memory      Boolean?                   @default(false)
+  plugin_type              String?                    @db.VarChar(50)
+  plugin_data              Json?                      @default("{}")
+  is_hidden                Boolean?                   @default(false)
+  is_deleted               Boolean?                   @default(false)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  timezone                 String?                    @default("Asia/Jakarta") @db.VarChar(100)
+  label_condition          String?
+  app_data                 Json?                      @default("{}")
+  ai_followups             Json?                      @default("[]")
+  selected_labels          Json?                      @default("[]")
+  max_file_read_window     Int?                       @default(3)
+  stop_after_handoff       Boolean?                   @default(true)
+  ai_evaluations           ai_evaluations[]
+  apps                     apps                       @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_categories     knowledge_categories[]
+  knowledge_faqs           knowledge_faqs[]
+  knowledge_sources        knowledge_sources[]
+  knowledge_source_files   knowledge_source_files[]
+  knowledge_ingestion_jobs knowledge_ingestion_jobs[]
+  knowledge_chunks         knowledge_chunks[]
+  knowledge_query_logs     knowledge_query_logs[]
+  knowledge_query_chunks   knowledge_query_chunks[]
+
+  @@index([app_id], map: "idx_chatbots_app")
+}
+
+model consent_logs {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contact_id  String    @db.Uuid
+  status      String    @db.VarChar(50)
+  purpose     String?   @db.VarChar(100)
+  source      String?   @db.VarChar(100)
+  captured_by String?   @db.Uuid
+  ip_address  String?   @db.VarChar(45)
+  user_agent  String?
+  notes       String?
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([contact_id], map: "idx_consent_logs_contact")
+}
+
+model contact_custom_fields {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  field_key     String    @db.VarChar(100)
+  field_label   String    @db.VarChar(255)
+  field_type    String    @db.VarChar(50)
+  options       Json?     @default("[]")
+  is_required   Boolean?  @default(false)
+  is_visible    Boolean?  @default(true)
+  display_order Int?      @default(0)
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  app_id        String    @db.Uuid
+  apps          apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_contact_custom_fields_app")
+
+  @@index([app_id], map: "idx_contact_custom_fields_app")
+}
+
+model contact_notes {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contact_id String?   @db.Uuid
+  user_id    String?   @db.Uuid
+  content    String
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([contact_id], map: "idx_contact_notes_contact")
+  @@index([user_id], map: "idx_contact_notes_user")
+}
+
+model contact_tag_assignments {
+  contact_id   String       @db.Uuid
+  tag_id       String       @db.Uuid
+  assigned_at  DateTime?    @default(now()) @db.Timestamptz(6)
+  contact_tags contact_tags @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([contact_id, tag_id])
+}
+
+model contact_tags {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                  String                    @db.Uuid
+  name                    String                    @db.VarChar(100)
+  color                   String?                   @default("#3B82F6") @db.VarChar(20)
+  created_at              DateTime?                 @default(now()) @db.Timestamptz(6)
+  contact_tag_assignments contact_tag_assignments[]
+  apps                    apps                      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([app_id, name])
+}
+
+model contacts {
+  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id              String?          @db.Uuid
+  name                    String?          @db.VarChar(255)
+  email                   String?          @db.VarChar(255)
+  phone_number            String?          @db.VarChar(50)
+  avatar_url              String?
+  identifier              String?          @unique @db.VarChar(100)
+  channel_type            String?          @db.VarChar(50)
+  metadata                Json?            @default("{}")
+  additional_attributes   Json?            @default("{}")
+  created_at              DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at              DateTime?        @default(now()) @db.Timestamp(6)
+  app_id                  String?          @db.Uuid
+  badge_url               String?
+  deleted_at              DateTime?        @db.Timestamp(6)
+  whatsapp_id             String?          @db.VarChar(50)
+  instagram_id            String?          @db.VarChar(50)
+  tiktok_id               String?          @db.VarChar(50)
+  instagram_igsid         String?          @db.VarChar(50)
+  first_contact_at        DateTime?        @db.Timestamp(6)
+  last_inbound_message_at DateTime?        @db.Timestamp(6)
+  last_message_at         DateTime?        @db.Timestamp(6)
+  window_expires_at       DateTime?        @db.Timestamp(6)
+  consent_status          String?          @default("NOT_CONSENTED") @db.VarChar(50)
+  source                  String?          @db.VarChar(100)
+  custom_attributes       Json?
+  company                 String?
+  country                 String?          @db.VarChar(100)
+  city                    String?          @db.VarChar(100)
+  last_activity_at        DateTime?        @db.Timestamp(6)
+  pubsub_token            String?          @db.VarChar(255)
+  meta                    Json?
+  broadcast_logs          broadcast_logs[]
+  accounts                accounts?        @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  conversations           conversations[]
+}
+
+model conversation_activity_log {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String    @db.Uuid
+  action          String    @db.VarChar(50)
+  actor_id        String?   @db.Uuid
+  actor_type      String?   @default("user") @db.VarChar(20)
+  target_id       String?   @db.Uuid
+  metadata        Json?     @default("{}")
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([action], map: "idx_conv_activity_action")
+  @@index([conversation_id], map: "idx_conv_activity_conversation")
+  @@index([created_at], map: "idx_conv_activity_created")
+}
+
+model conversation_agents {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String    @db.Uuid
+  agent_id        String    @db.Uuid
+  assigned_by     String?   @db.Uuid
+  assigned_at     DateTime? @default(now()) @db.Timestamp(6)
+  removed_at      DateTime? @db.Timestamp(6)
+  removed_by      String?   @db.Uuid
+  is_primary      Boolean?  @default(false)
+  status          String?   @default("active") @db.VarChar(20)
+
+  @@unique([conversation_id, agent_id, assigned_at])
+  @@index([agent_id], map: "idx_conv_agents_agent")
+  @@index([conversation_id], map: "idx_conv_agents_conversation")
+  @@index([status], map: "idx_conv_agents_status")
+}
+
+model conversation_labels {
+  conversation_id String        @db.Uuid
+  label_id        String        @db.Uuid
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  labels          labels        @relation(fields: [label_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([conversation_id, label_id])
+}
+
+model conversation_notes {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String?   @db.Uuid
+  user_id         String?   @db.Uuid
+  content         String
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([conversation_id], map: "idx_conversation_notes_conversation")
+  @@index([user_id], map: "idx_conversation_notes_user")
+}
+
+model conversation_participants {
+  conversation_id String        @db.Uuid
+  user_id         String        @db.Uuid
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([conversation_id, user_id])
+}
+
+model conversation_ratings {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String    @unique @db.Uuid
+  contact_id      String?   @db.Uuid
+  rating          Int
+  feedback        String?
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([conversation_id], map: "idx_conversation_ratings_conversation")
+  @@index([created_at], map: "idx_conversation_ratings_created")
+  @@index([rating], map: "idx_conversation_ratings_rating")
+}
+
+model conversation_sales {
+  conversation_id      String           @id @db.Uuid
+  pipeline_id          String?          @db.Uuid
+  stage_id             String?          @db.Uuid
+  deal_value           Decimal?         @default(0) @db.Decimal(12, 2)
+  probability_snapshot Int?             @default(0)
+  expected_revenue     Decimal?         @default(0) @db.Decimal(12, 2)
+  stage_entered_at     DateTime?        @default(now()) @db.Timestamp(6)
+  stage_history        Json?            @default("[]")
+  metadata             Json?            @default("{}")
+  created_at           DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?        @default(now()) @db.Timestamp(6)
+  pipelines            pipelines?       @relation(fields: [pipeline_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pipeline_stages      pipeline_stages? @relation(fields: [stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([pipeline_id], map: "idx_conversation_sales_pipeline")
+  @@index([stage_id], map: "idx_conversation_sales_stage")
+  @@index([deal_value], map: "idx_conversation_sales_value")
+}
+
+model conversations {
+  id                          String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id                  String?                     @db.Uuid
+  inbox_id                    String?                     @db.Uuid
+  contact_id                  String?                     @db.Uuid
+  channel_type                String?                     @db.VarChar(50)
+  assignee_id                 String?                     @db.Uuid
+  team_id                     String?                     @db.Uuid
+  status                      String?                     @default("open") @db.VarChar(20)
+  unread_count                Int?                        @default(0)
+  priority                    String?                     @default("low") @db.VarChar(20)
+  snoozed_until               DateTime?                   @db.Timestamp(6)
+  waiting_since               DateTime?                   @db.Timestamp(6)
+  last_message_at             DateTime?                   @default(now()) @db.Timestamp(6)
+  custom_attributes           Json?                       @default("{}")
+  created_at                  DateTime?                   @default(now()) @db.Timestamp(6)
+  updated_at                  DateTime?                   @default(now()) @db.Timestamp(6)
+  app_id                      String?                     @db.Uuid
+  deleted_at                  DateTime?                   @db.Timestamp(6)
+  first_reply_at              DateTime?                   @db.Timestamp(6)
+  resolved_at                 DateTime?                   @db.Timestamp(6)
+  sla_breach_at               DateTime?                   @db.Timestamp(6)
+  pipeline_id                 String?                     @db.Uuid
+  stage_id                    String?                     @db.Uuid
+  tags                        Json?
+  messaging_window_expires_at DateTime?                   @db.Timestamp(6)
+  messaging_window_open       Boolean?                    @default(false)
+  total_messages              Int?                        @default(0)
+  agent_last_seen_at          DateTime?                   @db.Timestamp(6)
+  contact_last_seen_at        DateTime?                   @db.Timestamp(6)
+  additional_attributes       Json?
+  resolution_time_seconds     Int?
+  first_response_time_seconds Int?
+  waiting_time_seconds        Int?
+  last_activity_at            DateTime?                   @db.Timestamp(6)
+  browser_info                Json?
+  referer                     String?
+  source_id                   String?                     @db.Uuid
+  identifier                  String?                     @db.VarChar(255)
+  meta                        Json?
+  messaging_window_opened_at  DateTime?                   @db.Timestamp(6)
+  is_within_messaging_window  Boolean?                    @default(false)
+  conversation_labels         conversation_labels[]
+  conversation_participants   conversation_participants[]
+  accounts                    accounts?                   @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  contacts                    contacts?                   @relation(fields: [contact_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inboxes                     inboxes?                    @relation(fields: [inbox_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  teams                       teams?                      @relation(fields: [team_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  messages                    messages[]
+}
+
+model custom_attribute_definitions {
+  id                     Int       @id @default(autoincrement())
+  attribute_display_name String    @db.VarChar(255)
+  attribute_key          String    @db.VarChar(255)
+  attribute_model        String?   @default("contact_attribute") @db.VarChar(50)
+  attribute_description  String?
+  attribute_values       Json?     @default("[]")
+  created_at             DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model divisions {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String            @db.VarChar(255)
+  description        String?
+  parent_division_id String?           @db.Uuid
+  created_at         DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?         @default(now()) @db.Timestamp(6)
+  app_id             String            @db.Uuid
+  color              String?           @default("#3B82F6") @db.VarChar(50)
+  agent_divisions    agent_divisions[]
+  divisions          divisions?        @relation("divisionsTodivisions", fields: [parent_division_id], references: [id], onUpdate: NoAction)
+  other_divisions    divisions[]       @relation("divisionsTodivisions")
+  apps               apps              @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_divisions_app")
+
+  @@index([app_id], map: "idx_divisions_app")
+  @@index([parent_division_id], map: "idx_divisions_parent")
+}
+
+model embeddings {
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_id         String?                @db.Uuid
+  faq_id            String?                @db.Uuid
+  content_chunk     String?
+  chunk_index       Int?                   @default(0)
+  embedding         Unsupported("vector")?
+  created_at        DateTime?              @default(now()) @db.Timestamp(6)
+  knowledge_sources knowledge_sources?     @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_faqs    knowledge_faqs?        @relation(fields: [faq_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([source_id], map: "idx_embeddings_source")
+  @@index([faq_id], map: "idx_embeddings_faq")
+}
+
+model form_extraction_logs {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submission_id      String?           @db.Uuid
+  message_id         String?           @db.Uuid
+  raw_text           String?
+  ai_response        Json?
+  extracted_count    Int?              @default(0)
+  success            Boolean?          @default(true)
+  error_message      String?
+  processing_time_ms Int?
+  created_at         DateTime?         @default(now()) @db.Timestamp(6)
+  form_submissions   form_submissions? @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_extraction_logs_created")
+  @@index([submission_id], map: "idx_extraction_logs_submission")
+}
+
+model form_fields {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  form_id                String?                  @db.Uuid
+  field_key              String                   @db.VarChar(100)
+  label                  String                   @db.VarChar(255)
+  field_type             String                   @db.VarChar(50)
+  is_required            Boolean?                 @default(false)
+  order_no               Int?                     @default(0)
+  validation             Json?                    @default("{}")
+  ai_aliases             Json?                    @default("[]")
+  ai_context             String?
+  options                Json?                    @default("[]")
+  default_value          String?
+  placeholder            String?
+  help_text              String?
+  created_at             DateTime?                @default(now()) @db.Timestamp(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamp(6)
+  forms                  forms?                   @relation(fields: [form_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  form_submission_values form_submission_values[]
+
+  @@unique([form_id, field_key])
+  @@index([form_id], map: "idx_form_fields_form")
+  @@index([form_id, order_no], map: "idx_form_fields_order")
+}
+
+model form_submission_values {
+  submission_id             String           @db.Uuid
+  field_id                  String           @db.Uuid
+  value                     String?
+  normalized_value          String?
+  source                    String?          @default("manual") @db.VarChar(50)
+  confidence                Int?             @default(0)
+  extracted_from_message_id String?          @db.Uuid
+  extracted_at              DateTime?        @db.Timestamp(6)
+  is_valid                  Boolean?         @default(true)
+  validation_error          String?
+  created_at                DateTime?        @default(now()) @db.Timestamp(6)
+  updated_at                DateTime?        @default(now()) @db.Timestamp(6)
+  form_fields               form_fields      @relation(fields: [field_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  form_submissions          form_submissions @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([submission_id, field_id])
+  @@index([confidence], map: "idx_submission_values_confidence")
+  @@index([source], map: "idx_submission_values_source")
+  @@index([submission_id], map: "idx_submission_values_submission")
+}
+
+model form_submissions {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  form_id                String?                  @db.Uuid
+  conversation_id        String?                  @db.Uuid
+  status                 String?                  @default("draft") @db.VarChar(50)
+  confidence_score       Int?                     @default(0)
+  extraction_method      String?                  @default("manual") @db.VarChar(50)
+  required_fields_count  Int?                     @default(0)
+  filled_fields_count    Int?                     @default(0)
+  completion_percentage  Int?                     @default(0)
+  created_at             DateTime?                @default(now()) @db.Timestamp(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamp(6)
+  completed_at           DateTime?                @db.Timestamp(6)
+  verified_at            DateTime?                @db.Timestamp(6)
+  metadata               Json?                    @default("{}")
+  form_extraction_logs   form_extraction_logs[]
+  form_submission_values form_submission_values[]
+  forms                  forms?                   @relation(fields: [form_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversation_id, form_id])
+  @@index([completion_percentage], map: "idx_form_submissions_completion")
+  @@index([conversation_id], map: "idx_form_submissions_conversation")
+  @@index([form_id], map: "idx_form_submissions_form")
+  @@index([status], map: "idx_form_submissions_status")
+}
+
+model form_templates {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.VarChar(255)
+  description String?
+  industry    String?   @db.VarChar(100)
+  schema      Json?     @default("{}")
+  is_public   Boolean?  @default(false)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  forms       forms[]
+
+  @@index([industry], map: "idx_form_templates_industry")
+}
+
+model forms {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inbox_id             String?            @db.Uuid
+  name                 String             @db.VarChar(255)
+  description          String?
+  template_id          String?            @db.Uuid
+  is_active            Boolean?           @default(true)
+  auto_extract         Boolean?           @default(true)
+  confidence_threshold Int?               @default(70)
+  created_at           DateTime?          @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?          @default(now()) @db.Timestamp(6)
+  app_id               String             @db.Uuid
+  form_fields          form_fields[]
+  form_submissions     form_submissions[]
+  apps                 apps               @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_forms_app")
+  form_templates       form_templates?    @relation(fields: [template_id], references: [id], onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_forms_app")
+  @@index([inbox_id], map: "idx_forms_inbox")
+}
+
+model inboxes {
+  id                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id                    String?             @db.Uuid
+  name                          String              @db.VarChar(255)
+  channel_type                  String?             @db.VarChar(50)
+  channel_config                Json?               @default("{}")
+  created_at                    DateTime?           @default(now()) @db.Timestamp(6)
+  updated_at                    DateTime?           @default(now()) @db.Timestamp(6)
+  app_id                        String?             @db.Uuid
+  deleted_at                    DateTime?           @db.Timestamp(6)
+  chatbot_id                    String?             @db.Uuid
+  is_active                     Boolean?            @default(true)
+  auto_assign_enabled           Boolean?            @default(false)
+  greeting_enabled              Boolean?            @default(false)
+  greeting_message              String?
+  business_hours                Json?
+  enable_auto_assignment        Boolean?            @default(true)
+  out_of_office_message         String?
+  csat_survey_enabled           Boolean?            @default(false)
+  allow_messages_after_resolved Boolean?            @default(true)
+  lock_to_single_conversation   Boolean?            @default(false)
+  sender_name_type              String?             @db.VarChar(50)
+  portal_id                     String?             @db.Uuid
+  conversations                 conversations[]
+  accounts                      accounts?           @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  webhooks                      webhooks[]
+  whatsapp_channels             whatsapp_channels[]
+}
+
+model knowledge_categories {
+  id                         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                     String                 @db.Uuid
+  name                       String                 @db.VarChar(100)
+  description                String?
+  parent_id                  String?                @db.Uuid
+  position                   Int?                   @default(0)
+  created_at                 DateTime?              @default(now()) @db.Timestamptz(6)
+  chatbot_id                 String?                @db.Uuid
+  apps                       apps                   @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots                   chatbots?              @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_categories       knowledge_categories?  @relation("knowledge_categoriesToknowledge_categories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_knowledge_categories knowledge_categories[] @relation("knowledge_categoriesToknowledge_categories")
+  knowledge_faqs             knowledge_faqs[]
+  knowledge_sources          knowledge_sources[]
+
+  @@index([app_id], map: "idx_knowledge_categories_app")
+}
+
+model knowledge_faqs {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String                @db.Uuid
+  category_id          String?               @db.Uuid
+  question             String
+  answer               String
+  keywords             String[]
+  priority             Int?                  @default(0)
+  is_active            Boolean?              @default(true)
+  view_count           Int?                  @default(0)
+  helpful_count        Int?                  @default(0)
+  not_helpful_count    Int?                  @default(0)
+  created_at           DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?             @default(now()) @db.Timestamptz(6)
+  chatbot_id           String?               @db.Uuid
+  embeddings           embeddings[]
+  apps                 apps                  @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_categories knowledge_categories? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  chatbots             chatbots?             @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([chatbot_id], map: "idx_knowledge_faqs_chatbot")
+  @@index([keywords], map: "idx_knowledge_faqs_keywords", type: Gin)
+}
+
+model knowledge_sources {
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                    String                     @db.VarChar(255)
+  content                  String?
+  type                     String?                    @default("text") @db.VarChar(50)
+  format                   String?                    @default("text") @db.VarChar(50)
+  metadata                 Json?                      @default("{}")
+  created_at               DateTime?                  @default(now()) @db.Timestamp(6)
+  app_id                   String?                    @db.Uuid
+  chatbot_id               String?                    @db.Uuid
+  category_id              String?                    @db.Uuid
+  source_type              String?                    @default("manual") @db.VarChar(50)
+  source_url               String?
+  file_name                String?                    @db.VarChar(255)
+  file_size                Int?
+  file_type                String?                    @db.VarChar(50)
+  status                   String?                    @default("pending") @db.VarChar(50)
+  error_message            String?
+  chunk_count              Int?                       @default(0)
+  embedding_model          String?                    @default("text-embedding-3-small") @db.VarChar(100)
+  embedding_dimension      Int?                       @default(1536)
+  index_size_bytes         BigInt?                    @default(0)
+  hit_count                Int?                       @default(0)
+  last_hit_at              DateTime?                  @db.Timestamptz(6)
+  active_version           Int?                       @default(1)
+  last_synced_at           DateTime?                  @db.Timestamptz(6)
+  is_active                Boolean?                   @default(true)
+  updated_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  embeddings               embeddings[]
+  knowledge_chunks         knowledge_chunks[]
+  knowledge_query_chunks   knowledge_query_chunks[]
+  knowledge_source_files   knowledge_source_files[]
+  knowledge_ingestion_jobs knowledge_ingestion_jobs[]
+  apps                     apps?                      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_categories     knowledge_categories?      @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  chatbots                 chatbots?                  @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([chatbot_id], map: "idx_knowledge_sources_chatbot")
+  @@index([app_id], map: "idx_knowledge_sources_app")
+  @@index([status], map: "idx_knowledge_sources_status")
+}
+
+model knowledge_source_files {
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                   String                     @db.Uuid
+  chatbot_id               String?                    @db.Uuid
+  source_id                String                     @db.Uuid
+  file_name                String                     @db.VarChar(255)
+  mime_type                String?                    @db.VarChar(120)
+  file_size_bytes          BigInt?                    @default(0)
+  checksum_sha256          String?                    @db.VarChar(128)
+  storage_key              String?                    @db.VarChar(500)
+  storage_url              String?
+  extraction_metadata      Json?                      @default("{}")
+  page_count               Int?
+  duration_ms              Int?
+  language                 String?                    @db.VarChar(24)
+  status                   String?                    @default("pending") @db.VarChar(50)
+  error_message            String?
+  extracted_at             DateTime?                  @db.Timestamptz(6)
+  is_active                Boolean?                   @default(true)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  apps                     apps                       @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots                 chatbots?                  @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_sources        knowledge_sources          @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_chunks         knowledge_chunks[]
+  knowledge_ingestion_jobs knowledge_ingestion_jobs[]
+
+  @@index([app_id], map: "idx_knowledge_source_files_app")
+  @@index([chatbot_id], map: "idx_knowledge_source_files_chatbot")
+  @@index([source_id], map: "idx_knowledge_source_files_source")
+  @@index([status], map: "idx_knowledge_source_files_status")
+}
+
+model knowledge_ingestion_jobs {
+  id                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                 String                  @db.Uuid
+  chatbot_id             String?                 @db.Uuid
+  source_id              String                  @db.Uuid
+  source_file_id         String?                 @db.Uuid
+  trigger                String?                 @default("manual") @db.VarChar(50)
+  stage                  String?                 @default("ingest") @db.VarChar(50)
+  status                 String?                 @default("pending") @db.VarChar(50)
+  attempts               Int?                    @default(0)
+  started_at             DateTime?               @db.Timestamptz(6)
+  finished_at            DateTime?               @db.Timestamptz(6)
+  error_message          String?
+  payload                Json?                   @default("{}")
+  created_at             DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?               @default(now()) @db.Timestamptz(6)
+  apps                   apps                    @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots               chatbots?               @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_sources      knowledge_sources       @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_source_files knowledge_source_files? @relation(fields: [source_file_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_knowledge_ingestion_jobs_app")
+  @@index([chatbot_id], map: "idx_knowledge_ingestion_jobs_chatbot")
+  @@index([source_id], map: "idx_knowledge_ingestion_jobs_source")
+  @@index([stage], map: "idx_knowledge_ingestion_jobs_stage")
+  @@index([status], map: "idx_knowledge_ingestion_jobs_status")
+  @@index([created_at], map: "idx_knowledge_ingestion_jobs_created")
+}
+
+model knowledge_chunks {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                 String                   @db.Uuid
+  chatbot_id             String?                  @db.Uuid
+  source_id              String                   @db.Uuid
+  file_id                String?                  @db.Uuid
+  source_version         Int?                     @default(1)
+  chunk_index            Int
+  chunk_text             String
+  chunk_hash             String?                  @db.VarChar(128)
+  char_count             Int?                     @default(0)
+  token_count            Int?                     @default(0)
+  locator_label          String?                  @db.VarChar(255)
+  locator_json           Json?                    @default("{}")
+  embedding_model        String?                  @default("text-embedding-3-small") @db.VarChar(100)
+  embedding_dimension    Int?                     @default(1536)
+  embedding              Unsupported("vector")?
+  chunk_tsv              Unsupported("tsvector")?
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  apps                   apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots               chatbots?                @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_sources      knowledge_sources        @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_source_files knowledge_source_files?  @relation(fields: [file_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  knowledge_query_chunks knowledge_query_chunks[]
+
+  @@index([app_id, chatbot_id, source_id, source_version, chunk_index], map: "idx_knowledge_chunks_scope")
+  @@index([source_id, source_version], map: "idx_knowledge_chunks_source_version")
+  @@index([file_id], map: "idx_knowledge_chunks_file")
+}
+
+model knowledge_query_logs {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                 String                   @db.Uuid
+  chatbot_id             String?                  @db.Uuid
+  channel                String?                  @default("live") @db.VarChar(20)
+  query_text             String
+  selected_source_ids    Json?                    @default("[]")
+  top_k                  Int?                     @default(5)
+  retrieval_ms           Int?                     @default(0)
+  rag_hit                Boolean?                 @default(false)
+  hit_chunk_count        Int?                     @default(0)
+  avg_topk_score         Decimal?                 @default(0) @db.Decimal(12, 6)
+  threshold_used         Decimal?                 @default(0.3) @db.Decimal(8, 6)
+  prompt_tokens          Int?                     @default(0)
+  completion_tokens      Int?                     @default(0)
+  total_tokens           Int?                     @default(0)
+  usage_credits          Decimal?                 @default(0) @db.Decimal(18, 6)
+  usage_usd              Decimal?                 @default(0) @db.Decimal(18, 6)
+  usage_idr              Decimal?                 @default(0) @db.Decimal(18, 6)
+  answer_text            String?
+  metadata               Json?                    @default("{}")
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  apps                   apps                     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots               chatbots?                @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_query_chunks knowledge_query_chunks[]
+
+  @@index([app_id, chatbot_id, created_at], map: "idx_knowledge_query_logs_scope_created")
+  @@index([channel], map: "idx_knowledge_query_logs_channel")
+  @@index([rag_hit], map: "idx_knowledge_query_logs_rag_hit")
+}
+
+model knowledge_query_chunks {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String               @db.Uuid
+  chatbot_id           String?              @db.Uuid
+  query_log_id         String               @db.Uuid
+  chunk_id             String?              @db.Uuid
+  source_id            String?              @db.Uuid
+  rank                 Int
+  score                Decimal?             @default(0) @db.Decimal(12, 6)
+  locator_label        String?              @db.VarChar(255)
+  snippet              String?
+  created_at           DateTime?            @default(now()) @db.Timestamptz(6)
+  apps                 apps                 @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  chatbots             chatbots?            @relation(fields: [chatbot_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_query_logs knowledge_query_logs @relation(fields: [query_log_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledge_chunks     knowledge_chunks?    @relation(fields: [chunk_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  knowledge_sources    knowledge_sources?   @relation(fields: [source_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([query_log_id, rank], map: "idx_knowledge_query_chunks_log_rank")
+  @@index([source_id], map: "idx_knowledge_query_chunks_source")
+  @@index([chunk_id], map: "idx_knowledge_query_chunks_chunk")
+}
+
+model labels {
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id          String?               @db.Uuid
+  title               String                @db.VarChar(255)
+  description         String?
+  color               String?               @default("#1F2937") @db.VarChar(50)
+  created_at          DateTime?             @default(now()) @db.Timestamp(6)
+  app_id              String?               @db.Uuid
+  badge_url           String?
+  deleted_at          DateTime?             @db.Timestamp(6)
+  is_visible          Boolean?              @default(true)
+  show_on_sidebar     Boolean?              @default(true)
+  updated_at          DateTime?             @default(now()) @db.Timestamp(6)
+  conversation_labels conversation_labels[]
+  accounts            accounts?             @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model media_files {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String?   @db.Uuid
+  platform        String    @db.VarChar(50)
+  media_id        String    @db.VarChar(255)
+  message_id      String?   @db.Uuid
+  media_type      String?   @db.VarChar(50)
+  mime_type       String?   @db.VarChar(100)
+  filename        String?   @db.VarChar(255)
+  caption         String?
+  file_size       BigInt?
+  sha256          String?   @db.VarChar(64)
+  media_url       String?
+  local_url       String?
+  thumbnail_url   String?
+  download_status String?   @default("pending") @db.VarChar(50)
+  downloaded_at   DateTime? @db.Timestamp(6)
+  download_error  String?
+  url_expires_at  DateTime? @db.Timestamp(6)
+  uploaded_by     String?   @db.Uuid
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([app_id], map: "idx_media_files_app_id")
+  @@index([download_status], map: "idx_media_files_download_status")
+  @@index([media_id], map: "idx_media_files_media_id")
+  @@index([message_id], map: "idx_media_files_message_id")
+  @@index([platform], map: "idx_media_files_platform")
+}
+
+model mentions {
+  id              Int       @id @default(autoincrement())
+  user_id         Int?
+  conversation_id Int?
+  message_id      Int?
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model message_status_history {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  message_id          String    @db.Uuid
+  external_message_id String?   @db.VarChar(255)
+  status              String    @db.VarChar(50)
+  previous_status     String?   @db.VarChar(50)
+  error_code          String?   @db.VarChar(50)
+  error_title         String?
+  error_message       String?
+  error_details       Json?
+  timestamp           DateTime  @db.Timestamp(6)
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  webhook_payload     Json?
+
+  @@index([external_message_id], map: "idx_msg_status_external_id")
+  @@index([message_id], map: "idx_msg_status_message_id")
+  @@index([status], map: "idx_msg_status_status")
+  @@index([timestamp], map: "idx_msg_status_timestamp")
+}
+
+model messages {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id       String?          @db.Uuid
+  message_type          String           @db.VarChar(20)
+  content               String?
+  content_attributes    Json?            @default("{}")
+  content_type          String?          @default("text") @db.VarChar(20)
+  sender_id             String?          @db.Uuid
+  sender_type           String?          @default("user") @db.VarChar(50)
+  private               Boolean?         @default(false)
+  status                String?          @default("sent") @db.VarChar(20)
+  external_id           String?          @db.VarChar(255)
+  metadata              Json?            @default("{}")
+  created_at            DateTime?        @default(now()) @db.Timestamp(6)
+  app_id                String?          @db.Uuid
+  deleted_at            DateTime?        @db.Timestamp(6)
+  type                  String?          @db.VarChar(50)
+  extras                Json?
+  context               Json?
+  error                 Json?
+  raw_payload           Json?
+  is_deleted            Boolean?         @default(false)
+  updated_at            DateTime?        @default(now()) @db.Timestamp(6)
+  reply_to_message_id   String?          @db.Uuid
+  unique_temp_id        String?          @db.VarChar(100)
+  source_id             String?          @db.Uuid
+  inbox_id              String?          @db.Uuid
+  additional_attributes Json?
+  broadcast_logs        broadcast_logs[]
+  conversations         conversations?   @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model meta_ads_accounts {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id_org         String               @db.VarChar(255)
+  fb_account_id      String               @db.VarChar(50)
+  fb_account_name    String               @db.VarChar(255)
+  fb_business_name   String?              @db.VarChar(255)
+  currency           String?              @default("IDR") @db.VarChar(10)
+  country_code       String?              @default("ID") @db.VarChar(5)
+  access_token       String
+  token_expires_at   DateTime?            @db.Timestamptz(6)
+  is_active          Boolean?             @default(true)
+  last_synced_at     DateTime?            @db.Timestamptz(6)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  meta_ads_campaigns meta_ads_campaigns[]
+  meta_ads_insights  meta_ads_insights[]
+
+  @@unique([app_id_org, fb_account_id])
+  @@index([app_id_org], map: "idx_meta_ads_accounts_org")
+}
+
+model meta_ads_campaigns {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ads_account_id    String              @db.Uuid
+  campaign_id       String              @db.VarChar(50)
+  name              String              @db.VarChar(255)
+  objective         String?             @db.VarChar(50)
+  status            String?             @db.VarChar(20)
+  daily_budget      Decimal?            @db.Decimal(15, 2)
+  lifetime_budget   Decimal?            @db.Decimal(15, 2)
+  metadata          Json?               @default("{}")
+  created_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  meta_ads_accounts meta_ads_accounts   @relation(fields: [ads_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  meta_ads_insights meta_ads_insights[]
+
+  @@unique([ads_account_id, campaign_id])
+  @@index([ads_account_id], map: "idx_meta_ads_campaigns_acc")
+}
+
+model meta_ads_insights {
+  id                              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ads_account_id                  String?             @db.Uuid
+  campaign_id                     String?             @db.Uuid
+  date_start                      DateTime            @db.Date
+  date_stop                       DateTime            @db.Date
+  impressions                     BigInt?             @default(0)
+  reach                           BigInt?             @default(0)
+  clicks                          BigInt?             @default(0)
+  spend                           Decimal?            @default(0) @db.Decimal(15, 2)
+  cpc                             Decimal?            @db.Decimal(15, 4)
+  cpm                             Decimal?            @db.Decimal(15, 4)
+  ctr                             Decimal?            @db.Decimal(15, 6)
+  messaging_conversations_started BigInt?             @default(0)
+  messaging_first_reply           BigInt?             @default(0)
+  actions_json                    Json?               @default("[]")
+  created_at                      DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime?           @default(now()) @db.Timestamptz(6)
+  meta_ads_accounts               meta_ads_accounts?  @relation(fields: [ads_account_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  meta_ads_campaigns              meta_ads_campaigns? @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([ads_account_id, campaign_id, date_start, date_stop])
+  @@index([campaign_id], map: "idx_meta_ads_insights_camp")
+  @@index([date_start, date_stop], map: "idx_meta_ads_insights_date")
+}
+
+model migrations {
+  id     Int       @id @default(autoincrement())
+  name   String    @unique @db.VarChar(255)
+  run_at DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model office_hours {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inbox_id    String?   @db.Uuid
+  day_of_week Int
+  open_time   DateTime  @db.Time(6)
+  close_time  DateTime  @db.Time(6)
+  is_active   Boolean?  @default(true)
+  timezone    String?   @default("Asia/Jakarta") @db.VarChar(50)
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @default(now()) @db.Timestamp(6)
+  app_id      String    @db.Uuid
+  apps        apps      @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_office_hours_app")
+
+  @@unique([inbox_id, day_of_week])
+  @@index([app_id], map: "idx_office_hours_app")
+  @@index([inbox_id], map: "idx_office_hours_inbox")
+}
+
+model pipeline_stages {
+  id                                                                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pipeline_id                                                        String?              @db.Uuid
+  name                                                               String               @db.VarChar(255)
+  stage_order                                                        Int
+  stage_type                                                         String?              @default("open") @db.VarChar(20)
+  probability                                                        Int?                 @default(0)
+  color                                                              String?              @default("#3B82F6") @db.VarChar(20)
+  automation_rules                                                   Json?                @default("{}")
+  created_at                                                         DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at                                                         DateTime?            @default(now()) @db.Timestamp(6)
+  conversation_sales                                                 conversation_sales[]
+  pipelines                                                          pipelines?           @relation(fields: [pipeline_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stage_transitions_stage_transitions_from_stage_idTopipeline_stages stage_transitions[]  @relation("stage_transitions_from_stage_idTopipeline_stages")
+  stage_transitions_stage_transitions_to_stage_idTopipeline_stages   stage_transitions[]  @relation("stage_transitions_to_stage_idTopipeline_stages")
+
+  @@unique([pipeline_id, stage_order])
+  @@index([pipeline_id, stage_order], map: "idx_stages_order")
+  @@index([pipeline_id], map: "idx_stages_pipeline")
+}
+
+model pipelines {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String               @db.VarChar(255)
+  pipeline_type      String?              @default("retail") @db.VarChar(50)
+  is_default         Boolean?             @default(false)
+  settings           Json?                @default("{}")
+  created_at         DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamp(6)
+  app_id             String               @db.Uuid
+  conversation_sales conversation_sales[]
+  pipeline_stages    pipeline_stages[]
+  apps               apps                 @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pipelines_app")
+
+  @@index([app_id], map: "idx_pipelines_app")
+}
+
+model sla_breach_events {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id String        @db.Uuid
+  sla_policy_id   String?       @db.Uuid
+  breach_type     String        @db.VarChar(50)
+  due_at          DateTime?     @db.Timestamptz(6)
+  breached_at     DateTime?     @default(now()) @db.Timestamptz(6)
+  notified        Boolean?      @default(false)
+  resolved        Boolean?      @default(false)
+  created_at      DateTime?     @default(now()) @db.Timestamptz(6)
+  sla_policies    sla_policies? @relation(fields: [sla_policy_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([conversation_id], map: "idx_sla_breach_events_conv")
+}
+
+model sla_policies {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id              String              @db.Uuid
+  name                String              @db.VarChar(255)
+  description         String?
+  first_response_time Int                 @default(15)
+  resolution_time     Int                 @default(1440)
+  conditions          Json?               @default("{}")
+  escalate_on_breach  Boolean?            @default(true)
+  escalation_agent_id String?             @db.Uuid
+  business_hours      Json?
+  is_active           Boolean?            @default(true)
+  is_default          Boolean?            @default(false)
+  created_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime?           @default(now()) @db.Timestamptz(6)
+  sla_breach_events   sla_breach_events[]
+  apps                apps                @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model stage_transitions {
+  id                                                               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversation_id                                                  String?          @db.Uuid
+  from_stage_id                                                    String?          @db.Uuid
+  to_stage_id                                                      String?          @db.Uuid
+  user_id                                                          String?          @db.Uuid
+  transition_type                                                  String?          @default("manual") @db.VarChar(50)
+  notes                                                            String?
+  created_at                                                       DateTime?        @default(now()) @db.Timestamp(6)
+  pipeline_stages_stage_transitions_from_stage_idTopipeline_stages pipeline_stages? @relation("stage_transitions_from_stage_idTopipeline_stages", fields: [from_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pipeline_stages_stage_transitions_to_stage_idTopipeline_stages   pipeline_stages? @relation("stage_transitions_to_stage_idTopipeline_stages", fields: [to_stage_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([conversation_id], map: "idx_stage_transitions_conversation")
+  @@index([created_at], map: "idx_stage_transitions_date")
+}
+
+model team_members {
+  team_id String @db.Uuid
+  user_id String @db.Uuid
+  teams   teams  @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([team_id, user_id])
+}
+
+model teams {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id        String?         @db.Uuid
+  name              String          @db.VarChar(255)
+  description       String?
+  allow_auto_assign Boolean?        @default(true)
+  created_at        DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at        DateTime?       @default(now()) @db.Timestamp(6)
+  deleted_at        DateTime?       @db.Timestamp(6)
+  app_id            String?         @db.Uuid
+  conversations     conversations[]
+  team_members      team_members[]
+  accounts          accounts?       @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_teams_app")
+}
+
+model template_variables {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id         String?   @db.Uuid
+  name           String    @db.VarChar(100)
+  category       String?   @default("custom") @db.VarChar(50)
+  value          String?
+  fallback_value String?
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @db.Timestamp(6)
+  apps           apps?     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_template_variables_app")
+}
+
+model webhook_events {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source        String    @db.VarChar(50)
+  event_type    String    @db.VarChar(100)
+  raw_payload   Json
+  headers       Json?
+  status        String?   @default("pending") @db.VarChar(50)
+  processed_at  DateTime? @db.Timestamp(6)
+  error_message String?
+  retry_count   Int?      @default(0)
+  external_id   String?   @db.VarChar(255)
+  is_duplicate  Boolean?  @default(false)
+  app_id        String?   @db.Uuid
+  inbox_id      String?   @db.Uuid
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  updated_at    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@unique([source, external_id])
+  @@index([app_id], map: "idx_webhook_events_app_id")
+  @@index([created_at], map: "idx_webhook_events_created_at")
+  @@index([external_id], map: "idx_webhook_events_external_id")
+  @@index([inbox_id], map: "idx_webhook_events_inbox_id")
+  @@index([source], map: "idx_webhook_events_source")
+  @@index([status], map: "idx_webhook_events_status")
+}
+
+model webhooks {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id    String?   @db.Uuid
+  app_id        String?   @db.Uuid
+  inbox_id      String?   @db.Uuid
+  name          String    @default("Webhook") @db.VarChar(255)
+  url           String
+  subscriptions Json?     @default("[]")
+  is_active     Boolean?  @default(true)
+  secret        String?
+  headers       Json?
+  is_hidden     Boolean?  @default(false)
+  board_id      String?   @db.Uuid
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+  updated_at    DateTime? @default(now()) @db.Timestamp(6)
+  accounts      accounts? @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  apps          apps?     @relation(fields: [app_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  inboxes       inboxes?  @relation(fields: [inbox_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([app_id], map: "idx_webhooks_app_id")
+  @@index([inbox_id], map: "idx_webhooks_inbox_id")
+}
+
+model whatsapp_channels {
+  id                           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inbox_id                     String?   @db.Uuid
+  phone_number                 String?   @db.VarChar(50)
+  phone_number_id              String?   @db.VarChar(100)
+  api_key                      String?
+  waba_id                      String?   @db.VarChar(100)
+  created_at                   DateTime? @default(now()) @db.Timestamp(6)
+  name                         String?
+  display_phone_number         String?
+  verified_name                String?
+  quality_rating               String?
+  messaging_limit_tier         String?
+  code_verification_status     String?
+  platform_type                String?
+  throughput_level             String?
+  profile_picture_url          String?
+  about                        String?
+  address                      String?
+  description                  String?
+  email                        String?
+  websites                     Json?
+  vertical                     String?
+  messaging_product            String?
+  waba_name                    String?
+  waba_timezone_id             String?
+  waba_currency                String?
+  is_official_business_account Boolean?  @default(false)
+  is_pin_enabled               Boolean?  @default(false)
+  account_mode                 String?
+  business_id                  String?
+  owner_business_info          Json?
+  primary_funding_id           String?
+  purchase_order_number        String?
+  last_synced_at               DateTime? @db.Timestamp(6)
+  sync_error                   String?
+  is_active                    Boolean?  @default(true)
+  app_id                       String?   @db.Uuid
+  deleted_at                   DateTime? @db.Timestamp(6)
+  messaging_limit              String?
+  business_name                String?
+  timezone                     String?   @default("UTC")
+  currency                     String?   @default("USD")
+  business_verification_status String?
+  phone_number_status          String?
+  message_template_namespace   String?
+  name_status                  String?
+  extended_metadata            Json?
+  badge_url                    String?
+  is_on_cloud                  Boolean?  @default(true)
+  is_bot_enabled               Boolean?  @default(false)
+  is_auto_responder_enabled    Boolean?  @default(false)
+  forward_enabled              Boolean?  @default(false)
+  forward_url                  String?
+  platform                     String?   @default("default")
+  provider                     String?   @default("whatsapp_cloud")
+  updated_at                   DateTime? @default(now()) @db.Timestamp(6)
+  inboxes                      inboxes?  @relation(fields: [inbox_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model baileys_sessions {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  channel_id           String    @unique @db.Uuid
+  app_id               String    @db.Uuid
+  provider_channel_key String    @unique @db.VarChar(191)
+  phone_number         String?   @db.VarChar(50)
+  status               String?   @default("pending") @db.VarChar(50)
+  auth_state           Json?
+  pairing_code         String?   @db.VarChar(64)
+  qr_code              String?
+  last_error           String?
+  last_connected_at    DateTime? @db.Timestamptz(6)
+  last_seen_at         DateTime? @db.Timestamptz(6)
+  metadata             Json?     @default("{}")
+  created_at           DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_baileys_sessions_app_id")
+  @@index([status], map: "idx_baileys_sessions_status")
+}
+
+model users {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  account_id              String?   @db.Uuid
+  name                    String    @db.VarChar(255)
+  email                   String    @unique @db.VarChar(255)
+  emailVerified           Boolean   @default(false)
+  password                String?
+  role                    String?   @default("agent") @db.VarChar(50)
+  avatar_url              String?
+  active                  Boolean?  @default(true)
+  phone_number            String?   @db.VarChar(20)
+  custom_attributes       Json?     @default("{}")
+  created_at              DateTime? @default(now()) @db.Timestamp(6)
+  updated_at              DateTime? @default(now()) @db.Timestamp(6)
+  app_id                  String?   @db.Uuid
+  last_login_at           DateTime? @db.Timestamp(6)
+  last_app_used           String?   @db.Uuid
+  refresh_token           String?
+  timezone                String?   @default("Asia/Jakarta") @db.VarChar(100)
+  timezone_auto_detected  Boolean?  @default(true)
+  timezone_updated_at     DateTime? @default(now()) @db.Timestamp(6)
+  deleted_at              DateTime? @db.Timestamp(6)
+  message_signature       String?
+  ui_settings             Json?
+  pubsub_token            String?   @db.VarChar(255)
+  supervisor_id           String?   @db.Uuid
+  status                  String?   @default("offline") @db.VarChar(50)
+  is_available            Boolean?  @default(true)
+  organization_name       String?   @db.VarChar(255)
+  organization_slug       String?   @db.VarChar(255)
+  webhook_app_id          String?   @db.VarChar(255)
+  webhook_app_secret_hash String?   @db.VarChar(255)
+  webhook_configured_at   DateTime? @db.Timestamp(6)
+  webhook_last_rotated_at DateTime? @db.Timestamp(6)
+
+  sessions    session[]
+  accounts    account[]
+  members     member[]
+  invitations invitation[]
+}
+
+model products {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String    @db.Uuid
+  organization_id String?
+  name            String    @db.VarChar(255)
+  sku             String?   @db.VarChar(100)
+  image_url       String?
+  description     String?
+  base_price      Decimal?  @default(0) @db.Decimal(18, 2)
+  is_active       Boolean?  @default(true)
+  metadata        Json?     @default("{}")
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_products_app_id")
+  @@index([organization_id], map: "idx_products_organization_id")
+  @@index([is_active], map: "idx_products_is_active")
+}
+
+model product_variants {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  product_id      String    @db.Uuid
+  app_id          String    @db.Uuid
+  organization_id String?
+  name            String    @db.VarChar(255)
+  sku             String?   @db.VarChar(100)
+  image_url       String?
+  attributes      Json?     @default("{}")
+  price           Decimal?  @default(0) @db.Decimal(18, 2)
+  stock_on_hand   Int?      @default(0)
+  stock_reserved  Int?      @default(0)
+  is_active       Boolean?  @default(true)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_product_variants_app_id")
+  @@index([product_id], map: "idx_product_variants_product_id")
+  @@index([organization_id], map: "idx_product_variants_organization_id")
+  @@index([is_active], map: "idx_product_variants_is_active")
+}
+
+model stock_reservations {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String    @db.Uuid
+  organization_id String?
+  order_id        String    @db.Uuid
+  order_item_id   String?   @db.Uuid
+  variant_id      String    @db.Uuid
+  quantity        Int
+  status          String?   @default("active") @db.VarChar(30)
+  reason          String?   @default("checkout") @db.VarChar(50)
+  expires_at      DateTime? @db.Timestamptz(6)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_stock_reservations_app_id")
+  @@index([organization_id], map: "idx_stock_reservations_organization_id")
+  @@index([order_id], map: "idx_stock_reservations_order_id")
+  @@index([variant_id], map: "idx_stock_reservations_variant_id")
+  @@index([status], map: "idx_stock_reservations_status")
+}
+
+model stock_movements {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String    @db.Uuid
+  organization_id String?
+  variant_id      String    @db.Uuid
+  reservation_id  String?   @db.Uuid
+  order_id        String?   @db.Uuid
+  movement_type   String    @db.VarChar(30)
+  quantity        Int
+  stock_before    Int?      @default(0)
+  stock_after     Int?      @default(0)
+  note            String?
+  metadata        Json?     @default("{}")
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_stock_movements_app_id")
+  @@index([organization_id], map: "idx_stock_movements_organization_id")
+  @@index([variant_id], map: "idx_stock_movements_variant_id")
+  @@index([order_id], map: "idx_stock_movements_order_id")
+  @@index([movement_type], map: "idx_stock_movements_type")
+}
+
+model orders {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id       String?
+  app_id                String?   @db.Uuid
+  contact_id            String?   @db.Uuid
+  conversation_id       String?   @db.Uuid
+  order_number          BigInt    @default(autoincrement())
+  order_status          String?   @default("pending") @db.VarChar(50)
+  payment_type          String?   @default("one_time_payment") @db.VarChar(50)
+  payment_method        String?   @default("custom") @db.VarChar(50)
+  payment_provider      String?   @db.VarChar(50)
+  journey_phase         String?   @default("cart") @db.VarChar(50)
+  currency              String?   @default("IDR") @db.VarChar(10)
+  external_order_id     String?   @db.VarChar(255)
+  notes                 String?
+  address               String?
+  subtotal              Decimal?  @default(0) @db.Decimal(18, 2)
+  discount              Decimal?  @default(0) @db.Decimal(18, 2)
+  shipping_fee          Decimal?  @default(0) @db.Decimal(18, 2)
+  grand_total           Decimal?  @default(0) @db.Decimal(18, 2)
+  checkout_at           DateTime? @db.Timestamptz(6)
+  paid_at               DateTime? @db.Timestamptz(6)
+  cancelled_at          DateTime? @db.Timestamptz(6)
+  expired_at            DateTime? @db.Timestamptz(6)
+  metadata              Json?     @default("{}")
+  business_bank_account Json?
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_orders_app_id")
+  @@index([organization_id], map: "idx_orders_organization_id")
+  @@index([contact_id], map: "idx_orders_contact_id")
+  @@index([conversation_id], map: "idx_orders_conversation_id")
+  @@index([created_at], map: "idx_orders_created_at")
+  @@index([order_status], map: "idx_orders_order_status")
+  @@index([payment_type], map: "idx_orders_payment_type")
+  @@index([journey_phase], map: "idx_orders_journey_phase")
+  @@index([external_order_id], map: "idx_orders_external_order_id")
+}
+
+model order_invoices {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id            String    @db.Uuid
+  amount              Decimal?  @default(0) @db.Decimal(18, 2)
+  status              String?   @default("NOT_PAID") @db.VarChar(50)
+  provider            String?   @default("custom") @db.VarChar(50)
+  provider_invoice_id String?   @db.VarChar(255)
+  payment_method      String?   @db.VarChar(50)
+  payment_number      String?
+  payment_link        String?
+  checkout_url        String?
+  pdf_link            String?
+  public_token        String?   @db.VarChar(120)
+  public_expires_at   DateTime? @db.Timestamptz(6)
+  paid_at             DateTime? @db.Timestamptz(6)
+  verified_at         DateTime? @db.Timestamptz(6)
+  expiry_date         DateTime? @db.Timestamptz(6)
+  provider_payload    Json?
+  xendit_invoice_id   String?   @db.VarChar(255)
+  created_at          DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([order_id], map: "idx_order_invoices_order_id")
+  @@index([status], map: "idx_order_invoices_status")
+  @@index([provider], map: "idx_order_invoices_provider")
+  @@index([public_token], map: "idx_order_invoices_public_token")
+  @@index([provider_invoice_id], map: "idx_order_invoices_provider_invoice_id")
+}
+
+model order_items {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  order_id     String    @db.Uuid
+  product_id   String?   @db.Uuid
+  variant_id   String?   @db.Uuid
+  product_name String?
+  variant_name String?
+  quantity     Int?      @default(1)
+  unit_price   Decimal?  @default(0) @db.Decimal(18, 2)
+  line_total   Decimal?  @default(0) @db.Decimal(18, 2)
+  price        Decimal?  @default(0) @db.Decimal(18, 2)
+  metadata     Json?     @default("{}")
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([order_id], map: "idx_order_items_order_id")
+  @@index([variant_id], map: "idx_order_items_variant_id")
+}
+
+model subscriptions {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String?
+  app_id              String?   @db.Uuid
+  contact_id          String?   @db.Uuid
+  subscription_number BigInt    @default(autoincrement())
+  status              String?   @default("active") @db.VarChar(50)
+  subscription_type   String?   @default("monthly") @db.VarChar(50)
+  item_name           String?
+  billing_amount      Decimal?  @default(0) @db.Decimal(18, 2)
+  cycles              Int?      @default(0)
+  start_date          DateTime? @db.Timestamptz(6)
+  next_billing        DateTime? @db.Timestamptz(6)
+  end_date            DateTime? @db.Timestamptz(6)
+  created_at          DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_subscriptions_app_id")
+  @@index([organization_id], map: "idx_subscriptions_organization_id")
+  @@index([contact_id], map: "idx_subscriptions_contact_id")
+  @@index([created_at], map: "idx_subscriptions_created_at")
+  @@index([status], map: "idx_subscriptions_status")
+}

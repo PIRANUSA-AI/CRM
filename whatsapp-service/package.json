@@ -1,0 +1,24 @@
+{
+	"name": "@crm/whatsapp-service",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun run --watch src/index.ts",
+		"start": "bun run src/index.ts",
+		"build": "tsc --noEmit",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@aws-sdk/client-s3": "^3.985.0",
+		"@whiskeysockets/baileys": "^7.0.0-rc.9",
+		"dotenv": "^17.3.1",
+		"elysia": "^1.4.16",
+		"pg": "^8.20.0"
+	},
+	"devDependencies": {
+		"@types/bun": "1.3.2",
+		"@types/pg": "^8.15.6",
+		"typescript": "^5.9.3"
+	}
+}

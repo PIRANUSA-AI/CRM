@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS ux_automation_flows_single_active_per_app;

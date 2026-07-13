@@ -1,0 +1,58 @@
+{
+	"name": "backend",
+	"version": "1.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "APP_MODE=api bun run --watch src/index.ts",
+		"dev:api": "APP_MODE=api bun run --watch src/index.ts",
+		"dev:worker": "APP_MODE=worker bun run --watch src/index.ts",
+		"dev:scheduler": "APP_MODE=scheduler bun run --watch src/index.ts",
+		"build": "bun build src/index.ts --outdir dist --target bun",
+		"start": "bun run dist/index.js",
+		"start:api": "APP_MODE=api bun run dist/index.js",
+		"start:worker": "APP_MODE=worker bun run dist/index.js",
+		"start:scheduler": "APP_MODE=scheduler bun run dist/index.js",
+		"lint": "tsc --noEmit",
+		"test": "find test -name '*.test.ts' -print | sort | xargs -n1 bun test",
+		"db:generate": "prisma generate",
+		"db:push": "prisma db push",
+		"db:pull": "prisma db pull",
+		"db:studio": "prisma studio",
+		"db:seed": "bun prisma db seed",
+		"db:seed:electronics": "NODE_ENV=production bun run scripts/seed-electronics-catalog.ts",
+		"db:seed:ceo": "bun run scripts/seed-ceo.ts",
+		"db:rename-legacy-roles": "bun run scripts/rename-legacy-roles.ts",
+		"db:migrate-orgs": "bun run scripts/migrate-to-orgs.ts",
+		"ops:verify-ai-telemetry": "bun run scripts/verify-ai-telemetry.ts"
+	},
+	"dependencies": {
+		"@aws-sdk/client-s3": "^3.985.0",
+		"@elysiajs/cors": "^1.1.0",
+		"@elysiajs/openapi": "^1.4.14",
+		"@elysiajs/swagger": "^1.1.0",
+		"@prisma/adapter-pg": "^7.0.0",
+		"@prisma/client": "^7.0.0",
+		"@prisma/client-runtime-utils": "^7.0.0",
+		"@socket.io/redis-adapter": "^8.3.0",
+		"@socket.io/redis-emitter": "^5.1.0",
+		"@whiskeysockets/baileys": "^7.0.0-rc.9",
+		"bcryptjs": "^3.0.3",
+		"better-auth": "^1.4.18",
+		"bullmq": "^5.67.3",
+		"dotenv": "^17.3.1",
+		"elysia": "^1.1.0",
+		"ioredis": "^5.9.2",
+		"pg": "^8.20.0",
+		"socket.io": "^4.7.0"
+	},
+	"devDependencies": {
+		"@types/bcryptjs": "^3.0.0",
+		"@types/bun": "^1.1.0",
+		"prisma": "^7.0.0",
+		"typescript": "^5.4.0"
+	},
+	"exports": {
+		".": "./src/index.ts",
+		"./types": "./src/types.ts"
+	}
+}

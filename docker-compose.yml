@@ -1,0 +1,43 @@
+name: crm
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crm
+      POSTGRES_PASSWORD: 2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog
+      POSTGRES_DB: crm_db
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - crm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crm -d crm_db"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - crm_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
+
+volumes:
+  crm_postgres_data:
+    # Reuse the pre-rename physical volume so existing local data is preserved.
+    name: crm_postgres_data
+    external: true
+  crm_redis_data:
+    name: crm_redis_data
+    external: true

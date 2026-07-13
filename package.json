@@ -1,0 +1,58 @@
+{
+	"name": "crm",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"apps/*",
+		"packages/*",
+		"whatsapp-service"
+	],
+	"scripts": {
+		"dev": "bun run scripts/dev.ts",
+		"dev:apps": "bun run --filter '*' dev",
+		"dev:services": "docker compose up -d --wait",
+		"dev:backend": "bun run --filter backend dev",
+		"dev:frontend": "bun run --filter frontend dev",
+		"build": "bun run --filter '*' build",
+		"build:backend": "bun run --filter backend build",
+		"build:frontend": "bun run --filter frontend build",
+		"start:api": "bun run --filter backend start:api",
+		"start:worker": "bun run --filter backend start:worker",
+		"start:scheduler": "bun run --filter backend start:scheduler",
+		"k3d:up": "./deploy/local/k3d-up.sh",
+		"k3d:down": "./deploy/local/k3d-down.sh",
+		"k8s:deploy:local": "./deploy/local/helm-deploy-local.sh",
+		"k8s:delete:local": "./deploy/local/helm-delete-local.sh",
+		"tunnel:k3s:up": "./deploy/local/k3s-tunnel-up.sh",
+		"tunnel:k3s:down": "./deploy/local/k3s-tunnel-down.sh",
+		"local:up": "./deploy/local/local-stack.sh up",
+		"local:up:fast": "./deploy/local/local-stack.sh up --no-build",
+		"local:up:no-tunnel": "./deploy/local/local-stack.sh up --no-tunnel",
+		"local:up:hot": "./deploy/local/local-stack.sh up --hot-reload --no-build",
+		"local:up:hot:build": "./deploy/local/local-stack.sh up --hot-reload",
+		"local:down": "./deploy/local/local-stack.sh down",
+		"local:status": "./deploy/local/local-stack.sh status",
+		"local:destroy": "./deploy/local/local-stack.sh destroy",
+		"format": "bunx biome format --write",
+		"lint": "bun run --filter '*' lint",
+		"lint-sf": "bunx biome lint --write",
+		"test": "bun run --filter '*' test",
+		"db:generate": "bun run --filter backend db:generate",
+		"db:push": "bun run --filter backend db:push",
+		"db:pull": "bun run --filter backend db:pull",
+		"db:studio": "bun run --filter backend db:studio"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.2",
+		"@tailwindcss/postcss": "^4.1.18",
+		"@types/bun": "^1.1.0",
+		"autoprefixer": "^10.4.24",
+		"postcss": "^8.5.6",
+		"tailwindcss": "^4.1.18",
+		"typescript": "^5.4.0"
+	},
+	"engines": {
+		"bun": ">=1.1.0"
+	}
+}
