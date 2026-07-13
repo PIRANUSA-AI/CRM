@@ -60,8 +60,8 @@ export default function LabelsManager() {
 		description: '',
 	})
 
-	// Fixed: Using 'scalechat_token' instead of 'token'
-	const token = localStorage.getItem('scalechat_token')
+	// Fixed: Using 'crm_token' instead of 'token'
+	const token = localStorage.getItem('crm_token')
 
 	useEffect(() => {
 		loadLabels()

@@ -17,6 +17,7 @@ import { InstagramService } from '../modules/instagram/service'
 import { BusinessWebhookDispatchService } from '../modules/business-webhooks/dispatch-service'
 import { KnowledgeIndexService } from '../modules/knowledge/indexing-service'
 import { WebhookService } from '../modules/webhook/service'
+import { PersonalAiReplyService } from '../modules/personal-whatsapp-inbox/ai-reply'
 import {
 	ConversationBulkEditService,
 	type ConversationBulkEditJobData,
@@ -29,6 +30,11 @@ import {
 const APP_MODE = (process.env.APP_MODE || 'api').toLowerCase()
 const WORKER_MODE_ENABLED = APP_MODE === 'worker' || APP_MODE === 'scheduler'
 const SCHEDULER_MODE_ENABLED = APP_MODE === 'scheduler'
+const WORKER_VERBOSE_LOGS = process.env.WORKER_VERBOSE_LOGS === 'true'
+
+function workerDebug(message: string) {
+	if (WORKER_VERBOSE_LOGS) console.log(message)
+}
 
 const WEBHOOK_MAX_RETRIES = Math.max(
 	1,
@@ -1677,7 +1683,7 @@ async function processBroadcastJob(job: Job) {
 
 async function processOutboundMessageJob(job: Job) {
 	const { messageId } = (job.data || {}) as { messageId?: string }
-	console.log(`📤 Processing outbound message job: ${job.id} (${messageId})`)
+	workerDebug(`📤 Processing outbound message job: ${job.id} (${messageId})`)
 
 	if (!messageId) {
 		throw new Error('Missing messageId in outbound job payload')
@@ -2355,7 +2361,7 @@ async function processOutboundMessageJob(job: Job) {
 				},
 			})
 
-				console.log(`[OutboundWorker] Successfully sent message: ${messageId}`)
+				workerDebug(`[OutboundWorker] Successfully sent message: ${messageId}`)
 				return { success: true, externalId }
 			} finally {
 				if (stopConversationLockAutoRenew) {
@@ -2476,7 +2482,7 @@ export const outboundWorker = WORKER_MODE_ENABLED
 export const webhookWorker = new Worker(
 			'webhooks',
 			async (job: Job) => {
-				console.log(`🪝 Processing webhook job: ${job.name} (${job.id})`)
+				workerDebug(`🪝 Processing webhook job: ${job.name} (${job.id})`)
 
 				const payload = (job.data as any)?.payload ?? job.data
 				const webhookEventId = (job.data as any)?.webhookEventId as
@@ -2497,6 +2503,16 @@ export const webhookWorker = new Worker(
 
 				if (job.name === 'chatbot-auto-reply') {
 					return WebhookService.processDebouncedAutoReplyJob(payload)
+				}
+
+				if (job.name === 'personal-ai-review') {
+					const finalAttempt = job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
+					return PersonalAiReplyService.processReview(String(payload?.taskId || ''), finalAttempt)
+				}
+
+				if (job.name === 'personal-ai-compose') {
+					const finalAttempt = job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
+					return PersonalAiReplyService.processCompose(String(payload?.taskId || ''), finalAttempt)
 				}
 
 				console.warn(`[WebhookWorker] Unknown job type: ${job.name}`)

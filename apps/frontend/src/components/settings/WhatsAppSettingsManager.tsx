@@ -79,15 +79,15 @@ function getBaileysSessionTone(status: string | null | undefined) {
 function getApiHeaders(): HeadersInit {
 	const token =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_token')
+			? localStorage.getItem('crm_token')
 			: null
 	const orgSlug =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_org_slug')
+			? localStorage.getItem('crm_org_slug')
 			: null
 	const appId =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id')
+			? localStorage.getItem('crm_app_id')
 			: null
 
 	return {

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 
 type CrmAvatarProps = {
 	name: string
+	imageUrl?: string | null
 	size?: number
 	online?: boolean
 	className?: string
@@ -27,6 +28,7 @@ function colorFromName(name: string): [string, string] {
 
 export function CrmAvatar({
 	name,
+	imageUrl,
 	size = 30,
 	online = false,
 	className,
@@ -53,7 +55,7 @@ export function CrmAvatar({
 			}}
 			aria-label={name}
 		>
-			{initials}
+			{imageUrl ? <img src={imageUrl} alt="" className="size-full rounded-full object-cover" /> : initials}
 			{online && (
 				<span
 					className="absolute rounded-full border-2 border-card bg-emerald-500"

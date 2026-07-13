@@ -10,6 +10,14 @@ import { getRealtimeIO } from '../../lib/realtime'
 import { requireRole } from '../../lib/require-role'
 import { normalizeS3PublicUrl } from '../../lib/s3'
 import { enqueueProfileContact, enqueueProfileSweep } from './profile-sync'
+import {
+	confirmPersonalLead,
+	listConfirmedPersonalLeadPhones,
+	listPersonalLeadRegistrations,
+	setPersonalLeadStatus,
+	type PersonalLeadRegistration,
+} from './lead-access'
+import { PersonalAiReplyService } from './ai-reply'
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -43,6 +51,34 @@ async function resolveOwnedChannel(appId: string, userId: string) {
 		select: { id: true, inbox_id: true, api_key: true },
 	})
 	return { session, channel }
+}
+
+async function updateConversationPersonalLeadState(
+	appId: string,
+	ownerUserId: string,
+	registration: PersonalLeadRegistration,
+) {
+	if (!registration.conversation_id) return
+	const conversation = await prisma.conversations.findFirst({
+		where: { id: registration.conversation_id, app_id: appId },
+		select: { id: true, additional_attributes: true },
+	})
+	if (!conversation) return
+	await prisma.conversations.update({
+		where: { id: conversation.id },
+		data: {
+			additional_attributes: {
+				...asRecord(conversation.additional_attributes),
+				personal_whatsapp: {
+					owner_user_id: ownerUserId,
+					lead_registration_id: registration.id,
+					lead_status: registration.status,
+				},
+			} as any,
+			...(registration.status === 'blocked' ? { unread_count: 0 } : {}),
+			updated_at: new Date(),
+		},
+	})
 }
 
 export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-inbox' })
@@ -144,6 +180,176 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		await enqueueProfileSweep(resolvedAppId, session.channel_id, body.force === true)
 		return { success: true, queued: true }
 	}, { body: t.Object({ force: t.Optional(t.Boolean()) }) })
+	.get('/leads', async ({ resolvedAppId, userId, query, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
+		const rows = await listPersonalLeadRegistrations(resolvedAppId, userId, query.status)
+		const contactIds = rows.map((row) => row.contact_id).filter((id): id is string => Boolean(id))
+		const conversationIds = rows.map((row) => row.conversation_id).filter((id): id is string => Boolean(id))
+		const [contacts, conversations] = await Promise.all([
+			contactIds.length ? prisma.contacts.findMany({
+				where: { id: { in: contactIds }, app_id: resolvedAppId },
+				select: { id: true, name: true, phone_number: true, avatar_url: true },
+			}) : [],
+			conversationIds.length ? prisma.conversations.findMany({
+				where: { id: { in: conversationIds }, app_id: resolvedAppId },
+				select: { id: true, last_message_at: true, messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true } } },
+			}) : [],
+		])
+		const contactMap = new Map(contacts.map((contact) => [contact.id, contact]))
+		const conversationMap = new Map(conversations.map((conversation) => [conversation.id, conversation]))
+		return {
+			data: rows.map((row) => {
+				const contact = row.contact_id ? contactMap.get(row.contact_id) : null
+				const conversation = row.conversation_id ? conversationMap.get(row.conversation_id) : null
+				return {
+					id: row.id,
+					status: row.status,
+					name: contact?.name || row.display_name || row.phone_number,
+					phone: contact?.phone_number || row.phone_number,
+					avatarUrl: normalizeS3PublicUrl(contact?.avatar_url) || null,
+					conversationId: row.conversation_id,
+					preview: conversation?.messages[0]?.content || 'Pesan baru menunggu keputusan',
+					lastMessageAt: conversation?.last_message_at || row.updated_at,
+					source: row.source,
+				}
+			}),
+		}
+	}, { query: t.Object({ status: t.Union([t.Literal('pending'), t.Literal('blocked')]) }) })
+	.post('/leads/:registrationId/confirm', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'confirmed' })
+		if (!registration) { set.status = 404; return { error: 'Permintaan lead tidak ditemukan' } }
+		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
+		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'confirmed', conversationId: registration.conversation_id })
+		if (registration.conversation_id) {
+			const latestInbound = await prisma.messages.findFirst({
+				where: { conversation_id: registration.conversation_id, app_id: resolvedAppId, deleted_at: null, message_type: 'incoming' },
+				orderBy: { created_at: 'desc' },
+				select: { id: true },
+			})
+			if (latestInbound) {
+				void PersonalAiReplyService.scheduleInbound({
+					appId: resolvedAppId,
+					ownerUserId: userId,
+					conversationId: registration.conversation_id,
+					inboundMessageId: latestInbound.id,
+				}).catch((error) => {
+					console.warn('[PersonalWhatsAppInbox] Failed resuming AI after lead confirmation:', error)
+				})
+			}
+		}
+		return { success: true, data: registration }
+	}, { params: t.Object({ registrationId: t.String() }) })
+	.post('/leads/:registrationId/reject', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'blocked' })
+		if (!registration) { set.status = 404; return { error: 'Permintaan lead tidak ditemukan' } }
+		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		let whatsappBlocked = false
+		if (session?.status === 'connected' && channel?.api_key) {
+			try {
+				await BaileysServiceClient.updateBlockStatus({ channelKey: session.provider_channel_key, phoneNumber: registration.phone_number, action: 'block' }, { Authorization: `Bearer ${channel.api_key}`, 'X-Crm-Channel-Secret': channel.api_key })
+				whatsappBlocked = true
+			} catch (error) {
+				console.warn('[PersonalWhatsAppInbox] CRM block saved, but WhatsApp block failed:', error)
+			}
+		}
+		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'blocked', conversationId: registration.conversation_id })
+		return { success: true, whatsappBlocked }
+	}, { params: t.Object({ registrationId: t.String() }) })
+	.post('/leads/:registrationId/unblock', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'confirmed' })
+		if (!registration) { set.status = 404; return { error: 'Nomor terblokir tidak ditemukan' } }
+		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		let whatsappUnblocked = false
+		if (session?.status === 'connected' && channel?.api_key) {
+			try {
+				await BaileysServiceClient.updateBlockStatus({ channelKey: session.provider_channel_key, phoneNumber: registration.phone_number, action: 'unblock' }, { Authorization: `Bearer ${channel.api_key}`, 'X-Crm-Channel-Secret': channel.api_key })
+				whatsappUnblocked = true
+			} catch (error) {
+				console.warn('[PersonalWhatsAppInbox] CRM unblock saved, but WhatsApp unblock failed:', error)
+			}
+		}
+		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'confirmed', conversationId: registration.conversation_id })
+		return { success: true, whatsappUnblocked }
+	}, { params: t.Object({ registrationId: t.String() }) })
+	.get('/ai/settings', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const settings = await PersonalAiReplyService.getSettings(resolvedAppId, userId)
+		return {
+			data: {
+				autoReplyEnabled: settings.auto_reply_enabled,
+				reviewEnabled: settings.review_enabled,
+				replyDelaySeconds: settings.reply_delay_seconds,
+				minConfidence: settings.min_confidence,
+				personaPrompt: settings.persona_prompt,
+				model: process.env.OLLAMA_CHAT_MODEL || 'qwen3.5:4b',
+			},
+		}
+	})
+	.patch('/ai/settings', async ({ resolvedAppId, userId, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const settings = await PersonalAiReplyService.updateSettings(resolvedAppId, userId, body)
+		return {
+			data: {
+				autoReplyEnabled: settings.auto_reply_enabled,
+				reviewEnabled: settings.review_enabled,
+				replyDelaySeconds: settings.reply_delay_seconds,
+				minConfidence: settings.min_confidence,
+				personaPrompt: settings.persona_prompt,
+				model: process.env.OLLAMA_CHAT_MODEL || 'qwen3.5:4b',
+			},
+		}
+	}, {
+		body: t.Object({
+			autoReplyEnabled: t.Optional(t.Boolean()),
+			replyDelaySeconds: t.Optional(t.Number({ minimum: 1, maximum: 300 })),
+			minConfidence: t.Optional(t.Number({ minimum: 0, maximum: 1 })),
+			personaPrompt: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
+		}),
+	})
+	.get('/ai/drafts', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const rows = await PersonalAiReplyService.listDrafts(resolvedAppId, userId)
+		return {
+			data: rows.map((row) => ({
+				id: row.id,
+				status: row.status,
+				conversationId: row.conversation_id,
+				contactName: row.contact_name || row.phone_number || 'Customer',
+				phoneNumber: row.phone_number,
+				latestCustomerMessage: row.latest_customer_message,
+				draftText: row.draft_text,
+				reviewReason: row.review_reason,
+				reviewConfidence: row.review_confidence,
+				updatedAt: row.updated_at,
+			})),
+		}
+	})
+	.post('/ai/drafts/:taskId/send', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		try {
+			const message = await PersonalAiReplyService.sendDraft(resolvedAppId, userId, params.taskId, body.content)
+			return { success: true, data: { messageId: message.id } }
+		} catch (error) {
+			set.status = 409
+			return { error: error instanceof Error ? error.message : 'Draft tidak dapat dikirim' }
+		}
+	}, {
+		params: t.Object({ taskId: t.String() }),
+		body: t.Object({ content: t.Optional(t.String({ minLength: 1, maxLength: 4096 })) }),
+	})
+	.post('/ai/drafts/:taskId/dismiss', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const dismissed = await PersonalAiReplyService.dismissDraft(resolvedAppId, userId, params.taskId)
+		if (!dismissed) { set.status = 404; return { error: 'Draft tidak ditemukan' } }
+		return { success: true }
+	}, { params: t.Object({ taskId: t.String() }) })
 	.get('/conversations', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) {
 			set.status = 401
@@ -153,20 +359,25 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!session || !channel?.inbox_id) {
 			return { data: [], diagnostic: { connection: session?.status || 'not_paired', storedMessages: 0 } }
 		}
-		const [rows, storedMessages] = await Promise.all([
-			prisma.conversations.findMany({
-				where: { app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
+		const rows = confirmedPhones.length ? await prisma.conversations.findMany({
+				where: {
+					app_id: resolvedAppId,
+					inbox_id: channel.inbox_id,
+					deleted_at: null,
+					contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
+				},
 				orderBy: { last_message_at: 'desc' },
 				take: 100,
 				include: {
 					contacts: { select: { name: true, phone_number: true, whatsapp_id: true, avatar_url: true, source: true } },
 					messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true, created_at: true } },
 				},
-			}),
-			prisma.messages.count({ where: { app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null } }),
-		])
+			}) : []
+		const visibleRows = rows
+		const storedMessages = visibleRows.length ? await prisma.messages.count({ where: { conversation_id: { in: visibleRows.map((row) => row.id) }, deleted_at: null } }) : 0
 		return {
-			data: rows.map((row) => ({
+			data: visibleRows.map((row) => ({
 				id: row.id,
 				contactId: row.contact_id || null,
 				workflow: row.status === 'pending' ? 'handover' : row.assignee_id ? 'human' : 'ai',
@@ -254,6 +465,16 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 				data: { app_id: resolvedAppId, inbox_id: channel.inbox_id, contact_id: contact.id, channel_type: 'whatsapp', status: 'open', unread_count: 0, last_message_at: now, last_activity_at: now, created_at: now, updated_at: now },
 			})
 		})
+		const registration = await confirmPersonalLead({
+			appId: resolvedAppId,
+			ownerUserId: userId,
+			phoneNumber,
+			contactId: conversation.contact_id,
+			conversationId: conversation.id,
+			displayName: body.name?.trim() || null,
+			source: 'manual',
+		})
+		if (registration) await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
 		return { data: { id: conversation.id, phoneNumber } }
 	}, { body: t.Object({ phoneNumber: t.String({ minLength: 1 }), name: t.Optional(t.String()) }) })
 	.post('/transcribe-number', async ({ resolvedAppId, userId, body, set }) => {
@@ -357,6 +578,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			set.status = 409
 			return { error: 'Pesan asli sudah tidak tersedia untuk dibalas' }
 		}
+		await PersonalAiReplyService.cancelConversationTasks(resolvedAppId, userId, conversation.id)
 		try {
 			const outboundType = media?.kind === 'voice' ? 'audio' : media?.kind === 'gif' ? 'video' : media?.kind || 'text'
 			const sent = await BaileysServiceClient.sendMessage({

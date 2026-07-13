@@ -238,11 +238,11 @@ function DashboardPage() {
 				return
 			}
 
-			const orgName = localStorage.getItem('scalechat_org_name')
+			const orgName = localStorage.getItem('crm_org_name')
 			const orgSlug =
-				getOrgSlugFromCookie() || localStorage.getItem('scalechat_org_slug')
+				getOrgSlugFromCookie() || localStorage.getItem('crm_org_slug')
 			const appId =
-				getAppIdFromCookie() || localStorage.getItem('scalechat_app_id')
+				getAppIdFromCookie() || localStorage.getItem('crm_app_id')
 
 			if (orgName && orgSlug && appId) {
 				if (mounted) setContextReady(true)
@@ -258,11 +258,11 @@ function DashboardPage() {
 					return
 				}
 
-				const syncedOrgName = localStorage.getItem('scalechat_org_name')
+				const syncedOrgName = localStorage.getItem('crm_org_name')
 				const syncedOrgSlug =
-					getOrgSlugFromCookie() || localStorage.getItem('scalechat_org_slug')
+					getOrgSlugFromCookie() || localStorage.getItem('crm_org_slug')
 				const syncedAppId =
-					getAppIdFromCookie() || localStorage.getItem('scalechat_app_id')
+					getAppIdFromCookie() || localStorage.getItem('crm_app_id')
 
 				if (
 					context.organization &&
@@ -364,6 +364,7 @@ function DashboardPage() {
 					{error}
 				</div>
 			) : null}
+
 
 			<div className="ocm-grid-4">
 				<CrmStatCard

@@ -11,7 +11,7 @@ let userTimezone = DEFAULT_TIMEZONE
 export function setUserTimezone(tz: string) {
 	userTimezone = tz
 	if (isBrowser && typeof localStorage !== 'undefined') {
-		localStorage.setItem('scalechat_timezone', tz)
+		localStorage.setItem('crm_timezone', tz)
 	}
 	console.log('[Timezone] Set to:', tz)
 }

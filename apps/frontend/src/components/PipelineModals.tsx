@@ -115,7 +115,7 @@ export function PipelineModal({
 
 		setSaving(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 
 			const method = pipeline ? 'PUT' : 'POST'
@@ -312,7 +312,7 @@ export function DealModal({
 
 		setSaving(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 
 			const method = deal ? 'PUT' : 'POST'
@@ -515,7 +515,7 @@ export function CustomFieldModal({
 
 		setSaving(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 
 			await fetch(`${API_URL}/api/v1/crm/custom-fields`, {

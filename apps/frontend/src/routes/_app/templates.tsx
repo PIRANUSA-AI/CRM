@@ -30,7 +30,7 @@ function TemplatesPage() {
 	const fetchTemplates = async () => {
 		setLoading(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 			const res = await fetch(`${API_URL}/api/whatsapp/templates?limit=50`, {
 				headers: { Authorization: `Bearer ${token}` },
@@ -49,7 +49,7 @@ function TemplatesPage() {
 	const fetchVariables = async () => {
 		setLoading(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 			const res = await fetch(`${API_URL}/api/template-variables`, {
 				headers: { Authorization: `Bearer ${token}` },
@@ -68,7 +68,7 @@ function TemplatesPage() {
 	const deleteVariable = async (id: string) => {
 		if (!confirm('Are you sure you want to delete this variable?')) return
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 			await fetch(`${API_URL}/api/template-variables/${id}`, {
 				method: 'DELETE',
@@ -89,7 +89,7 @@ function TemplatesPage() {
 			return
 
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 			const res = await fetch(
 				`${API_URL}/api/whatsapp/templates?name=${name}`,

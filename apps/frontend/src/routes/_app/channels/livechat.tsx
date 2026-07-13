@@ -9,7 +9,7 @@ export const Route = createFileRoute('/_app/channels/livechat')({
 function LiveChatChannelPage() {
 	const appId =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id') || ''
+			? localStorage.getItem('crm_app_id') || ''
 			: ''
 
 	return (
@@ -64,7 +64,7 @@ function LiveChatChannelPage() {
 
 						<div className="bg-gray-900 rounded-lg p-4 text-gray-300 font-mono text-sm overflow-x-auto">
 							<pre>{`<script>
-  window.scaleChatConfig = {
+  window.crmConfig = {
     appId: "${appId}"
   };
   (function(d, s, id) {
@@ -73,7 +73,7 @@ function LiveChatChannelPage() {
     js = d.createElement(s); js.id = id;
     js.src = "https://cdn.crm.chat/widget.js";
     fjs.parentNode.insertBefore(js, fjs);
-  }(document, 'script', 'scalechat-jssdk'));
+  }(document, 'script', 'crm-jssdk'));
 </script>`}</pre>
 						</div>
 

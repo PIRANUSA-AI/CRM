@@ -107,7 +107,7 @@ export const apiToolsEmptyState = {
 	body: 'Create your first tool to publish programmable automations.',
 }
 
-const API_TOOLS_STORAGE_KEY = 'scalechat_developers_api_tools_v2'
+const API_TOOLS_STORAGE_KEY = 'crm_developers_api_tools_v2'
 
 type ApiToolSeedResponseItem = {
 	id: string

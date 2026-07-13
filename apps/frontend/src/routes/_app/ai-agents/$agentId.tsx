@@ -171,10 +171,10 @@ function resolveBusinessIdFromClient(args: {
 }): string {
 	if (typeof window !== 'undefined') {
 		const storageCandidates = [
-			localStorage.getItem('scalechat_business_id'),
-			localStorage.getItem('scalechat_org_id'),
-			localStorage.getItem('scalechat_app_id'),
-			localStorage.getItem('scalechat_org_slug'),
+			localStorage.getItem('crm_business_id'),
+			localStorage.getItem('crm_org_id'),
+			localStorage.getItem('crm_app_id'),
+			localStorage.getItem('crm_org_slug'),
 			args.appId || '',
 		]
 		const fromStorage = storageCandidates
@@ -752,8 +752,8 @@ function AIAgentDetailPage() {
 	const appId =
 		routeParams.appId ||
 		(typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id') ||
-				localStorage.getItem('scalechat_org_slug') ||
+			? localStorage.getItem('crm_app_id') ||
+				localStorage.getItem('crm_org_slug') ||
 				''
 			: '')
 	const [activeTab, setActiveTab] = useState<Tab>('general')
@@ -863,7 +863,7 @@ function AIAgentDetailPage() {
 	const [savingEvaluation, setSavingEvaluation] = useState(false)
 
 	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
-	const token = localStorage.getItem('scalechat_token')
+	const token = localStorage.getItem('crm_token')
 	const businessId = resolveBusinessIdFromClient({ appId, token })
 
 	useEffect(() => {

@@ -24,15 +24,15 @@ function unwrapTreatyResponse<T>(response: {
 }
 
 function getAuthHeaders(): HeadersInit {
-	const token = localStorage.getItem('scalechat_token')
-	const appId = localStorage.getItem('scalechat_app_id')
+	const token = localStorage.getItem('crm_token')
+	const appId = localStorage.getItem('crm_app_id')
 	let orgSlug: string | null = null
 	if (typeof window !== 'undefined') {
 		const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)/)
 		orgSlug = pathMatch?.[1] || null
 	}
 	const appSecret =
-		localStorage.getItem('scalechat_app_secret')
+		localStorage.getItem('crm_app_secret')
 
 	return {
 		'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ async function apiRequest<T>(
 			!endpoint.includes('/auth/refresh') &&
 			!endpoint.includes('/auth/login')
 		) {
-			const refreshToken = localStorage.getItem('scalechat_refresh_token')
+			const refreshToken = localStorage.getItem('crm_refresh_token')
 
 			if (refreshToken) {
 				try {
@@ -74,9 +74,9 @@ async function apiRequest<T>(
 
 					if (refreshResponse.ok) {
 						const data = await refreshResponse.json()
-						localStorage.setItem('scalechat_token', data.token)
+						localStorage.setItem('crm_token', data.token)
 						if (data.refreshToken) {
-							localStorage.setItem('scalechat_refresh_token', data.refreshToken)
+							localStorage.setItem('crm_refresh_token', data.refreshToken)
 						}
 
 						return apiRequest<T>(endpoint, {
@@ -84,9 +84,9 @@ async function apiRequest<T>(
 							_retry: true,
 						})
 					} else {
-						localStorage.removeItem('scalechat_token')
-						localStorage.removeItem('scalechat_refresh_token')
-						localStorage.removeItem('scalechat_user')
+						localStorage.removeItem('crm_token')
+						localStorage.removeItem('crm_refresh_token')
+						localStorage.removeItem('crm_user')
 					}
 				} catch (e) {
 					console.error('Token refresh failed:', e)

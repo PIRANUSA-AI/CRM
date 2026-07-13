@@ -1,34 +1,25 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
 	User,
-	Settings as SettingsIcon,
-	Lock,
 	Save,
-	Wrench,
 	Shield,
 	Bell,
 	Globe,
 	Terminal,
 	Key,
 	Bot,
-	Smartphone,
 	Eye,
 	Plus,
 	Tag,
 	Trash2,
 	Edit2,
 	X,
-	Users,
 	MessageCircle,
 	type LucideIcon,
 } from 'lucide-react'
-import { useTheme } from 'next-themes'
-import { flushSync } from 'react-dom'
-import PageHeader from '@/components/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import {
 	Card,
 	CardContent,
@@ -36,13 +27,15 @@ import {
 	CardHeader,
 	CardTitle,
 } from '@/components/ui/card'
-import { animateThemeChange } from '@/lib/utils'
 import {
 	playNotificationSound,
 	sendBrowserNotification,
 } from '@/lib/notifications'
 import WhatsAppSettingsManager from '@/components/settings/WhatsAppSettingsManager'
 import AIConfigurationManager from '@/components/settings/AIConfigurationManager'
+import PersonalAiSettingsManager from '@/components/settings/PersonalAiSettingsManager'
+import ProfileSettingsManager from '@/components/settings/ProfileSettingsManager'
+import SecuritySettingsManager from '@/components/settings/SecuritySettingsManager'
 import { getVisibleSettingsTabIds, type SettingsNavItemId } from './-settings-tab-access'
 import { extractNormalizedRole } from '@/lib/role-access'
 
@@ -57,7 +50,8 @@ type SettingsNavItem = {
 }
 
 const SIDEBAR_NAV_ITEMS: SettingsNavItem[] = [
-	{ title: 'General', icon: Wrench, id: 'general' },
+	{ title: 'Profil', icon: User, id: 'general' },
+	{ title: 'AI Balasan', icon: Bot, id: 'ai-replies' },
 	{ title: 'AI Models', icon: Bot, id: 'ai-models' },
 	{ title: 'Labels', icon: Tag, id: 'labels' },
 	{ title: 'WhatsApp', icon: MessageCircle, id: 'whatsapp' },
@@ -75,6 +69,8 @@ const getInitialActiveNav = (): SettingsNavItemId => {
 	switch (queryNav) {
 		case 'general':
 			return 'general'
+		case 'ai-replies':
+			return 'ai-replies'
 		case 'ai-models':
 			return 'ai-models'
 		case 'labels':
@@ -98,15 +94,11 @@ function SettingsPage() {
 	const navigate = useNavigate()
 	const [activeNav, setActiveNav] =
 		useState<SettingsNavItemId>(getInitialActiveNav)
-	const { resolvedTheme, setTheme } = useTheme()
-	const themeSwitchRef = useRef<HTMLDivElement>(null)
-	const [isThemeAnimating, setIsThemeAnimating] = useState(false)
-
 	const [currentRole, setCurrentRole] = useState('')
 
 	useEffect(() => {
 		if (typeof localStorage === 'undefined') return
-		const stored = localStorage.getItem('scalechat_user')
+		const stored = localStorage.getItem('crm_user')
 		if (!stored) return
 		try {
 			const parsed = JSON.parse(stored) as any
@@ -161,59 +153,34 @@ function SettingsPage() {
 		}
 	}
 
+	useEffect(() => {
+		if (visibleTabIds.includes(activeNav)) return
+		const firstVisibleTab = visibleNavItems[0]?.id
+		if (firstVisibleTab) setActiveSection(firstVisibleTab)
+	}, [activeNav, currentRole])
+
 	// Notification State
 	const [soundEnabled, setSoundEnabled] = useState(() => {
-		const stored = localStorage.getItem('scalechat_sound_enabled')
+		const stored = localStorage.getItem('crm_sound_enabled')
 		return stored === null ? true : stored === 'true'
 	})
 	const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
-		const stored = localStorage.getItem('scalechat_notifications_enabled')
+		const stored = localStorage.getItem('crm_notifications_enabled')
 		return stored === null ? true : stored === 'true'
 	})
 
 	// Labels State
-	const routeParams = Route.useParams({ strict: false }) as { appId?: string }
 	const appId =
-		routeParams.appId ||
-		(typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id') ||
-				localStorage.getItem('scalechat_org_slug') ||
+		typeof localStorage !== 'undefined'
+			? localStorage.getItem('crm_app_id') ||
+				localStorage.getItem('crm_org_slug') ||
 				''
-			: '')
+			: ''
 	const [labels, setLabels] = useState<any[]>([])
 	const [labelsLoading, setLabelsLoading] = useState(false)
 	const [showLabelModal, setShowLabelModal] = useState(false)
 	const [editingLabel, setEditingLabel] = useState<any>(null)
 
-	const isDarkMode = resolvedTheme === 'dark'
-
-	const handleThemeChange = async (checked: boolean) => {
-		if (isThemeAnimating) return
-
-		const nextTheme = checked ? 'dark' : 'light'
-		const rect = themeSwitchRef.current?.getBoundingClientRect()
-		const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2
-		const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2
-
-		setIsThemeAnimating(true)
-
-		try {
-			await animateThemeChange(
-				() => {
-					flushSync(() => {
-						setTheme(nextTheme)
-					})
-				},
-				{
-					x,
-					y,
-					reverse: nextTheme === 'light',
-				},
-			)
-		} finally {
-			setIsThemeAnimating(false)
-		}
-	}
 	const [labelForm, setLabelForm] = useState({
 		title: '',
 		color: '#10B981',
@@ -225,7 +192,7 @@ function SettingsPage() {
 	const fetchLabels = async () => {
 		setLabelsLoading(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/api/labels`, {
 				headers: { Authorization: `Bearer ${token}`, 'X-App-Id': appId },
 			})
@@ -254,7 +221,7 @@ function SettingsPage() {
 
 	const saveLabel = async () => {
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const method = editingLabel ? 'PUT' : 'POST'
 			const url = editingLabel
 				? `${API_BASE}/api/labels/${editingLabel.id}`
@@ -292,7 +259,7 @@ function SettingsPage() {
 		if (!deletingLabel) return
 		setIsDeleting(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			await fetch(`${API_BASE}/api/labels/${deletingLabel.id}`, {
 				method: 'DELETE',
 				headers: { Authorization: `Bearer ${token}`, 'X-App-Id': appId },
@@ -315,16 +282,22 @@ function SettingsPage() {
 
 	return (
 		<div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
-			<PageHeader
-				title="Settings"
-				description="Update account preferences and manage integrations."
-				icon={<SettingsIcon size={24} />}
-			/>
+			<div className="flex flex-1 flex-col overflow-auto px-4 pb-8 pt-4 lg:flex-row lg:space-x-12 lg:px-8 lg:pt-6">
+				<div className="mb-4 lg:hidden">
+					<label htmlFor="settings-section" className="mb-1.5 block text-xs font-semibold text-muted-foreground">Bagian pengaturan</label>
+					<select
+						id="settings-section"
+						value={activeNav}
+						onChange={(event) => setActiveSection(event.target.value as SettingsNavItemId)}
+						className="h-11 w-full rounded-lg border border-input bg-card px-3 text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+					>
+						{visibleNavItems.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+					</select>
+				</div>
 
-			<div className="flex flex-1 flex-col overflow-auto lg:flex-row lg:space-x-12 px-4 lg:px-8 pb-8">
 				{/* Sidebar Nav */}
-				<aside className="lg:w-1/5 shrink-0 mb-8 lg:mb-0">
-					<nav className="flex overflow-x-auto lg:flex-col lg:space-y-1 pb-2 lg:pb-0 scrollbar-hide">
+				<aside className="mb-8 hidden shrink-0 lg:block lg:w-1/5 lg:mb-0">
+					<nav className="flex flex-col space-y-1">
 						{visibleNavItems.map((item) => (
 							<button
 								key={item.id}
@@ -343,124 +316,11 @@ function SettingsPage() {
 				</aside>
 
 				{/* Content Area */}
-				<div className="flex-1 max-w-4xl">
+				<div className="w-full min-w-0 flex-1 max-w-4xl">
 					<div className="space-y-6">
-						{/* ========== GENERAL SECTION ========== */}
+						{/* ========== PROFILE SECTION ========== */}
 						{activeNav === 'general' && visibleTabIds.includes('general') && (
-							<div className="space-y-6">
-								<Card className="border-gray-100 shadow-sm overflow-hidden">
-									<CardHeader className="bg-gray-50/50 border-b border-gray-100 px-6 py-4">
-										<div className="flex items-center gap-2">
-											<User size={20} className="text-emerald-600" />
-											<CardTitle className="text-lg font-bold">
-												Profile Settings
-											</CardTitle>
-										</div>
-										<CardDescription>
-											Update your profile information
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="p-6 space-y-4">
-										<div className="grid gap-2">
-											<label
-												htmlFor="name"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												Name
-											</label>
-											<Input
-												id="name"
-												defaultValue="Naufal Rasyid (AcidOpal)"
-												className="h-10 rounded-lg border-gray-200"
-											/>
-										</div>
-										<div className="grid gap-2">
-											<label
-												htmlFor="email"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												Email
-											</label>
-											<Input
-												id="email"
-												type="email"
-												defaultValue="naufalrasyid86@gmail.com"
-												className="h-10 rounded-lg border-gray-200"
-											/>
-										</div>
-										<div className="grid gap-2">
-											<label
-												htmlFor="phone"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												Phone Number
-											</label>
-											<Input
-												id="phone"
-												type="tel"
-												placeholder="+62..."
-												className="h-10 rounded-lg border-gray-200"
-											/>
-										</div>
-										<Button className="mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold h-10 px-6">
-											<Save size={18} className="mr-2" />
-											Save Changes
-										</Button>
-									</CardContent>
-								</Card>
-
-								<Card className="border-gray-100 shadow-sm overflow-hidden">
-									<CardHeader className="bg-gray-50/50 border-b border-gray-100 px-6 py-4">
-										<div className="flex items-center gap-2">
-											<SettingsIcon size={20} className="text-emerald-600" />
-											<CardTitle className="text-lg font-bold">
-												Account Preference
-											</CardTitle>
-										</div>
-										<CardDescription>
-											Configure how your account behaves
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="p-6 space-y-4">
-										<div className="flex items-center justify-between">
-											<div>
-												<label className="text-sm font-bold text-gray-900">
-													Dark Mode
-												</label>
-												<p className="text-xs text-gray-500">
-													Enable dark theme for the interface
-												</p>
-											</div>
-											<div
-												ref={themeSwitchRef}
-												className={
-													isThemeAnimating ? 'theme-toggle-bounce' : undefined
-												}
-											>
-												<Switch
-													checked={isDarkMode}
-													onCheckedChange={handleThemeChange}
-													disabled={isThemeAnimating}
-													aria-label="Toggle dark mode"
-												/>
-											</div>
-										</div>
-										<div className="flex items-center justify-between">
-											<div>
-												<label className="text-sm font-bold text-gray-900">
-													Compact Mode
-												</label>
-												<p className="text-xs text-gray-500">
-													Show more conversations in less space
-												</p>
-											</div>
-											<button className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors bg-gray-200">
-												<span className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1" />
-											</button>
-										</div>
-									</CardContent>
-								</Card>
-							</div>
+							<ProfileSettingsManager />
 						)}
 
 						{/* ========== LABELS SECTION ========== */}
@@ -741,138 +601,8 @@ function SettingsPage() {
 						)}
 
 						{/* ========== SECURITY SECTION ========== */}
-						{activeNav === 'security' && (
-							<div className="space-y-6">
-								<Card className="border-gray-100 shadow-sm overflow-hidden">
-									<CardHeader className="bg-gray-50/50 border-b border-gray-100 px-6 py-4">
-										<div className="flex items-center gap-2">
-											<Lock size={20} className="text-emerald-600" />
-											<CardTitle className="text-lg font-bold">
-												Change Password
-											</CardTitle>
-										</div>
-										<CardDescription>
-											Update your password to keep your account secure
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="p-6 space-y-4">
-										<div className="grid gap-2">
-											<label
-												htmlFor="current"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												Current Password
-											</label>
-											<Input
-												id="current"
-												type="password"
-												placeholder="••••••••"
-												className="h-10 rounded-lg border-gray-200"
-											/>
-										</div>
-										<div className="grid gap-2">
-											<label
-												htmlFor="new"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												New Password
-											</label>
-											<Input
-												id="new"
-												type="password"
-												placeholder="••••••••"
-												className="h-10 rounded-lg border-gray-200"
-											/>
-											<p className="text-[11px] text-gray-400 font-medium">
-												Must be at least 8 characters with uppercase, lowercase,
-												and numbers
-											</p>
-										</div>
-										<div className="grid gap-2">
-											<label
-												htmlFor="confirm"
-												className="text-xs font-black uppercase tracking-widest text-gray-400"
-											>
-												Confirm New Password
-											</label>
-											<Input
-												id="confirm"
-												type="password"
-												placeholder="••••••••"
-												className="h-10 rounded-lg border-gray-200"
-											/>
-										</div>
-										<Button className="mt-2 bg-gray-900 hover:bg-gray-800 text-white font-bold h-10 px-6">
-											<Lock size={18} className="mr-2" />
-											Change Password
-										</Button>
-									</CardContent>
-								</Card>
-
-								<Card className="border-gray-100 shadow-sm overflow-hidden">
-									<CardHeader className="bg-gray-50/50 border-b border-gray-100 px-6 py-4">
-										<div className="flex items-center gap-2">
-											<Smartphone size={20} className="text-emerald-600" />
-											<CardTitle className="text-lg font-bold">
-												Two-Factor Authentication
-											</CardTitle>
-										</div>
-										<CardDescription>
-											Add an extra layer of security to your account
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="p-6">
-										<div className="flex items-center justify-between">
-											<div>
-												<label className="text-sm font-bold text-gray-900">
-													Enable 2FA
-												</label>
-												<p className="text-xs text-gray-500">
-													Use authenticator app for login verification
-												</p>
-											</div>
-											<Button variant="outline" className="font-bold">
-												Setup 2FA
-											</Button>
-										</div>
-									</CardContent>
-								</Card>
-
-								<Card className="border-gray-100 shadow-sm overflow-hidden">
-									<CardHeader className="bg-gray-50/50 border-b border-gray-100 px-6 py-4">
-										<div className="flex items-center gap-2">
-											<Key size={20} className="text-emerald-600" />
-											<CardTitle className="text-lg font-bold">
-												Active Sessions
-											</CardTitle>
-										</div>
-										<CardDescription>
-											Manage your active login sessions
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="p-6">
-										<div className="space-y-3">
-											<div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-												<div>
-													<p className="text-sm font-medium">Chrome on MacOS</p>
-													<p className="text-xs text-gray-500">
-														Jakarta, Indonesia • Current session
-													</p>
-												</div>
-												<span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded">
-													Active
-												</span>
-											</div>
-										</div>
-										<Button
-											variant="outline"
-											className="mt-4 text-red-600 border-red-200 hover:bg-red-50"
-										>
-											Sign out all other sessions
-										</Button>
-									</CardContent>
-								</Card>
-							</div>
+						{activeNav === 'security' && visibleTabIds.includes('security') && (
+							<SecuritySettingsManager />
 						)}
 
 						{/* ========== NOTIFICATIONS SECTION ========== */}
@@ -916,7 +646,7 @@ function SettingsPage() {
 														const newState = !soundEnabled
 														setSoundEnabled(newState)
 														localStorage.setItem(
-															'scalechat_sound_enabled',
+															'crm_sound_enabled',
 															String(newState),
 														)
 													}}
@@ -966,7 +696,7 @@ function SettingsPage() {
 															if (perm === 'granted') {
 																setNotificationsEnabled(true)
 																localStorage.setItem(
-																	'scalechat_notifications_enabled',
+																	'crm_notifications_enabled',
 																	'true',
 																)
 															} else {
@@ -977,7 +707,7 @@ function SettingsPage() {
 														} else {
 															setNotificationsEnabled(false)
 															localStorage.setItem(
-																'scalechat_notifications_enabled',
+																'crm_notifications_enabled',
 																'false',
 															)
 														}
@@ -1078,6 +808,10 @@ function SettingsPage() {
 								</Card>
 							</div>
 						)}
+
+						{/* ========== AI MODELS SECTION ========== */}
+						{activeNav === 'ai-replies' &&
+							visibleTabIds.includes('ai-replies') && <PersonalAiSettingsManager />}
 
 						{/* ========== AI MODELS SECTION ========== */}
 						{activeNav === 'ai-models' &&

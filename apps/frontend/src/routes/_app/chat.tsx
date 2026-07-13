@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	AlertCircle,
 	ArrowLeft,
+	Ban,
 	Check,
 	CheckCheck,
 	CheckSquare,
@@ -26,13 +27,15 @@ import {
 	Square,
 	Sticker,
 	Trash2,
+	Undo2,
+	UserCheck,
 	Video,
 	UserRound,
 	X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE, readApiResponse } from '@/lib/api'
-import { connectSocket } from '@/lib/socket'
+import { connectSocket, joinApp } from '@/lib/socket'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -96,11 +99,23 @@ type Diagnostic = {
 	lastSeenAt?: string | null
 }
 
-type InboxFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread'
+type LeadRegistration = {
+	id: string
+	status: 'pending' | 'blocked'
+	name: string
+	phone: string
+	avatarUrl: string | null
+	conversationId: string | null
+	preview: string
+	lastMessageAt: string | null
+	source: string
+}
+
+type InboxFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread' | 'pending' | 'blocked'
 
 function authHeaders() {
-	const token = localStorage.getItem('scalechat_token')
-	const appId = localStorage.getItem('scalechat_app_id')
+	const token = localStorage.getItem('crm_token')
+	const appId = localStorage.getItem('crm_app_id')
 	return {
 		...(token ? { Authorization: `Bearer ${token}` } : {}),
 		...(appId ? { 'X-App-Id': appId } : {}),
@@ -141,7 +156,7 @@ function formatCopyTimestamp(value: string | null) {
 
 function storedUserName() {
 	try {
-		const raw = localStorage.getItem('scalechat_user')
+		const raw = localStorage.getItem('crm_user')
 		const parsed = raw ? JSON.parse(raw) : null
 		const user = parsed?.user && typeof parsed.user === 'object' ? parsed.user : parsed
 		return String(user?.name || user?.email?.split('@')?.[0] || 'Sales').trim()
@@ -153,6 +168,8 @@ function storedUserName() {
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
 	const [conversations, setConversations] = useState<Conversation[]>([])
+	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
+	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
 	const [messages, setMessages] = useState<ChatMessage[]>([])
 	const [selectedId, setSelectedId] = useState<string | null>(null)
 	const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
@@ -185,6 +202,8 @@ function PersonalWhatsappInbox() {
 	const [loading, setLoading] = useState(true)
 	const [repairing, setRepairing] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	const [leadActionId, setLeadActionId] = useState<string | null>(null)
+	const [leadActionError, setLeadActionError] = useState<string | null>(null)
 	const recorderRef = useRef<MediaRecorder | null>(null)
 	const recorderTimeoutRef = useRef<number | null>(null)
 	const voiceRecorderRef = useRef<MediaRecorder | null>(null)
@@ -227,6 +246,22 @@ function PersonalWhatsappInbox() {
 		}
 	}, [])
 
+	const loadLeadLists = useCallback(async () => {
+		const loadStatus = async (status: 'pending' | 'blocked') => {
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/leads?status=${status}`, { headers: authHeaders() })
+			const payload = (await readApiResponse(response)) as { data?: LeadRegistration[]; error?: string }
+			if (!response.ok) throw new Error(payload.error || 'Daftar keputusan lead belum dapat dimuat')
+			return payload.data || []
+		}
+		try {
+			const [pending, blocked] = await Promise.all([loadStatus('pending'), loadStatus('blocked')])
+			setPendingLeads(pending)
+			setBlockedLeads(blocked)
+		} catch (reason) {
+			setLeadActionError(reason instanceof Error ? reason.message : 'Daftar keputusan lead belum dapat dimuat')
+		}
+	}, [])
+
 	const loadMessages = useCallback(async (conversationId: string) => {
 		const response = await fetch(
 			`${API_BASE}/personal-whatsapp-inbox/${conversationId}/messages`,
@@ -258,16 +293,16 @@ function PersonalWhatsappInbox() {
 				method: 'POST',
 				headers: authHeaders(),
 			})
-			await loadConversations()
+			await Promise.all([loadConversations(), loadLeadLists()])
 			if (selectedId) await loadMessages(selectedId)
 		} finally {
 			setRepairing(false)
 		}
-	}, [loadConversations, loadMessages, selectedId])
+	}, [loadConversations, loadLeadLists, loadMessages, selectedId])
 
 	useEffect(() => {
-		void loadConversations()
-	}, [loadConversations])
+		void Promise.all([loadConversations(), loadLeadLists()])
+	}, [loadConversations, loadLeadLists])
 
 	useEffect(() => {
 		if (window.location.search) {
@@ -303,8 +338,10 @@ function PersonalWhatsappInbox() {
 
 	useEffect(() => {
 		const socket = connectSocket()
+		const appId = localStorage.getItem('crm_app_id')
+		if (appId) joinApp(appId)
 		const refresh = () => {
-			void loadConversations()
+			void Promise.all([loadConversations(), loadLeadLists()])
 			if (selectedId) void Promise.all([loadMessages(selectedId), markRead(selectedId)])
 		}
 		const handlePresence = (payload: { phone?: string; presence?: string }) => {
@@ -316,23 +353,72 @@ function PersonalWhatsappInbox() {
 			if (!payload.message_id || !payload.status) return
 			setMessages((current) => current.map((message) => message.id === payload.message_id ? { ...message, status: payload.status || message.status } : message))
 		}
-		socket.on('message:created', refresh)
+		const handleMessageCreated = (payload: { message: ChatMessage; conversation: { id: string } }) => {
+			if (payload.conversation?.id === selectedId) {
+				setMessages((current) => {
+					const exists = current.some((m) => m.id === payload.message.id)
+					return exists ? current : [...current, payload.message]
+				})
+			}
+			void Promise.all([loadConversations(), loadLeadLists()])
+		}
+		socket.on('message:created', handleMessageCreated)
 		socket.on('message:deleted', refresh)
 		socket.on('message:restored', refresh)
 		socket.on('whatsapp:presence', handlePresence)
 		socket.on('message:status_updated', handleStatus)
 		socket.on('contact:profile_updated', loadConversations)
 		socket.on('message:revoked', refresh)
+		socket.on('personal-lead:updated', refresh)
 		return () => {
-			socket.off('message:created', refresh)
+			socket.off('message:created', handleMessageCreated)
 			socket.off('message:deleted', refresh)
 			socket.off('message:restored', refresh)
 			socket.off('whatsapp:presence', handlePresence)
 			socket.off('message:status_updated', handleStatus)
 			socket.off('contact:profile_updated', loadConversations)
 			socket.off('message:revoked', refresh)
+			socket.off('personal-lead:updated', refresh)
 		}
-	}, [loadConversations, loadMessages, markRead, selectedId, selectedPhone])
+	}, [loadConversations, loadLeadLists, loadMessages, markRead, selectedId, selectedPhone])
+
+	const pollingRef = useRef<number | null>(null)
+	useEffect(() => {
+		if (!selectedId) return
+		if (connected) {
+			if (pollingRef.current) { window.clearInterval(pollingRef.current); pollingRef.current = null }
+			return
+		}
+		pollingRef.current = window.setInterval(() => {
+			void loadMessages(selectedId)
+		}, 5_000)
+		return () => { if (pollingRef.current) { window.clearInterval(pollingRef.current); pollingRef.current = null } }
+	}, [connected, loadMessages, selectedId])
+
+	const updateLeadStatus = useCallback(async (
+		lead: LeadRegistration,
+		action: 'confirm' | 'reject' | 'unblock',
+	) => {
+		setLeadActionId(lead.id)
+		setLeadActionError(null)
+		try {
+			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/leads/${lead.id}/${action}`, {
+				method: 'POST',
+				headers: authHeaders(),
+			})
+			const payload = (await readApiResponse(response)) as { error?: string }
+			if (!response.ok) throw new Error(payload.error || 'Status lead belum dapat diperbarui')
+			await Promise.all([loadConversations(), loadLeadLists()])
+			if ((action === 'confirm' || action === 'unblock') && lead.conversationId) {
+				setFilter('all')
+				setSelectedId(lead.conversationId)
+			}
+		} catch (reason) {
+			setLeadActionError(reason instanceof Error ? reason.message : 'Status lead belum dapat diperbarui')
+		} finally {
+			setLeadActionId(null)
+		}
+	}, [loadConversations, loadLeadLists])
 
 	const publishPresence = useCallback((presence: 'composing' | 'recording' | 'paused') => {
 		if (!selectedId || !connected) return
@@ -585,14 +671,20 @@ function PersonalWhatsappInbox() {
 		}
 		try {
 			const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-			const recorder = new MediaRecorder(stream)
+			const preferredType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+				? 'audio/webm;codecs=opus'
+				: MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+					? 'audio/ogg;codecs=opus'
+					: ''
+			const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined)
 			const chunks: BlobPart[] = []
 			recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
 			recorder.onstop = () => {
 				stream.getTracks().forEach((track) => track.stop())
 				setVoiceRecording(false)
 				const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-				if (blob.size) void uploadAndSend(new File([blob], `voice-${Date.now()}.webm`, { type: blob.type }), 'voice')
+				const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
+				if (blob.size) void uploadAndSend(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }), 'voice')
 			}
 			voiceRecorderRef.current = recorder
 			recorder.start()
@@ -648,6 +740,7 @@ function PersonalWhatsappInbox() {
 
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase()
+		if (filter === 'pending' || filter === 'blocked') return []
 		return conversations.filter((item) => {
 			const matchesFilter = filter === 'all' || (filter === 'unread' ? item.unread > 0 : item.workflow === filter)
 			const matchesQuery = !needle || `${item.name} ${item.phone} ${item.preview}`.toLowerCase().includes(needle)
@@ -661,7 +754,14 @@ function PersonalWhatsappInbox() {
 		handover: conversations.filter((item) => item.workflow === 'handover').length,
 		human: conversations.filter((item) => item.workflow === 'human').length,
 		unread: conversations.filter((item) => item.unread > 0).length,
-	}), [conversations])
+		pending: pendingLeads.length,
+		blocked: blockedLeads.length,
+	}), [blockedLeads.length, conversations, pendingLeads.length])
+	const leadQueue = useMemo(() => {
+		const source = filter === 'pending' ? pendingLeads : filter === 'blocked' ? blockedLeads : []
+		const needle = query.trim().toLowerCase()
+		return needle ? source.filter((lead) => `${lead.name} ${lead.phone} ${lead.preview}`.toLowerCase().includes(needle)) : source
+	}, [blockedLeads, filter, pendingLeads, query])
 
 	const active = conversations.find((item) => item.id === selectedId) || null
 	const visibleMessages = messages.filter((message) => message.content_type !== 'reaction')
@@ -676,6 +776,8 @@ function PersonalWhatsappInbox() {
 	}, {})
 	const filters = [
 		['all', 'Semua percakapan'],
+		['pending', 'Perlu keputusan'],
+		['blocked', 'Nomor diblokir'],
 		['ai', 'Ditangani AI'],
 		['handover', 'Menunggu handover'],
 		['human', 'Ditangani sales'],
@@ -698,7 +800,11 @@ function PersonalWhatsappInbox() {
 								aria-label="Buka navigasi dan filter percakapan"
 							>
 								<Menu className="size-5" />
-								{filter !== 'all' && <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />}
+								{pendingLeads.length > 0 ? (
+									<span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+										{Math.min(pendingLeads.length, 99)}
+									</span>
+								) : filter !== 'all' ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /> : null}
 							</PopoverTrigger>
 							<PopoverContent align="start" sideOffset={8} className="w-[min(18rem,calc(100vw-2rem))] gap-1 p-1.5">
 								<button
@@ -716,8 +822,9 @@ function PersonalWhatsappInbox() {
 								{filters.map(([id, label]) => (
 									<button
 										key={id}
-										onClick={() => {
-											setFilter(id)
+									onClick={() => {
+										setFilter(id)
+										if (id === 'pending' || id === 'blocked') setSelectedId(null)
 											setMenuOpen(false)
 										}}
 										className={cn(
@@ -757,6 +864,26 @@ function PersonalWhatsappInbox() {
 						<ListSkeleton />
 					) : error ? (
 						<State icon={AlertCircle} title="Kotak masuk belum dapat dibuka" body={error} />
+					) : filter === 'pending' || filter === 'blocked' ? (
+						<div className="divide-y divide-border/70">
+							{leadActionError && <p className="px-4 py-3 text-sm text-destructive" role="alert">{leadActionError}</p>}
+							{leadQueue.length ? leadQueue.map((lead) => (
+								<LeadDecisionRow
+									key={lead.id}
+									lead={lead}
+									busy={leadActionId === lead.id}
+									onConfirm={() => void updateLeadStatus(lead, 'confirm')}
+									onReject={() => void updateLeadStatus(lead, 'reject')}
+									onUnblock={() => void updateLeadStatus(lead, 'unblock')}
+								/>
+							)) : (
+								<State
+									icon={filter === 'pending' ? UserCheck : Ban}
+									title={query ? 'Tidak ada hasil' : filter === 'pending' ? 'Tidak ada keputusan tertunda' : 'Tidak ada nomor diblokir'}
+									body={query ? 'Coba cari dengan nama atau nomor lain.' : filter === 'pending' ? 'Nomor yang belum kamu simpan akan menunggu di sini tanpa dibalas AI.' : 'Nomor yang kamu tolak tetap tersimpan untuk audit dan bisa dibuka lagi.'}
+								/>
+							)}
+						</div>
 					) : filtered.length === 0 ? (
 						<State
 							icon={Inbox}
@@ -765,7 +892,7 @@ function PersonalWhatsappInbox() {
 								query
 									? 'Coba cari dengan nama atau nomor lain.'
 									: connected
-										? `${diagnostic?.storedMessages || 0} pesan tersimpan. Pesan baru akan muncul otomatis.`
+										? 'Belum ada nomor tersimpan. Gunakan tombol +, atau buka Perlu keputusan saat nomor baru menghubungi kamu.'
 										: 'Hubungkan WhatsApp agar pesan pelanggan muncul di sini.'
 							}
 						/>
@@ -1153,6 +1280,57 @@ function WorkflowBadge({ workflow }: { workflow: Conversation['workflow'] }) {
 	)
 }
 
+function LeadDecisionRow({
+	lead,
+	busy,
+	onConfirm,
+	onReject,
+	onUnblock,
+}: {
+	lead: LeadRegistration
+	busy: boolean
+	onConfirm: () => void
+	onReject: () => void
+	onUnblock: () => void
+}) {
+	const pending = lead.status === 'pending'
+	return (
+		<article className="px-4 py-3">
+			<div className="flex items-start gap-3">
+				<div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+					{lead.avatarUrl ? <img src={lead.avatarUrl} alt="" className="size-full object-cover" /> : lead.name.slice(0, 1).toUpperCase()}
+				</div>
+				<div className="min-w-0 flex-1">
+					<div className="flex items-baseline justify-between gap-3">
+						<h3 className="truncate text-sm font-semibold text-foreground">{lead.name}</h3>
+						<time className="shrink-0 text-xs text-muted-foreground">{formatListTime(lead.lastMessageAt)}</time>
+					</div>
+					<p className="mt-0.5 truncate text-xs text-muted-foreground">{lead.phone}</p>
+					<p className="mt-1.5 line-clamp-2 text-sm leading-5 text-muted-foreground">{lead.preview}</p>
+				</div>
+			</div>
+			<div className="mt-3 flex items-center justify-end gap-2 pl-[52px]">
+				{pending ? (
+					<>
+						<button type="button" onClick={onReject} disabled={busy} className="h-9 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							Tolak
+						</button>
+						<button type="button" onClick={onConfirm} disabled={busy} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							<UserCheck className="size-4" />
+							{busy ? 'Menyimpan…' : 'Terima lead'}
+						</button>
+					</>
+				) : (
+					<button type="button" onClick={onUnblock} disabled={busy} className="flex h-9 items-center gap-2 rounded-lg border border-input px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+						<Undo2 className="size-4" />
+						{busy ? 'Membuka…' : 'Buka blokir'}
+					</button>
+				)}
+			</div>
+		</article>
+	)
+}
+
 function MessageBubble({
 	message,
 	quotedMessage,
@@ -1231,8 +1409,8 @@ function MessageBubble({
 				<MessageContent message={message} />
 				<div className={cn('mt-1 flex items-center justify-end gap-1 text-[11px]', outbound ? 'text-primary-foreground/75' : 'text-muted-foreground')}>
 					<span>{formatTime(message.created_at)}</span>
-					{outbound && (message.status === 'delivered' || message.status === 'read'
-						? <CheckCheck className={cn('size-3.5', message.status === 'read' && 'text-sky-300')} />
+					{outbound && (message.status === 'delivered' || message.status === 'read' || message.status === 'played'
+						? <CheckCheck className={cn('size-3.5', (message.status === 'read' || message.status === 'played') && 'text-sky-300')} />
 						: <Check className="size-3.5" />)}
 				</div>
 				{reactions.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{reactions.map((reaction, index) => <span key={`${reaction}-${index}`} className="rounded-full bg-background/80 px-1.5 py-0.5 text-xs text-foreground shadow-sm">{reaction}</span>)}</div>}

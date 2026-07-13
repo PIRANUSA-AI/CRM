@@ -11,10 +11,10 @@ const API_BASE = import.meta.env.VITE_API_URL
 	? `${import.meta.env.VITE_API_URL}/api`
 	: 'http://localhost:3010/api'
 
-const ORG_SLUG_COOKIE_KEY = 'scalechat_org_slug'
-const APP_ID_COOKIE_KEY = 'scalechat_app_id'
-const ORG_ID_COOKIE_KEY = 'scalechat_org_id'
-const ORG_NAME_COOKIE_KEY = 'scalechat_org_name'
+const ORG_SLUG_COOKIE_KEY = 'crm_org_slug'
+const APP_ID_COOKIE_KEY = 'crm_app_id'
+const ORG_ID_COOKIE_KEY = 'crm_org_id'
+const ORG_NAME_COOKIE_KEY = 'crm_org_name'
 
 // Organization types
 export interface Organization {
@@ -54,7 +54,7 @@ export interface Invitation {
 	createdAt: string
 }
 
-const POST_LOGIN_REDIRECT_KEY = 'scalechat_post_login_redirect'
+const POST_LOGIN_REDIRECT_KEY = 'crm_post_login_redirect'
 
 type AuthContextResponse = {
 	success?: boolean
@@ -100,15 +100,15 @@ export function persistOrganizationContext(
 	const resolvedAppId =
 		org.appId ||
 		(typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id') || org.slug
+			? localStorage.getItem('crm_app_id') || org.slug
 			: org.slug)
 
 	if (typeof localStorage !== 'undefined') {
-		localStorage.setItem('scalechat_org_id', org.id)
-		localStorage.setItem('scalechat_org_slug', org.slug)
-		localStorage.setItem('scalechat_org_name', org.name)
-		localStorage.setItem('scalechat_app_slug', org.slug)
-		localStorage.setItem('scalechat_app_id', resolvedAppId)
+		localStorage.setItem('crm_org_id', org.id)
+		localStorage.setItem('crm_org_slug', org.slug)
+		localStorage.setItem('crm_org_name', org.name)
+		localStorage.setItem('crm_app_slug', org.slug)
+		localStorage.setItem('crm_app_id', resolvedAppId)
 	}
 
 	// Keep org/app context in cookies so routing no longer depends on URL segments.
@@ -282,7 +282,7 @@ export function getCurrentOrgSlug(): string | null {
 	if (cookieSlug) return cookieSlug
 
 	if (typeof localStorage !== 'undefined') {
-		const localSlug = localStorage.getItem('scalechat_org_slug')
+		const localSlug = localStorage.getItem('crm_org_slug')
 		if (localSlug) return localSlug
 	}
 

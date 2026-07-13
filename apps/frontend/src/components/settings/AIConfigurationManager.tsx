@@ -570,7 +570,7 @@ export default function AIConfigurationManager() {
 
 	const token =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_token')
+			? localStorage.getItem('crm_token')
 			: null
 
 	const currentProviderConfig = useMemo(() => {

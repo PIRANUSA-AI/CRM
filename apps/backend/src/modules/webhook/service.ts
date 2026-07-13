@@ -4,6 +4,11 @@ import { getRealtimeIO } from '../../lib/realtime'
 import redis from '../../lib/redis'
 import { ChatbotService } from '../chatbot/service'
 import { ChatbotFollowupService } from '../chatbot/followup-service'
+import {
+	registerInboundPersonalLead,
+	resolvePersonalLeadOwner,
+} from '../personal-whatsapp-inbox/lead-access'
+import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
 import { AIResponseLogService } from '../chatbot/response-log-service'
 import { FlowRuntimeService } from '../flow/runtime-service'
 import { MessageService } from '../message/service'
@@ -1679,6 +1684,7 @@ export abstract class WebhookService {
 	private static async processCreatedWhatsAppInboundResult(
 		result: Extract<StoredWhatsAppInboundResult, { status: 'created' }>,
 	) {
+		let personalLeadOwnerUserId: string | null = null
 		try {
 			await ChatbotFollowupService.clearOnInboundContactMessage(
 				result.conversationId,
@@ -1688,6 +1694,74 @@ export abstract class WebhookService {
 				'[WebhookService] Failed clearing chatbot follow-up state (fail-open):',
 				followupStateError,
 			)
+		}
+
+		if (result.channelProvider === 'baileys') {
+			const owner = await resolvePersonalLeadOwner(result.appId, result.inboxId)
+			if (!owner) {
+				console.warn('[WebhookService] Personal WhatsApp inbound held because its sales owner is missing.', {
+					appId: result.appId,
+					inboxId: result.inboxId,
+					conversationId: result.conversationId,
+				})
+				await this.emitMessageCreatedEvent({
+					appId: result.appId,
+					conversationId: result.conversationId,
+					message: result.message,
+					contact: result.contact,
+					channelName: result.channelName,
+					channelBadgeUrl: result.channelBadgeUrl,
+					channelProvider: result.channelProvider,
+				})
+				return
+			}
+			personalLeadOwnerUserId = owner.owner_user_id
+
+			const registration = await registerInboundPersonalLead({
+				appId: result.appId,
+				ownerUserId: owner.owner_user_id,
+				phoneNumber: result.contact.phone_number || '',
+				contactId: result.contact.id,
+				conversationId: result.conversationId,
+				displayName: result.contact.name,
+			})
+			const conversation = await prisma.conversations.findUnique({
+				where: { id: result.conversationId },
+				select: { additional_attributes: true },
+			})
+			await prisma.conversations.update({
+				where: { id: result.conversationId },
+				data: {
+					additional_attributes: {
+						...asRecord(conversation?.additional_attributes),
+						personal_whatsapp: {
+							owner_user_id: owner.owner_user_id,
+							lead_registration_id: registration?.id || null,
+							lead_status: registration?.status || 'pending',
+						},
+					} as any,
+					...(registration?.status === 'blocked' ? { unread_count: 0 } : {}),
+					updated_at: new Date(),
+				},
+			})
+
+			if (registration?.status !== 'confirmed') {
+				await this.emitMessageCreatedEvent({
+					appId: result.appId,
+					conversationId: result.conversationId,
+					message: result.message,
+					contact: result.contact,
+					channelName: result.channelName,
+					channelBadgeUrl: result.channelBadgeUrl,
+					channelProvider: result.channelProvider,
+				})
+				getRealtimeIO()?.to(`app:${result.appId}`).emit('personal-lead:updated', {
+					registrationId: registration?.id || null,
+					status: registration?.status || 'pending',
+					conversationId: result.conversationId,
+				})
+				return
+			}
 		}
 		void BusinessWebhookDispatchService.dispatch({
 			event: 'message.received',
@@ -1743,6 +1817,16 @@ export abstract class WebhookService {
 			channelBadgeUrl: result.channelBadgeUrl,
 			channelProvider: result.channelProvider,
 		})
+
+		if (result.channelProvider === 'baileys' && personalLeadOwnerUserId) {
+			await PersonalAiReplyService.scheduleInbound({
+				appId: result.appId,
+				ownerUserId: personalLeadOwnerUserId,
+				conversationId: result.conversationId,
+				inboundMessageId: result.message.id,
+			})
+			return
+		}
 
 		let skipChatbotAutoReply = false
 		if (ENABLE_INBOX_FLOW_RUNTIME) {

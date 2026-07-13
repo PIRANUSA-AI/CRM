@@ -46,7 +46,7 @@ interface MetaAccount {
 export default function IntegrationSettings() {
 	const appId =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_org_slug') || ''
+			? localStorage.getItem('crm_org_slug') || ''
 			: ''
 	const [accounts, setAccounts] = useState<MetaAccount[]>([])
 	const [loading, setLoading] = useState(true)
@@ -70,7 +70,7 @@ export default function IntegrationSettings() {
 
 	const fetchConfig = async () => {
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/config`, {
 				headers: { Authorization: `Bearer ${token}` },
 			})
@@ -111,7 +111,7 @@ export default function IntegrationSettings() {
 
 	const fetchAccounts = async () => {
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/accounts`, {
 				headers: { Authorization: `Bearer ${token}` },
 			})
@@ -166,7 +166,7 @@ export default function IntegrationSettings() {
 
 	const connectToBackend = async (shortToken: string) => {
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/connect`, {
 				method: 'POST',
 				headers: {
@@ -193,7 +193,7 @@ export default function IntegrationSettings() {
 	const handleSelectAccount = async (account: any) => {
 		setIsConnecting(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/accounts`, {
 				method: 'POST',
 				headers: {

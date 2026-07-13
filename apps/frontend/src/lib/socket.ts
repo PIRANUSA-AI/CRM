@@ -30,8 +30,8 @@ function parseSocketTransports(
 }
 
 export function connectSocket(): Socket {
-	const token = localStorage.getItem('scalechat_token')
-	const appId = localStorage.getItem('scalechat_app_id')
+	const token = localStorage.getItem('crm_token')
+	const appId = localStorage.getItem('crm_app_id')
 	console.log('[Socket.io] Initializing', {
 		url: SOCKET_URL,
 		path: SOCKET_PATH,
@@ -124,6 +124,10 @@ export function onAgentPresence(
 }
 
 // Room management
+export function joinApp(appId: string) {
+	socket?.emit('join', { appId })
+}
+
 export function joinConversation(conversationId: string) {
 	socket?.emit('join:conversation', conversationId)
 }

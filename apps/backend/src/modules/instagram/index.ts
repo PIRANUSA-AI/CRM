@@ -3,7 +3,7 @@ import { InstagramService } from './service'
 import { WebhookService } from '../webhook/service'
 import { appContext } from '../../plugins'
 
-const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'scalechat_webhook_secret'
+const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || 'crm_webhook_secret'
 const CALLBACK_HEADERS = {
 	'content-type': 'text/html; charset=utf-8',
 	'cache-control': 'no-store, no-cache, must-revalidate, private',

@@ -10,7 +10,7 @@ if (process.platform === 'win32') {
 	])
 }
 
-const projectRoot = import.meta.dir + '/..'
+const projectRoot = `${import.meta.dir}/..`
 
 const compose = Bun.spawn([
 	'docker',
@@ -48,7 +48,7 @@ if (minioInitExitCode !== 0) {
 	process.exit(minioInitExitCode)
 }
 
-console.log('\nCRM development services are healthy. Starting the API and frontend...\n')
+console.log('\nCRM development services are healthy. Starting the API, AI worker, frontend, and WhatsApp service...\n')
 
 const apps = Bun.spawn(['bun', 'run', 'dev:apps'], {
 	cwd: projectRoot,
@@ -57,11 +57,21 @@ const apps = Bun.spawn(['bun', 'run', 'dev:apps'], {
 	stderr: 'inherit',
 })
 
+const worker = Bun.spawn(['bun', 'run', '--filter', 'backend', 'dev:worker'], {
+	cwd: projectRoot,
+	stdin: 'inherit',
+	stdout: 'inherit',
+	stderr: 'inherit',
+})
+
 const stop = () => {
 	apps.kill()
+	worker.kill()
 }
 
 process.on('SIGINT', stop)
 process.on('SIGTERM', stop)
 
-process.exit(await apps.exited)
+const exitCode = await Promise.race([apps.exited, worker.exited])
+stop()
+process.exit(exitCode)

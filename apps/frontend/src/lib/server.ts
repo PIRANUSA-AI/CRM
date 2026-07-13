@@ -12,13 +12,13 @@ const getClientHeaders = () => {
 		return {}
 	}
 
-	const token = localStorage.getItem('scalechat_token')
+	const token = localStorage.getItem('crm_token')
 	const appId =
-		getAppIdFromCookie() || localStorage.getItem('scalechat_app_id')
+		getAppIdFromCookie() || localStorage.getItem('crm_app_id')
 	const appSecret =
-		localStorage.getItem('scalechat_app_secret')
+		localStorage.getItem('crm_app_secret')
 	const orgSlug =
-		getOrgSlugFromCookie() || localStorage.getItem('scalechat_org_slug')
+		getOrgSlugFromCookie() || localStorage.getItem('crm_org_slug')
 
 	return {
 		...(token ? { Authorization: `Bearer ${token}` } : {}),

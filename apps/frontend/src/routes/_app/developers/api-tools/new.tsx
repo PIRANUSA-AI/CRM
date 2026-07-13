@@ -46,10 +46,10 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function resolveBusinessIdFromClient(token: string | null): string {
 	if (typeof window !== 'undefined') {
 		const storageCandidates = [
-			localStorage.getItem('scalechat_business_id'),
-			localStorage.getItem('scalechat_org_id'),
-			localStorage.getItem('scalechat_app_id'),
-			localStorage.getItem('scalechat_org_slug'),
+			localStorage.getItem('crm_business_id'),
+			localStorage.getItem('crm_org_id'),
+			localStorage.getItem('crm_app_id'),
+			localStorage.getItem('crm_org_slug'),
 		]
 		const fromStorage = storageCandidates
 			.map((value) => String(value || '').trim())
@@ -83,7 +83,7 @@ function DevelopersApiToolsCreatePage() {
 	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 	const token =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_token')
+			? localStorage.getItem('crm_token')
 			: null
 	const businessId = resolveBusinessIdFromClient(token)
 	const [name, setName] = useState('')

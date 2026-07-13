@@ -119,6 +119,7 @@ type RuntimeEntry = {
 	desiredRunning: boolean
 	pairingCodeRequested: boolean
 	restartTimer: ReturnType<typeof setTimeout> | null
+	lastHistoryProgress: number
 }
 
 export type BaileysSessionSnapshot = {
@@ -137,6 +138,36 @@ export type BaileysSessionSnapshot = {
 const runtimeEntries = new Map<string, RuntimeEntry>()
 const messageContentCache = new Map<string, proto.IMessage>()
 const unresolvedIdentityCounts = new Map<string, number>()
+const HISTORY_PROGRESS_STEP = Math.max(
+	1,
+	Math.min(100, Number(process.env.WHATSAPP_SYNC_PROGRESS_STEP || 10)),
+)
+
+function reportHistoryProgress(
+	entry: RuntimeEntry,
+	progress: unknown,
+	messageCount: number,
+	isLatest: boolean,
+) {
+	const numericProgress = Number(progress)
+	const percentage = Number.isFinite(numericProgress)
+		? Math.max(0, Math.min(100, Math.round(numericProgress)))
+		: isLatest
+			? 100
+			: null
+	if (percentage === null) return
+
+	if (percentage < entry.lastHistoryProgress) entry.lastHistoryProgress = -1
+	const bucket = isLatest
+		? 100
+		: Math.floor(percentage / HISTORY_PROGRESS_STEP) * HISTORY_PROGRESS_STEP
+	if (bucket <= entry.lastHistoryProgress) return
+
+	entry.lastHistoryProgress = bucket
+	console.log(
+		`[WhatsApp Sync] ${bucket}%${messageCount > 0 ? ` · ${messageCount} pesan pada batch ini` : ''}${isLatest ? ' · selesai' : ''}`,
+	)
+}
 
 function rememberMessage(message: WAMessage) {
 	const id = String(message.key?.id || '').trim()
@@ -368,6 +399,7 @@ function createEntry(params: {
 		desiredRunning: true,
 		pairingCodeRequested: false,
 		restartTimer: null,
+		lastHistoryProgress: -1,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -958,6 +990,23 @@ export abstract class BaileysServiceRuntime {
 		return { sent: true }
 	}
 
+	static async updateBlockStatus(payload: Record<string, unknown>) {
+		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
+		if (!channelKey) throw new Error('channelKey is required')
+		const channel = await getChannelByProviderKey(channelKey)
+		if (!channel?.id) throw new Error(`Baileys channel ${channelKey} not found`)
+		const session = await this.ensureChannel(channel.id, { waitForReadyMs: 8_000 })
+		if (session.status !== 'connected') throw new Error(`Baileys session is ${session.status}`)
+		const socket = runtimeEntries.get(channel.id)?.socket
+		if (!socket) throw new Error('Baileys runtime socket is not available')
+		const remoteJid = buildWhatsappJid(normalizeDigits(asString(payload.phoneNumber) || asString(payload.to)), 'pn')
+		const action = String(payload.action || '').toLowerCase()
+		if (!remoteJid) throw new Error('phoneNumber is required')
+		if (action !== 'block' && action !== 'unblock') throw new Error('action must be block or unblock')
+		await socket.updateBlockStatus(remoteJid, action)
+		return { updated: true, action }
+	}
+
 	static async getProfilePicture(payload: Record<string, unknown>) {
 		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
 		if (!channelKey) throw new Error('channelKey is required')
@@ -1009,8 +1058,21 @@ export abstract class BaileysServiceRuntime {
 		if (type === 'audio') {
 			const url = asString(mediaRecord.url)
 			if (!url) throw new Error('Baileys outbound audio url is required')
+			const response = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+			if (!response.ok) {
+				throw new Error(`Failed fetching outbound audio (${response.status})`)
+			}
+			const declaredSize = Number(response.headers.get('content-length') || 0)
+			if (declaredSize > 32 * 1024 * 1024) {
+				throw new Error('Baileys outbound audio exceeds 32 MB')
+			}
+			const audio = Buffer.from(await response.arrayBuffer())
+			if (!audio.length) throw new Error('Baileys outbound audio is empty')
+			if (audio.length > 32 * 1024 * 1024) {
+				throw new Error('Baileys outbound audio exceeds 32 MB')
+			}
 			return {
-				audio: { url },
+				audio,
 				...(asString(mediaRecord.mimeType)
 					? { mimetype: asString(mediaRecord.mimeType) }
 					: {}),
@@ -1103,7 +1165,8 @@ export abstract class BaileysServiceRuntime {
 			void this.handleMessagesUpsert(entry, socket, messages, true)
 		})
 
-		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings }) => {
+		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings, progress, isLatest }) => {
+			reportHistoryProgress(entry, progress, messages.length, isLatest === true)
 			void (async () => {
 				if (lidPnMappings?.length) {
 					await socket.signalRepository.lidMapping.storeLIDPNMappings(lidPnMappings)

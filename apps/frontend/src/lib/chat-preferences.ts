@@ -8,7 +8,7 @@ interface ChatPreferences {
 	mutedChats: Record<string, number | null> // conversationId -> muteUntil timestamp (null = forever)
 }
 
-const STORAGE_KEY = 'scalechat_chat_preferences'
+const STORAGE_KEY = 'crm_chat_preferences'
 
 function getPreferences(): ChatPreferences {
 	try {

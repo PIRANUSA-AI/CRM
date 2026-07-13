@@ -35,6 +35,7 @@ interface Agent {
 	email: string
 	name: string
 	role: string
+	avatar_url?: string | null
 }
 
 function parseStoredAgent(raw: string): Agent | null {
@@ -62,6 +63,7 @@ function parseStoredAgent(raw: string): Agent | null {
 			email: email || '',
 			name,
 			role,
+			avatar_url: typeof candidate.avatar_url === 'string' ? candidate.avatar_url : null,
 		}
 	} catch {
 		return null
@@ -108,8 +110,8 @@ function AppLayout() {
 	const [appId, setAppId] = useState(() => {
 		if (typeof localStorage === 'undefined') return ''
 		return (
-			localStorage.getItem('scalechat_app_id') ||
-			localStorage.getItem('scalechat_org_slug') ||
+			localStorage.getItem('crm_app_id') ||
+			localStorage.getItem('crm_org_slug') ||
 			''
 		)
 	})
@@ -135,13 +137,13 @@ function AppLayout() {
 			return
 		}
 
-		const storedAgent = localStorage.getItem('scalechat_user')
+		const storedAgent = localStorage.getItem('crm_user')
 		if (storedAgent) {
 			const parsedAgent = parseStoredAgent(storedAgent)
 			if (parsedAgent) setAgent(parsedAgent)
 		}
 
-		const token = localStorage.getItem('scalechat_token')
+		const token = localStorage.getItem('crm_token')
 		if (token) {
 			setLoading(false)
 			return
@@ -224,7 +226,7 @@ function AppLayout() {
 		if (!crmAllowed) {
 			const token =
 				typeof localStorage !== 'undefined'
-					? localStorage.getItem('scalechat_token')
+					? localStorage.getItem('crm_token')
 					: null
 			navigate({ to: token ? '/dashboard' : '/login', replace: true })
 		}
@@ -257,12 +259,17 @@ function AppLayout() {
 			.then((response) => {
 				if (!active) return
 				if (!response.data.isConnected) {
+					setConnectionGateResolved(false)
 					void navigate({ to: '/whatsapp/connect', replace: true })
 					return
 				}
 				setConnectionGateResolved(true)
 			})
-			.catch(() => { if (active) void navigate({ to: '/whatsapp/connect', replace: true }) })
+			.catch(() => {
+				if (!active) return
+				setConnectionGateResolved(false)
+				void navigate({ to: '/whatsapp/connect', replace: true })
+			})
 		return () => { active = false }
 	}, [agent, loading, navigate])
 

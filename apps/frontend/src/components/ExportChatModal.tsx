@@ -16,8 +16,8 @@ export function ExportChatModal({
 	const handleExport = async (format: 'json' | 'txt') => {
 		setDownloading(format)
 		try {
-			const token = localStorage.getItem('scalechat_token')
-			const appId = localStorage.getItem('scalechat_app_id')
+			const token = localStorage.getItem('crm_token')
+			const appId = localStorage.getItem('crm_app_id')
 
 			const response = await fetch(
 				`${API_BASE}/conversations/${conversationId}/export?format=${format}`,

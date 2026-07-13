@@ -106,7 +106,7 @@ export function CreateTemplateModal({
 				})
 			}
 
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 
 			const response = await fetch(`${API_URL}/api/whatsapp/templates`, {

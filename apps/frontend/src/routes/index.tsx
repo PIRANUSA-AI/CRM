@@ -4,7 +4,7 @@ export const Route = createFileRoute('/')({
 	beforeLoad: () => {
 		// Check if user is already logged in
 		if (typeof localStorage !== 'undefined') {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			if (token) {
 				throw redirect({ to: '/whatsapp/connect', replace: true })
 			}

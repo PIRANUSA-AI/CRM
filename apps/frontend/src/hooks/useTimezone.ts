@@ -90,7 +90,7 @@ export function useTimezone() {
 		}
 
 		// Only run if user is logged in
-		const token = localStorage.getItem('scalechat_token')
+		const token = localStorage.getItem('crm_token')
 		if (token) {
 			initTimezone()
 		} else {

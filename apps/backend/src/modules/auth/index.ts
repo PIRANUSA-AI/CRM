@@ -1,11 +1,13 @@
 // @ts-nocheck
 import bcrypt from 'bcryptjs'
+import { verifyPassword } from 'better-auth/crypto'
 import { Elysia, t } from 'elysia'
 import { auth } from '../../auth'
 import { syncBetterAuthCredentialAccount } from '../../lib/better-auth-credentials'
 import { ensureOrganizationAppLink } from '../../lib/organization-app'
 import prisma from '../../lib/prisma'
 import { resolveAppId } from '../../lib/utils'
+import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 
 const DEFAULT_ONBOARDING_TEAM_NAME = 'Customer Service'
 const DEFAULT_ONBOARDING_TEAM_DESCRIPTION = ''
@@ -440,6 +442,121 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 		}
 	})
 
+	.get('/profile', async ({ request, set }) => {
+		const sessionUser = await getAuthenticatedSessionUser(request)
+		if (!sessionUser) {
+			set.status = 401
+			return { success: false, error: 'Unauthorized' }
+		}
+
+		const profile = await prisma.users.findUnique({
+			where: { id: sessionUser.id },
+			select: { id: true, name: true, email: true, role: true, avatar_url: true },
+		})
+
+		return { success: true, data: profile }
+	})
+
+	.patch(
+		'/profile',
+		async ({ body, request, set }) => {
+			const sessionUser = await getAuthenticatedSessionUser(request)
+			if (!sessionUser) {
+				set.status = 401
+				return { success: false, error: 'Unauthorized' }
+			}
+
+			const name = String(body.name || '').trim().replace(/\s+/g, ' ')
+			if (name.length < 2 || name.length > 100) {
+				set.status = 400
+				return { success: false, error: 'Nama harus terdiri dari 2 sampai 100 karakter.' }
+			}
+
+			const profile = await prisma.users.update({
+				where: { id: sessionUser.id },
+				data: {
+					name,
+					...(body.avatarUrl !== undefined ? { avatar_url: body.avatarUrl || null } : {}),
+					updated_at: new Date(),
+				},
+				select: { id: true, name: true, email: true, role: true, avatar_url: true },
+			})
+
+			return { success: true, data: profile }
+		},
+		{
+			body: t.Object({
+				name: t.String(),
+				avatarUrl: t.Optional(t.Nullable(t.String())),
+			}),
+		},
+	)
+
+	.post(
+		'/change-password',
+		async ({ body, request, set }) => {
+			const sessionUser = await getAuthenticatedSessionUser(request)
+			if (!sessionUser) {
+				set.status = 401
+				return { success: false, error: 'Unauthorized' }
+			}
+
+			const currentPassword = String(body.currentPassword || '')
+			const newPassword = String(body.newPassword || '')
+			if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,128}$/.test(newPassword)) {
+				set.status = 400
+				return { success: false, error: 'Password baru minimal 8 karakter dan harus memuat huruf besar, huruf kecil, serta angka.' }
+			}
+			if (currentPassword === newPassword) {
+				set.status = 400
+				return { success: false, error: 'Password baru harus berbeda dari password saat ini.' }
+			}
+
+			const userWithCredentials = await prisma.users.findUnique({
+				where: { id: sessionUser.id },
+				select: {
+					password: true,
+					accounts: {
+						where: { providerId: 'credential' },
+						select: { password: true },
+						take: 1,
+					},
+				},
+			})
+
+			let currentPasswordValid = false
+			if (userWithCredentials?.password) {
+				currentPasswordValid = await bcrypt.compare(currentPassword, userWithCredentials.password).catch(() => false)
+			}
+			const credentialHash = userWithCredentials?.accounts[0]?.password
+			if (!currentPasswordValid && credentialHash) {
+				currentPasswordValid = await verifyPassword({ hash: credentialHash, password: currentPassword }).catch(() => false)
+			}
+
+			if (!currentPasswordValid) {
+				set.status = 400
+				return { success: false, error: 'Password saat ini tidak sesuai.' }
+			}
+
+			const legacyHash = await bcrypt.hash(newPassword, 12)
+			await prisma.$transaction(async (tx) => {
+				await tx.users.update({
+					where: { id: sessionUser.id },
+					data: { password: legacyHash, updated_at: new Date() },
+				})
+				await syncBetterAuthCredentialAccount(tx, { userId: sessionUser.id, password: newPassword })
+			})
+
+			return { success: true }
+		},
+		{
+			body: t.Object({
+				currentPassword: t.String(),
+				newPassword: t.String(),
+			}),
+		},
+	)
+
 	.post(
 		'/onboarding',
 		async ({ body, request, set }) => {
@@ -615,4 +732,69 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 		// Use Better Auth signOut
 		await auth.api.signOut({ headers: request.headers })
 		return { success: true }
+	})
+
+	.get('/whatsapp-session', async ({ request, set }) => {
+		const sessionUser = await getAuthenticatedSessionUser(request)
+		if (!sessionUser) { set.status = 401; return { success: false, error: 'Unauthorized' } }
+
+		const session = await prisma.baileys_sessions.findFirst({
+			where: { owner_user_id: sessionUser.id, status: { notIn: ['pending', 'disabled'] } },
+			select: {
+				id: true, phone_number: true, status: true, first_connected_at: true,
+				last_connected_at: true, created_at: true, last_seen_at: true, channel_id: true,
+			},
+			orderBy: { created_at: 'desc' },
+		})
+		if (!session) return { success: true, data: null }
+
+		const pairedSince = session.first_connected_at || session.created_at
+		const duration = pairedSince
+			? Math.floor((Date.now() - new Date(pairedSince).getTime()) / 1000)
+			: 0
+
+		return {
+			success: true,
+			data: {
+				phoneNumber: session.phone_number || null,
+				status: session.status || 'unknown',
+				pairedSince: pairedSince?.toISOString() || null,
+				durationSeconds: duration,
+				lastConnectedAt: session.last_connected_at?.toISOString() || null,
+				lastSeenAt: session.last_seen_at?.toISOString() || null,
+			},
+		}
+	})
+
+	.post('/whatsapp-session/disconnect', async ({ request, set }) => {
+		const sessionUser = await getAuthenticatedSessionUser(request)
+		if (!sessionUser) { set.status = 401; return { success: false, error: 'Unauthorized' } }
+
+		const baileysSession = await prisma.baileys_sessions.findFirst({
+			where: { owner_user_id: sessionUser.id, status: { not: 'disabled' } },
+			select: { id: true, channel_id: true, status: true },
+			orderBy: { created_at: 'desc' },
+		})
+		if (!baileysSession) {
+			set.status = 404
+			return { success: false, error: 'Tidak ada sesi WhatsApp untuk diputus.' }
+		}
+
+		try {
+			await BaileysServiceClient.startSession(baileysSession.channel_id).catch(() => undefined)
+		} catch { /* baileys service might be down, proceed anyway */ }
+
+		await prisma.$transaction(async (tx) => {
+			await tx.baileys_sessions.update({
+				where: { id: baileysSession.id },
+				data: {
+					status: 'disabled',
+					auth_state: null,
+					phone_number: null,
+					updated_at: new Date(),
+				},
+			})
+		})
+
+		return { success: true, message: 'Sesi WhatsApp berhasil diputuskan.' }
 	})

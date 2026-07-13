@@ -8,10 +8,8 @@ import {
 	ShieldAlert,
 	ChevronDown,
 	TriangleAlert,
-	HelpCircle,
 } from 'lucide-react'
 import { useState } from 'react'
-import PageHeader from '@/components/PageHeader'
 
 export const Route = createFileRoute('/_app/help')({
 	component: HelpPage,
@@ -24,16 +22,10 @@ function HelpPage() {
 
 	return (
 		<div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
-			<PageHeader
-				title="Help & Support"
-				description="Find answers, learn how to use the platform, and get in touch with our team"
-				icon={<HelpCircle size={24} />}
-			/>
-
 			<div className="flex-1 flex flex-col overflow-hidden">
 				<main className="flex-1 flex flex-col overflow-hidden">
 					{/* Tabs */}
-					<div className="px-4 lg:px-8 mb-4">
+					<div className="mb-4 px-4 pt-6 lg:px-8">
 						<div
 							role='tablist'
 							aria-orientation="horizontal"

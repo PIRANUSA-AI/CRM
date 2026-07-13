@@ -41,8 +41,8 @@ export default function SLAManager() {
 	const [loading, setLoading] = useState(true)
 	const [showModal, setShowModal] = useState(false)
 
-	const appId = localStorage.getItem('scalechat_app_id')
-	const token = localStorage.getItem('scalechat_token')
+	const appId = localStorage.getItem('crm_app_id')
+	const token = localStorage.getItem('crm_token')
 
 	const fetchData = async () => {
 		try {

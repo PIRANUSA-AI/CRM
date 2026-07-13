@@ -168,6 +168,20 @@ const service = new Elysia()
 				}
 				return { data: await BaileysServiceRuntime.sendPresence(body as Record<string, unknown>) }
 			}, { body: t.Any() })
+			.post('/block-status', async ({ body, headers, set }) => {
+				const channelKey = resolveBaileysChannelKey(body)
+				const secret = resolveBaileysSecret(headers as Record<string, unknown>)
+				if (!channelKey || !secret || !(await BaileysServiceRuntime.authenticateChannelSecret(channelKey, secret))) {
+					set.status = 403
+					return { error: 'Invalid Baileys channel credentials' }
+				}
+				try {
+					return { data: await BaileysServiceRuntime.updateBlockStatus(body as Record<string, unknown>) }
+				} catch (error: any) {
+					set.status = 503
+					return { error: error?.message || 'Failed to update WhatsApp block status' }
+				}
+			}, { body: t.Any() })
 			.post('/profile-picture', async ({ body, headers, set }) => {
 				const channelKey = resolveBaileysChannelKey(body)
 				const secret = resolveBaileysSecret(headers as Record<string, unknown>)

@@ -15,12 +15,12 @@ export const API_BASE = import.meta.env.VITE_API_URL
 function getAuthHeaders(): HeadersInit {
 	const token =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_token')
+			? localStorage.getItem('crm_token')
 			: null
 
 	let orgSlug = getOrgSlugFromCookie()
 	if (!orgSlug && typeof localStorage !== 'undefined') {
-		orgSlug = localStorage.getItem('scalechat_org_slug')
+		orgSlug = localStorage.getItem('crm_org_slug')
 	}
 	if (!orgSlug && typeof window !== 'undefined') {
 		// Legacy fallback: /$lang/$orgSlug/...
@@ -32,11 +32,11 @@ function getAuthHeaders(): HeadersInit {
 	const appId =
 		getAppIdFromCookie() ||
 		(typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_id')
+			? localStorage.getItem('crm_app_id')
 			: null)
 	const appSecret =
 		typeof localStorage !== 'undefined'
-			? localStorage.getItem('scalechat_app_secret')
+			? localStorage.getItem('crm_app_secret')
 			: null
 
 	return {
@@ -229,7 +229,7 @@ async function apiRequest<T>(
 		) {
 			const refreshToken =
 				typeof localStorage !== 'undefined'
-					? localStorage.getItem('scalechat_refresh_token')
+					? localStorage.getItem('crm_refresh_token')
 					: null
 
 			if (refreshToken) {
@@ -244,10 +244,10 @@ async function apiRequest<T>(
 					if (refreshResponse.ok) {
 						const data = await refreshResponse.json()
 						if (typeof localStorage !== 'undefined') {
-							localStorage.setItem('scalechat_token', data.token)
+							localStorage.setItem('crm_token', data.token)
 							if (data.refreshToken) {
 								localStorage.setItem(
-									'scalechat_refresh_token',
+									'crm_refresh_token',
 									data.refreshToken,
 								)
 							}
@@ -259,9 +259,9 @@ async function apiRequest<T>(
 						})
 					} else {
 						if (typeof localStorage !== 'undefined') {
-							localStorage.removeItem('scalechat_token')
-							localStorage.removeItem('scalechat_refresh_token')
-							localStorage.removeItem('scalechat_user')
+							localStorage.removeItem('crm_token')
+							localStorage.removeItem('crm_refresh_token')
+							localStorage.removeItem('crm_user')
 						}
 					}
 				} catch (e) {
@@ -327,6 +327,42 @@ export const auth = {
 	logout: () => apiRequest('/auth/logout', { method: 'POST' }),
 
 	me: () => apiRequest('/auth/me'),
+
+	getProfile: () => apiRequest<{
+		success: boolean
+		data: { id: string; name: string; email: string; role: string | null; avatar_url: string | null }
+	}>('/auth/profile'),
+
+	updateProfile: (payload: { name: string; avatarUrl?: string | null }) =>
+		apiRequest<{
+			success: boolean
+			data: { id: string; name: string; email: string; role: string | null; avatar_url: string | null }
+		}>('/auth/profile', { method: 'PATCH', body: JSON.stringify(payload) }),
+
+	changePassword: (payload: { currentPassword: string; newPassword: string }) =>
+		apiRequest<{ success: boolean }>('/auth/change-password', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		}),
+
+	getWhatsAppSession: () =>
+		apiRequest<{
+			success: boolean
+			data: {
+				phoneNumber: string | null
+				status: string
+				pairedSince: string | null
+				durationSeconds: number
+				lastConnectedAt: string | null
+				lastSeenAt: string | null
+			} | null
+		}>('/auth/whatsapp-session'),
+
+	disconnectWhatsAppSession: () =>
+		apiRequest<{ success: boolean; message: string }>(
+			'/auth/whatsapp-session/disconnect',
+			{ method: 'POST' },
+		),
 }
 
 // Conversations
@@ -1074,6 +1110,47 @@ function mapDashboardSummaryToUiData(raw: any) {
 			dashboard,
 		},
 	}
+}
+
+export type PersonalAiSettings = {
+	autoReplyEnabled: boolean
+	reviewEnabled: boolean
+	replyDelaySeconds: number
+	minConfidence: number
+	personaPrompt: string | null
+	model: string
+}
+
+export type PersonalAiDraft = {
+	id: string
+	status: 'draft_ready' | 'handover'
+	conversationId: string
+	contactName: string
+	phoneNumber: string | null
+	latestCustomerMessage: string | null
+	draftText: string | null
+	reviewReason: string | null
+	reviewConfidence: number | null
+	updatedAt: string
+}
+
+export const personalAi = {
+	getSettings: () =>
+		apiRequest<{ data: PersonalAiSettings }>('/personal-whatsapp-inbox/ai/settings'),
+	updateSettings: (input: Partial<Pick<PersonalAiSettings, 'autoReplyEnabled' | 'replyDelaySeconds' | 'minConfidence' | 'personaPrompt'>>) =>
+		apiRequest<{ data: PersonalAiSettings }>('/personal-whatsapp-inbox/ai/settings', {
+			method: 'PATCH',
+			body: JSON.stringify(input),
+		}),
+	listDrafts: () =>
+		apiRequest<{ data: PersonalAiDraft[] }>('/personal-whatsapp-inbox/ai/drafts'),
+	sendDraft: (taskId: string, content: string) =>
+		apiRequest<{ success: boolean; data: { messageId: string } }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/send`, {
+			method: 'POST',
+			body: JSON.stringify({ content }),
+		}),
+	dismissDraft: (taskId: string) =>
+		apiRequest<{ success: boolean }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/dismiss`, { method: 'POST' }),
 }
 
 // Metrics

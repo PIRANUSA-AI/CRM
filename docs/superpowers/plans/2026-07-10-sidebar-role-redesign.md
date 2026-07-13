@@ -598,7 +598,7 @@ Then, in `HandoverPage` (starting at line 440), add a `currentRole` state right 
 
 	useEffect(() => {
 		if (typeof localStorage === 'undefined') return
-		const stored = localStorage.getItem('scalechat_user')
+		const stored = localStorage.getItem('crm_user')
 		if (!stored) return
 		try {
 			const parsed = JSON.parse(stored) as any

@@ -1554,7 +1554,7 @@ Then in `apps/frontend/src/routes/_app/settings.tsx`:
 import { getVisibleSettingsTabIds, type SettingsNavItemId } from './settings-tab-access'
 import { extractNormalizedRole } from '@/lib/role-access'
 ```
-Then, inside `SettingsPage()`, after the component resolves the current user (this file already reads `localStorage.getItem('scalechat_user')` elsewhere in the codebase pattern used by `Sidebar.tsx`/`TopBar.tsx` — follow that same pattern here to get `currentRole`), compute:
+Then, inside `SettingsPage()`, after the component resolves the current user (this file already reads `localStorage.getItem('crm_user')` elsewhere in the codebase pattern used by `Sidebar.tsx`/`TopBar.tsx` — follow that same pattern here to get `currentRole`), compute:
 ```typescript
 	const visibleTabIds = getVisibleSettingsTabIds(currentRole)
 	const visibleNavItems = SIDEBAR_NAV_ITEMS.filter((item) => visibleTabIds.includes(item.id))

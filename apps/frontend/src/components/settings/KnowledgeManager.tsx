@@ -49,7 +49,7 @@ export default function KnowledgeManager() {
 	)
 	const [searchQuery, setSearchQuery] = useState('')
 
-	const token = localStorage.getItem('scalechat_token')
+	const token = localStorage.getItem('crm_token')
 
 	const fetchData = async () => {
 		try {

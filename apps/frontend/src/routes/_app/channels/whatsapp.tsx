@@ -85,9 +85,9 @@ function getBaileysSessionTone(status: string | null | undefined) {
 function getApiHeaders(): HeadersInit {
 	if (typeof localStorage === 'undefined') return {}
 
-	const token = localStorage.getItem('scalechat_token')
-	const orgSlug = localStorage.getItem('scalechat_org_slug')
-	const appId = localStorage.getItem('scalechat_app_id')
+	const token = localStorage.getItem('crm_token')
+	const orgSlug = localStorage.getItem('crm_org_slug')
+	const appId = localStorage.getItem('crm_app_id')
 
 	return {
 		...(token && { Authorization: `Bearer ${token}` }),

@@ -119,7 +119,7 @@ function PipelinePage() {
 	const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
 
 	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
-	const token = localStorage.getItem('scalechat_token')
+	const token = localStorage.getItem('crm_token')
 
 	useEffect(() => {
 		loadInitialData()
@@ -526,7 +526,7 @@ function PipelineBoard({
 			)
 
 			try {
-				const token = localStorage.getItem('scalechat_token')
+				const token = localStorage.getItem('crm_token')
 				const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 				await fetch(`${API_URL}/api/v1/crm/deals/${active.id}`, {
 					method: 'PATCH',

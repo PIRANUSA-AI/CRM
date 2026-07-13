@@ -2071,6 +2071,63 @@ model baileys_sessions {
   @@index([status], map: "idx_baileys_sessions_status")
 }
 
+model whatsapp_lead_registrations {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String    @db.Uuid
+  owner_user_id   String    @db.Uuid
+  phone_number    String    @db.VarChar(32)
+  contact_id      String?   @db.Uuid
+  conversation_id String?   @db.Uuid
+  display_name    String?   @db.VarChar(255)
+  status          String    @default("pending") @db.VarChar(20)
+  source          String    @default("inbound") @db.VarChar(40)
+  confirmed_at    DateTime? @db.Timestamptz(6)
+  blocked_at      DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([app_id, owner_user_id, phone_number], map: "whatsapp_lead_registrations_owner_phone_key")
+  @@index([app_id, owner_user_id, status, updated_at], map: "idx_whatsapp_lead_registrations_owner_status")
+}
+
+model personal_ai_settings {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                String   @db.Uuid
+  owner_user_id         String   @db.Uuid
+  auto_reply_enabled    Boolean  @default(true)
+  review_enabled        Boolean  @default(true)
+  reply_delay_seconds   Int      @default(15)
+  min_confidence        Float    @default(0.65)
+  persona_prompt        String?
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([app_id, owner_user_id], map: "personal_ai_settings_owner_key")
+}
+
+model personal_ai_reply_tasks {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id               String    @db.Uuid
+  owner_user_id        String    @db.Uuid
+  conversation_id      String    @db.Uuid
+  inbound_message_id   String    @db.Uuid
+  status               String    @default("scheduled_review") @db.VarChar(32)
+  review_result        Json?
+  review_reason        String?
+  review_confidence    Float?
+  draft_text           String?
+  rag_context          Json?
+  scheduled_for        DateTime? @db.Timestamptz(6)
+  sent_message_id      String?   @db.Uuid
+  error_message        String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([inbound_message_id], map: "personal_ai_reply_tasks_inbound_key")
+  @@index([app_id, owner_user_id, status, updated_at], map: "idx_personal_ai_reply_tasks_owner_status")
+  @@index([conversation_id, created_at], map: "idx_personal_ai_reply_tasks_conversation")
+}
+
 model users {
   id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   account_id              String?   @db.Uuid

@@ -3,7 +3,7 @@ import { getBaileysServiceSendUrl } from './baileys-service-client'
 const META_VERIFY_TOKEN =
 	process.env.META_VERIFY_TOKEN ||
 	process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ||
-	'scalechat_webhook_secret'
+	'crm_webhook_secret'
 
 export const BAILEYS_INTERNAL_SEND_PATH =
 	'/api/v1/whatsapp-channels/baileys/send'

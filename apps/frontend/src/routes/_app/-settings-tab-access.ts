@@ -2,6 +2,7 @@ import { normalizeAppRole } from '@/lib/role-access'
 
 export type SettingsNavItemId =
 	| 'general'
+	| 'ai-replies'
 	| 'ai-models'
 	| 'labels'
 	| 'whatsapp'
@@ -10,16 +11,15 @@ export type SettingsNavItemId =
 	| 'localization'
 	| 'developer'
 
-const PERSONAL_TABS: SettingsNavItemId[] = ['security', 'notifications', 'localization']
+const PERSONAL_TABS: SettingsNavItemId[] = ['general', 'ai-replies', 'security', 'notifications', 'localization']
 const SALES_TABS: SettingsNavItemId[] = PERSONAL_TABS
 const LEADER_TABS: SettingsNavItemId[] = [
 	...PERSONAL_TABS,
-	'general',
 	'ai-models',
 	'labels',
 	'whatsapp',
 ]
-const CEO_TABS: SettingsNavItemId[] = [...PERSONAL_TABS, 'general']
+const CEO_TABS: SettingsNavItemId[] = [...PERSONAL_TABS]
 const SUPERADMIN_TABS: SettingsNavItemId[] = [...PERSONAL_TABS, 'developer', 'whatsapp']
 
 export function getVisibleSettingsTabIds(role: string | null | undefined): SettingsNavItemId[] {

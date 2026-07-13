@@ -3,16 +3,17 @@ import { Pool } from 'pg'
 import { PrismaClient } from '../generated/prisma'
 
 const connectionString = process.env.DATABASE_URL
+const logQueries = process.env.PRISMA_LOG_QUERIES === 'true'
+const prismaLogLevels: Array<'query' | 'warn' | 'error'> = logQueries
+	? ['query', 'warn', 'error']
+	: ['warn', 'error']
 
 const pool = new Pool({ connectionString })
 const adapter = new PrismaPg(pool)
 
 export const prisma = new PrismaClient({
 	adapter,
-	log:
-		process.env.NODE_ENV === 'development'
-			? ['query', 'error', 'warn']
-			: ['error'],
+	log: prismaLogLevels,
 })
 
 process.on('SIGINT', async () => {

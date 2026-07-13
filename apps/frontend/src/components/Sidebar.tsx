@@ -23,6 +23,7 @@ interface Agent {
 	email: string
 	name: string
 	role: string
+	avatar_url?: string | null
 }
 
 interface Props {
@@ -54,7 +55,7 @@ export default function Sidebar({
 
 	useEffect(() => {
 		if (!agentProp) {
-			const stored = localStorage.getItem('scalechat_user')
+			const stored = localStorage.getItem('crm_user')
 			if (!stored) return
 			try {
 				const parsed = JSON.parse(stored) as any
@@ -69,6 +70,7 @@ export default function Sidebar({
 					email: String(candidate.email || ''),
 					name: String(candidate.name || candidate.email || 'User'),
 					role: extractNormalizedRole(candidate),
+					avatar_url: typeof candidate.avatar_url === 'string' ? candidate.avatar_url : null,
 				})
 			} catch {
 				// ignore invalid local storage
@@ -78,9 +80,18 @@ export default function Sidebar({
 
 		setCurrentAgent({
 			...agentProp,
-			role: extractNormalizedRole(agentProp),
+			role: extractNormalizedRole(agentProp as unknown as Record<string, unknown>),
 		})
 	}, [agentProp])
+
+	useEffect(() => {
+		const handleUserUpdated = (event: Event) => {
+			const profile = (event as CustomEvent<Partial<Agent>>).detail
+			setCurrentAgent((current) => current ? { ...current, ...profile } : current)
+		}
+		window.addEventListener('crm:user-updated', handleUserUpdated)
+		return () => window.removeEventListener('crm:user-updated', handleUserUpdated)
+	}, [])
 
 	const menuGroups = useMemo(() => {
 		const visibleItems = CRM_NAV_ITEMS.filter((item) =>
@@ -102,7 +113,7 @@ export default function Sidebar({
 			return
 		}
 
-		const token = localStorage.getItem('scalechat_token')
+		const token = localStorage.getItem('crm_token')
 		if (token) {
 			try {
 				await fetch(`${API_BASE}/auth/logout`, {
@@ -207,15 +218,15 @@ export default function Sidebar({
 			</nav>
 
 			<div className={`border-t border-border ${isCollapsed ? 'p-2' : 'p-3'}`}>
-				<div className={`mb-2 flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-3 px-2 py-2'}`} title={isCollapsed ? `${displayName} · ${currentAgent?.role || 'Admin'}` : undefined}>
-					<CrmAvatar name={displayName} online size={30} />
+				<button type="button" onClick={() => { navigate({ to: '/settings' }); onClose?.() }} className={`mb-2 flex w-full items-center rounded-lg text-left transition-colors hover:bg-muted ${isCollapsed ? 'justify-center py-2' : 'gap-3 px-2 py-2'}`} title={isCollapsed ? `${displayName} · ${currentAgent?.role || 'Admin'}` : undefined}>
+					<CrmAvatar name={displayName} imageUrl={currentAgent?.avatar_url} online size={30} />
 					<div className={isCollapsed ? 'sr-only' : 'min-w-0 flex-1'}>
 						<p className="truncate text-sm font-semibold">{displayName}</p>
 						<p className="truncate text-xs text-muted-foreground">
 							{currentAgent?.role || 'Admin'}
 						</p>
 					</div>
-				</div>
+				</button>
 				<button
 					type="button"
 					onClick={handleLogout}

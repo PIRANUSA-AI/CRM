@@ -9,7 +9,7 @@ export const Route = createFileRoute('/whatsapp/connect')({ component: WhatsAppC
 
 function storedFirstName() {
 	try {
-		const raw = localStorage.getItem('scalechat_user')
+		const raw = localStorage.getItem('crm_user')
 		const parsed = raw ? JSON.parse(raw) : null
 		const name = String(parsed?.name || parsed?.user?.name || '').trim()
 		return name.split(/\s+/)[0] || ''
@@ -83,7 +83,7 @@ function WhatsAppConnectPage() {
 
 	const logout = async () => {
 		await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3010'}/auth/sign-out`, { method: 'POST', credentials: 'include' }).catch(() => null)
-		localStorage.removeItem('scalechat_token'); localStorage.removeItem('scalechat_user')
+		localStorage.removeItem('crm_token'); localStorage.removeItem('crm_user')
 		void navigate({ to: '/login', replace: true })
 	}
 

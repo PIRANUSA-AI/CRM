@@ -29,7 +29,7 @@ const conversations = [
 
 function WorkspacePreview() {
 	return (
-		<div className="relative mx-auto w-full max-w-[620px]" aria-hidden="true">
+		<div className="relative mx-auto w-full max-w-[560px]" aria-hidden="true">
 			<div className="overflow-hidden rounded-2xl bg-[#f8f5ed] shadow-[0_8px_24px_rgba(4,17,38,0.28)]">
 				<div className="flex h-11 items-center justify-between bg-white px-4">
 					<div className="flex items-center gap-2">
@@ -104,6 +104,15 @@ function LoginPage() {
 		setError('')
 
 		try {
+			const retainedTheme = localStorage.getItem('crm-theme')
+			localStorage.clear()
+			if (retainedTheme) localStorage.setItem('crm-theme', retainedTheme)
+			document.cookie.split(';').forEach((cookiePart) => {
+				const cookieName = cookiePart.split('=')[0]?.trim()
+				if (!cookieName) return
+				document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+			})
+
 			const response = await fetch(`${AUTH_BASE}/sign-in/email`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -117,8 +126,8 @@ function LoginPage() {
 			}
 
 			const data = await response.json()
-			if (data?.token) localStorage.setItem('scalechat_token', data.token)
-			localStorage.setItem('scalechat_user', JSON.stringify(data.user))
+			if (data?.token) localStorage.setItem('crm_token', data.token)
+			localStorage.setItem('crm_user', JSON.stringify(data.user))
 
 			try {
 				const context = await syncOrganizationContextFromSession()
@@ -127,27 +136,36 @@ function LoginPage() {
 					replace: true,
 				})
 			} catch {
-			await navigate({ to: '/whatsapp/connect', replace: true })
+				await navigate({ to: '/whatsapp/connect', replace: true })
 			}
 		} catch (loginError) {
-			setError(loginError instanceof Error ? loginError.message : 'Tidak dapat masuk. Silakan coba lagi.')
+			const isNetworkError =
+				!navigator.onLine ||
+				(loginError instanceof TypeError && loginError.message.toLowerCase().includes('fetch'))
+			setError(
+				isNetworkError
+					? 'Koneksi internet terputus. Sambungkan perangkat lalu coba masuk lagi.'
+					: loginError instanceof Error
+						? loginError.message
+						: 'Tidak dapat masuk. Silakan coba lagi.',
+			)
 		} finally {
 			setLoading(false)
 		}
 	}
 
 	return (
-		<main className="min-h-svh bg-[#f7f3e9] text-[#142942] lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(460px,0.92fr)]">
-			<section className="relative hidden min-h-svh overflow-hidden bg-[#102a4c] px-12 py-10 text-white lg:flex lg:flex-col xl:px-16 xl:py-12">
+		<main className="min-h-svh bg-[#f7f3e9] text-[#142942] lg:grid lg:h-svh lg:min-h-0 lg:grid-cols-[minmax(0,1.08fr)_minmax(460px,0.92fr)] lg:overflow-hidden">
+			<section className="relative hidden h-svh min-h-0 overflow-hidden bg-[#102a4c] px-10 py-6 text-white lg:flex lg:flex-col xl:px-14 xl:py-8">
 				<div className="absolute left-[8%] top-[14%] h-48 w-48 rounded-full bg-[#315d91]/30 blur-3xl" />
 				<div className="relative z-10 text-[15px] font-semibold tracking-[-0.01em]">CRM</div>
 
-				<div className="relative z-10 my-auto py-12">
-					<div className="mb-9 max-w-xl">
-						<h1 className="text-balance font-[family-name:var(--font-display)] text-5xl font-medium leading-[1.04] tracking-[-0.03em] xl:text-[58px]">
+				<div className="relative z-10 my-auto py-5 xl:py-7">
+					<div className="mb-5 max-w-xl">
+						<h1 className="text-balance font-[family-name:var(--font-display)] text-4xl font-medium leading-[1.04] tracking-[-0.03em] xl:text-[50px]">
 							Satu ruang kerja untuk seluruh percakapan pelanggan.
 						</h1>
-						<p className="mt-5 max-w-lg text-[15px] leading-7 text-[#c8d5e5]">
+						<p className="mt-3 max-w-lg text-sm leading-6 text-[#c8d5e5]">
 							Pantau percakapan, koordinasikan tim, dan gerakkan setiap peluang tanpa kehilangan konteks.
 						</p>
 					</div>
@@ -157,19 +175,19 @@ function LoginPage() {
 				<p className="relative z-10 text-xs text-[#91a7c1]">© {new Date().getFullYear()} CRM. Ruang kerja pelanggan untuk tim Anda.</p>
 			</section>
 
-			<section className="flex min-h-svh items-center justify-center px-6 py-10 sm:px-10 lg:px-14">
-				<div className="w-full max-w-[410px]">
-					<div className="mb-14 text-sm font-semibold tracking-[-0.01em] text-[#17365f] lg:hidden">CRM</div>
-					<div className="mb-9">
-						<p className="mb-3 text-sm font-semibold text-[#315d91]">Selamat datang kembali</p>
-						<h2 className="text-balance font-[family-name:var(--font-display)] text-[42px] font-medium leading-[1.04] tracking-[-0.03em] text-[#102a4c]">Masuk ke ruang kerja Anda</h2>
-						<p className="mt-4 text-[15px] leading-6 text-[#58697c]">Gunakan email kerja dan kata sandi untuk melanjutkan.</p>
+			<section className="flex min-h-svh items-center justify-center px-6 py-7 sm:px-10 lg:h-svh lg:min-h-0 lg:px-12 lg:py-6 xl:px-16">
+				<div className="w-full max-w-[390px]">
+					<div className="mb-10 text-sm font-semibold tracking-[-0.01em] text-[#17365f] lg:hidden">CRM</div>
+					<div className="mb-6">
+						<p className="mb-2 text-sm font-semibold text-[#315d91]">Selamat datang kembali</p>
+						<h2 className="text-balance font-[family-name:var(--font-display)] text-4xl font-medium leading-[1.04] tracking-[-0.03em] text-[#102a4c]">Masuk ke ruang kerja Anda</h2>
+						<p className="mt-3 text-sm leading-6 text-[#58697c]">Gunakan email kerja dan kata sandi untuk melanjutkan.</p>
 					</div>
 
-					<form onSubmit={handleLogin} className="space-y-5" data-auth-content="true">
+					<form onSubmit={handleLogin} className="space-y-4" data-auth-content="true">
 						<div className="space-y-2">
 							<label htmlFor="email" className="text-sm font-medium text-[#283d55]">Alamat email</label>
-							<Input id="email" type="email" autoComplete="email" placeholder="nama@perusahaan.com" value={email} onChange={(event) => setEmail(event.target.value)} required autoFocus className="h-12 rounded-xl border-[#d8d3c8] bg-white px-4 text-[15px] text-[#142942] placeholder:text-[#697789] focus-visible:border-[#315d91] focus-visible:ring-4 focus-visible:ring-[#315d91]/10" />
+							<Input id="email" type="email" autoComplete="email" placeholder="nama@perusahaan.com" value={email} onChange={(event) => setEmail(event.target.value)} required autoFocus className="h-11 rounded-xl border-[#d8d3c8] bg-white px-4 text-[15px] text-[#142942] placeholder:text-[#697789] focus-visible:border-[#315d91] focus-visible:ring-4 focus-visible:ring-[#315d91]/10" />
 						</div>
 
 						<div className="space-y-2">
@@ -178,7 +196,7 @@ function LoginPage() {
 								<span className="text-xs text-[#637387]">Hubungi admin untuk mengatur ulang</span>
 							</div>
 							<div className="relative">
-								<Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={(event) => setPassword(event.target.value)} required className="h-12 rounded-xl border-[#d8d3c8] bg-white px-4 pr-12 text-[15px] text-[#142942] placeholder:text-[#697789] focus-visible:border-[#315d91] focus-visible:ring-4 focus-visible:ring-[#315d91]/10" />
+								<Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={(event) => setPassword(event.target.value)} required className="h-11 rounded-xl border-[#d8d3c8] bg-white px-4 pr-12 text-[15px] text-[#142942] placeholder:text-[#697789] focus-visible:border-[#315d91] focus-visible:ring-4 focus-visible:ring-[#315d91]/10" />
 								<button type="button" onClick={() => setShowPassword((visible) => !visible)} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#637387] transition-colors duration-200 hover:text-[#17365f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#315d91]" aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}>
 									{showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
 								</button>
@@ -187,13 +205,13 @@ function LoginPage() {
 
 						{error && <Alert variant="destructive" className="rounded-xl"><AlertDescription>{error}</AlertDescription></Alert>}
 
-						<Button type="submit" disabled={loading} size="lg" className="group h-12 w-full rounded-xl bg-[#17365f] text-[15px] font-semibold text-white transition-colors duration-200 hover:bg-[#102a4c] focus-visible:ring-[#315d91]">
+						<Button type="submit" disabled={loading} size="lg" className="group h-11 w-full rounded-xl bg-[#17365f] text-[15px] font-semibold text-white transition-colors duration-200 hover:bg-[#102a4c] focus-visible:ring-[#315d91]">
 							{loading ? 'Sedang masuk…' : 'Masuk ke ruang kerja'}
 							{!loading && <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />}
 						</Button>
 					</form>
 
-					<p className="mt-10 text-center text-xs leading-5 text-[#657487]">
+					<p className="mt-7 text-center text-xs leading-5 text-[#657487]">
 						Dengan melanjutkan, Anda menyetujui <Link to="/terms" className="font-medium text-[#314b68] underline-offset-4 hover:underline">Ketentuan Layanan</Link> dan <Link to="/privacy" className="font-medium text-[#314b68] underline-offset-4 hover:underline">Kebijakan Privasi</Link>.
 					</p>
 				</div>

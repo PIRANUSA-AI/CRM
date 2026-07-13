@@ -25,7 +25,7 @@ export function CreateVariableModal({
 		setError('')
 
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
 
 			const res = await fetch(`${API_URL}/api/template-variables`, {

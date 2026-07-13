@@ -67,7 +67,7 @@ export default function AdsPerformance() {
 
 	const fetchAccounts = async () => {
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/accounts`, {
 				headers: { Authorization: `Bearer ${token}` },
 			})
@@ -84,7 +84,7 @@ export default function AdsPerformance() {
 	const fetchCampaigns = async () => {
 		setLoading(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			// Fetch campaigns for specific account
 			const res = await fetch(
 				`${API_BASE}/meta-ads/campaigns?account_id=${selectedAccount}`,
@@ -132,7 +132,7 @@ export default function AdsPerformance() {
 	const handleSync = async () => {
 		setSyncing(true)
 		try {
-			const token = localStorage.getItem('scalechat_token')
+			const token = localStorage.getItem('crm_token')
 			const res = await fetch(`${API_BASE}/meta-ads/sync`, {
 				method: 'POST',
 				headers: { Authorization: `Bearer ${token}` },

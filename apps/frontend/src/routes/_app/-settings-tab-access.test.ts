@@ -4,6 +4,8 @@ import { getVisibleSettingsTabIds } from './-settings-tab-access'
 describe('getVisibleSettingsTabIds', () => {
 	test('sales sees only the personal tabs', () => {
 		expect(getVisibleSettingsTabIds('sales')).toEqual([
+			'general',
+			'ai-replies',
 			'security',
 			'notifications',
 			'localization',

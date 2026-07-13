@@ -29,8 +29,8 @@ export default function AutoAssignManager() {
 	const [showModal, setShowModal] = useState(false)
 	const [editingRule, setEditingRule] = useState<Rule | null>(null)
 
-	const appId = localStorage.getItem('scalechat_app_id')
-	const token = localStorage.getItem('scalechat_token')
+	const appId = localStorage.getItem('crm_app_id')
+	const token = localStorage.getItem('crm_token')
 
 	const fetchRules = async () => {
 		try {

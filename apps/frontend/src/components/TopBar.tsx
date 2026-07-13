@@ -1,4 +1,4 @@
-import { useLocation } from '@tanstack/react-router'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import { Bell, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import CommandPalette from '@/components/CommandPalette'
@@ -12,12 +12,13 @@ type TopBarUser = {
 	name?: string | null
 	email?: string | null
 	role?: string | null
+	avatar_url?: string | null
 	user?: TopBarUser
 }
 
 function readStoredTopBarUser(): TopBarUser | null {
 	if (typeof localStorage === 'undefined') return null
-	const raw = localStorage.getItem('scalechat_user')
+	const raw = localStorage.getItem('crm_user')
 	if (!raw) return null
 	try {
 		const parsed = JSON.parse(raw) as TopBarUser
@@ -30,6 +31,7 @@ function readStoredTopBarUser(): TopBarUser | null {
 
 export default function TopBar() {
 	const location = useLocation()
+	const navigate = useNavigate()
 	const { agent } = useAppContext()
 	const [isPaletteOpen, setIsPaletteOpen] = useState(false)
 	const [displayAgent, setDisplayAgent] = useState<TopBarUser | null>(agent || null)
@@ -42,6 +44,15 @@ export default function TopBar() {
 		const local = readStoredTopBarUser()
 		if (local) setDisplayAgent(local)
 	}, [agent])
+
+	useEffect(() => {
+		const handleUserUpdated = (event: Event) => {
+			const profile = (event as CustomEvent<TopBarUser>).detail
+			setDisplayAgent((current) => ({ ...current, ...profile }))
+		}
+		window.addEventListener('crm:user-updated', handleUserUpdated)
+		return () => window.removeEventListener('crm:user-updated', handleUserUpdated)
+	}, [])
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -112,10 +123,10 @@ export default function TopBar() {
 					<span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500" />
 				</button>
 
-				<div className="hidden items-center gap-2 rounded-lg border border-border bg-muted/40 px-2 py-1 sm:flex">
-					<CrmAvatar name={displayName} size={26} online />
-					<p className="max-w-24 truncate text-xs font-semibold">{displayName}</p>
-				</div>
+				<button type="button" onClick={() => navigate({ to: '/settings' })} className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-1.5 py-1 transition-colors hover:bg-muted sm:px-2" aria-label="Buka pengaturan profil">
+					<CrmAvatar name={displayName} imageUrl={displayAgent?.avatar_url} size={26} online />
+					<p className="hidden max-w-24 truncate text-xs font-semibold sm:block">{displayName}</p>
+				</button>
 			</header>
 
 			<CommandPalette
