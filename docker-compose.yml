@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: 2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog
       POSTGRES_DB: crm_db
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5431:5432"
+    # ↑ 5431 dipake biar gak bentrok sama PostgreSQL lain di VPS
     volumes:
       - crm_postgres_data:/var/lib/postgresql/data
     healthcheck:
