@@ -1369,18 +1369,20 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.badSession) {
-			// A bad-session signal can be transient during process restarts or
-			// concurrent socket replacement. Never destroy account-owned credentials
-			// automatically; only an explicit WhatsApp logout may clear auth_state.
+			// Bad session means stored auth_state is stale/invalid (e.g. phone
+			// number changed, WhatsApp Web session expired, creds corrupted).
+			// Clear auth_state so buildAuthState() generates fresh credentials
+			// on next start, which will show a QR code for re-pairing.
 			await updateSessionById(sessionRow.id, {
-				status: 'recovery_required',
+				status: 'not_paired',
+				auth_state: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: formattedDisconnectMessage,
+				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 5_000)
+			entry.desiredRunning = false
 			return
 		}
 

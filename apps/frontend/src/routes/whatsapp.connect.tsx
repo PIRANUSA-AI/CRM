@@ -62,7 +62,13 @@ function WhatsAppConnectPage() {
 
 	useEffect(() => {
 		if (!connection || connection.isConnected || waitingForPresence) return
-		const timer = window.setInterval(() => void refresh(), 2500)
+		const timer = window.setInterval(() => {
+			void refresh().then((value) => {
+				if (value?.requiresPairing && value.status === 'not_paired') {
+					void refresh(true)
+				}
+			})
+		}, 2500)
 		return () => window.clearInterval(timer)
 	}, [connection?.isConnected, connection?.status, refresh, waitingForPresence])
 
