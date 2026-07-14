@@ -1159,10 +1159,7 @@ export abstract class BaileysServiceRuntime {
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			connectTimeoutMs: 60_000,
-			qrTimeout: 600_000,
-			syncFullHistory: false,
-			shouldSyncHistoryMessage: () => false,
-			fireInitQueries: false,
+			qrTimeout: 300_000,
 			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
 		})
 
