@@ -3,8 +3,9 @@
 		{
 			"name": "crm-api",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "dist/index.js",
-			"interpreter": "bun",
+			"script": "/home/github/.bun/bin/bun",
+			"args": "dist/index.js",
+			"interpreter": "none",
 			"env": {
 				"APP_MODE": "api",
 				"NODE_ENV": "production"
@@ -14,8 +15,9 @@
 		{
 			"name": "crm-worker",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "dist/index.js",
-			"interpreter": "bun",
+			"script": "/home/github/.bun/bin/bun",
+			"args": "dist/index.js",
+			"interpreter": "none",
 			"env": {
 				"APP_MODE": "worker",
 				"NODE_ENV": "production"
@@ -25,8 +27,9 @@
 		{
 			"name": "crm-scheduler",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "dist/index.js",
-			"interpreter": "bun",
+			"script": "/home/github/.bun/bin/bun",
+			"args": "dist/index.js",
+			"interpreter": "none",
 			"env": {
 				"APP_MODE": "scheduler",
 				"NODE_ENV": "production"
@@ -36,8 +39,9 @@
 		{
 			"name": "crm-frontend",
 			"cwd": "/var/www/crm/apps/frontend",
-			"script": ".output/server/index.mjs",
-			"interpreter": "bun",
+			"script": "/home/github/.bun/bin/bun",
+			"args": ".output/server/index.mjs",
+			"interpreter": "none",
 			"env": {
 				"PORT": "3100",
 				"NODE_ENV": "production"
