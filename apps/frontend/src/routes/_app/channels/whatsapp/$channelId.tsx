@@ -507,13 +507,15 @@ function WhatsAppChannelDetailPage() {
 									? 'Refresh Status'
 									: 'Refresh'}
 						</button>
-						<button
-							onClick={handleDisconnect}
-							className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm"
-						>
-							<Unlink size={16} />
-							Disconnect
-						</button>
+						{!isBaileysChannel ? (
+							<button
+								onClick={handleDisconnect}
+								className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm"
+							>
+								<Unlink size={16} />
+								Disconnect
+							</button>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -1180,6 +1182,13 @@ function WhatsAppChannelDetailPage() {
 											</p>
 										</div>
 									</div>
+									{baileysSession?.status === 'connected' ? (
+										<div className="rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-3">
+											<p className="text-xs text-amber-700">
+												Untuk memutus sesi, buka WhatsApp di ponsel kamu → Perangkat tertaut → Tap nama perangkat ini → Putuskan tautan. Sesi akan otomatis terputus dan siap dihubungkan ulang.
+											</p>
+										</div>
+									) : null}
 								</div>
 							</div>
 						) : null}

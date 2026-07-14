@@ -1357,11 +1357,14 @@ export abstract class BaileysServiceRuntime {
 			await updateSessionById(sessionRow.id, {
 				status: 'logged_out',
 				auth_state: null,
+				first_connected_at: null,
+				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
 				last_error: formattedDisconnectMessage,
 				updated_at: new Date(),
 			})
+			this.scheduleRestart(entry.channelId, 1_000)
 			return
 		}
 

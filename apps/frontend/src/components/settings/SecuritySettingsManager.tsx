@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Lock, Smartphone, AlertCircle, LogOut } from 'lucide-react'
+import { Check, LoaderCircle, Lock, Smartphone, AlertCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { auth } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -57,7 +57,6 @@ function statusColor(status: string): string {
 export default function SecuritySettingsManager() {
 	const [waSession, setWaSession] = useState<WhatsAppSession | null | undefined>(undefined)
 	const [waLoading, setWaLoading] = useState(true)
-	const [waDisconnecting, setWaDisconnecting] = useState(false)
 	const [waError, setWaError] = useState<string | null>(null)
 	const [waNotice, setWaNotice] = useState<string | null>(null)
 	const [currentPassword, setCurrentPassword] = useState('')
@@ -98,20 +97,6 @@ export default function SecuritySettingsManager() {
 			setError(currentError instanceof Error ? currentError.message : 'Password gagal diganti.')
 		} finally {
 			setSaving(false)
-		}
-	}
-
-	const disconnectWa = async () => {
-		if (waDisconnecting) return
-		setWaError(null)
-		setWaNotice(null)
-		setWaDisconnecting(true)
-		try {
-			await auth.disconnectWhatsAppSession()
-			window.location.href = '/whatsapp/connect'
-		} catch (currentError) {
-			setWaError(currentError instanceof Error ? currentError.message : 'Sesi WhatsApp gagal diputuskan.')
-			setWaDisconnecting(false)
 		}
 	}
 
@@ -199,17 +184,13 @@ export default function SecuritySettingsManager() {
 					</div>
 				)}
 
-				<footer className="flex flex-col gap-3 border-t border-border bg-muted/20 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-					<div className="min-h-5 text-xs">
-						{waError ? <span className="text-destructive">{waError}</span> : null}
-						{waNotice ? <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><Check size={13} /> {waNotice}</span> : null}
+				{waSession ? (
+					<div className="border-t border-border bg-muted/20 px-5 py-4">
+						<p className="text-xs text-muted-foreground">
+							Untuk memutus sesi, buka WhatsApp di ponsel kamu → Perangkat tertaut → Tap nama perangkat ini → Putuskan tautan. Sesi akan otomatis terputus dan siap dihubungkan ulang.
+						</p>
 					</div>
-					{waSession && (
-						<button type="button" disabled={waDisconnecting} onClick={() => void disconnectWa()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-destructive bg-destructive/10 px-4 text-sm font-semibold text-destructive transition hover:bg-destructive/20 disabled:opacity-50">
-							{waDisconnecting ? <LoaderCircle size={14} className="animate-spin" /> : <LogOut size={14} />} Putuskan sesi
-						</button>
-					)}
-				</footer>
+				) : null}
 			</section>
 		</div>
 	)

@@ -790,6 +790,7 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 				data: {
 					status: 'disabled',
 					auth_state: null,
+					first_connected_at: null,
 					phone_number: null,
 					updated_at: new Date(),
 				},
