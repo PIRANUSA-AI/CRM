@@ -84,8 +84,9 @@
 		{
 			"name": "crm-whatsapp",
 			"cwd": "/var/www/crm/whatsapp-service",
-			"script": "dist/index.js",
-			"interpreter": "/usr/bin/node",
+			"script": "/home/github/.bun/bin/bun",
+			"args": "src/index.ts",
+			"interpreter": "none",
 			"env": {
 				"NODE_ENV": "production",
 				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
