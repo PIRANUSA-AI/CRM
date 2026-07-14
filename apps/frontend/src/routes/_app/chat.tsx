@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { useAppContext } from '@/routes/_app'
 import {
 	AlertCircle,
 	ArrowLeft,
@@ -1595,6 +1596,8 @@ function WhatsappOnboarding() {
 	const [showTyping, setShowTyping] = useState(false)
 	const [hasRedirected, setHasRedirected] = useState(false)
 	const navigate = useNavigate()
+	const { agent } = useAppContext()
+	const canConnect = agent?.role === 'ceo' || agent?.role === 'superadmin'
 
 	useEffect(() => {
 		if (visibleCount >= MOCK_MESSAGES.length || hasRedirected) return
@@ -1644,20 +1647,24 @@ function WhatsappOnboarding() {
 					<div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10">
 						<Smartphone className="size-6 text-primary" />
 					</div>
-					<h3 className="mt-4 text-base font-semibold text-foreground">Hubungkan WhatsApp kamu di sini</h3>
+					<h3 className="mt-4 text-base font-semibold text-foreground">{canConnect ? 'Hubungkan WhatsApp kamu di sini' : 'Kotak Masuk WhatsApp'}</h3>
 					<p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-						Semua pesan pelanggan akan muncul secara otomatis di kotak masuk ini. Koneksikan nomor WhatsApp bisnismu sekarang agar tim dapat merespons lebih cepat.
+						{canConnect
+							? 'Semua pesan pelanggan akan muncul secara otomatis di kotak masuk ini. Koneksikan nomor WhatsApp bisnismu sekarang agar tim dapat merespons lebih cepat.'
+							: 'Admin akan menghubungkan WhatsApp bisnis. Setelah tersambung, semua pesan pelanggan akan muncul di sini dan tim dapat langsung merespons.'}
 					</p>
-					<button
-						onClick={() => {
-							setHasRedirected(true)
-							navigate({ to: '/whatsapp/connect' })
-						}}
-						className="mt-6 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					>
-						<Smartphone className="size-4" />
-						Hubungkan WhatsApp
-					</button>
+					{canConnect ? (
+						<button
+							onClick={() => {
+								setHasRedirected(true)
+								navigate({ to: '/whatsapp/connect' })
+							}}
+							className="mt-6 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<Smartphone className="size-4" />
+							Hubungkan WhatsApp
+						</button>
+					) : null}
 				</div>
 			</div>
 		</div>
