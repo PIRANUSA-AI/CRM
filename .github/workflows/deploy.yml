@@ -19,7 +19,9 @@ jobs:
           export NODE_ENV=production
           bun run db:generate
           bun run build:backend
+          bun run db:push
+          pm2 stop crm-frontend
           bun run build:frontend
-          bun run db:push -- --accept-data-loss
-          pm2 restart ecosystem.config.json
+          pm2 start ecosystem.config.json --only crm-frontend
+          pm2 restart crm-api crm-worker crm-scheduler
           pm2 save
