@@ -16,6 +16,7 @@ jobs:
           git pull origin main
           bun install --frozen-lockfile
           export DATABASE_URL=$(grep ^DATABASE_URL .env | head -1 | cut -d= -f2-)
+          export NODE_ENV=production
           bun run db:generate
           bun run build:backend
           bun run build:frontend
