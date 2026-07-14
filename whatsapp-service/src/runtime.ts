@@ -213,6 +213,10 @@ function asString(value: unknown): string | null {
 	return normalized.length > 0 ? normalized : null
 }
 
+function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 function normalizeDigits(value: string | null | undefined) {
 	return String(value || '').replace(/\D/g, '').trim()
 }
@@ -1152,6 +1156,7 @@ export abstract class BaileysServiceRuntime {
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
+			connectTimeoutMs: 60_000,
 			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
 		})
 
@@ -1694,7 +1699,7 @@ export abstract class BaileysServiceRuntime {
 			) {
 				return snapshot
 			}
-			await Bun.sleep(300)
+			await sleep(300)
 		}
 		return this.getSessionSnapshot(channelId)
 	}
