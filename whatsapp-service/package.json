@@ -11,7 +11,7 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.985.0",
-		"@whiskeysockets/baileys": "^7.0.0-rc.9",
+		"@whiskeysockets/baileys": "^6.17.16",
 		"dotenv": "^17.3.1",
 		"elysia": "^1.4.16",
 		"pg": "^8.20.0"
