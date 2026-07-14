@@ -17,6 +17,8 @@ import makeWASocket, {
 	type WAMessageUpdate,
 	type WASocket,
 } from '@whiskeysockets/baileys'
+// @ts-expect-error - internal Baileys module
+import { WebSocketClient } from '@whiskeysockets/baileys/lib/Socket/Client/websocket.js'
 import {
 	BAILEYS_CHANNEL_SYNC_INTERVAL_MS,
 	BAILEYS_LINK_MODE,
@@ -35,6 +37,20 @@ import {
 	getS3UploadConfigurationError,
 	s3,
 } from './s3'
+
+const origWSEmit = WebSocketClient.prototype.emit
+WebSocketClient.prototype.emit = function (event: string, ...args: unknown[]) {
+	if (event === 'message' && args[0]) {
+		const data = args[0] as { byteLength?: number; length?: number }
+		if (typeof data === 'object' && 'byteLength' in data) {
+			const len = (data as ArrayBuffer).byteLength ?? (data as { length: number }).length ?? 0
+			if (len > 0 && len <= 4) {
+				return true
+			}
+		}
+	}
+	return origWSEmit.call(this, event, ...args)
+}
 
 const BAILEYS_PROVIDER = 'baileys'
 
