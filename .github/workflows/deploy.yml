@@ -14,7 +14,7 @@ jobs:
           cd /var/www/crm
           git reset --hard origin/main
           git pull origin main
-          bun install --frozen-lockfile
+          bun install
           export DATABASE_URL=$(grep ^DATABASE_URL .env | head -1 | cut -d= -f2-)
           export NODE_ENV=production
           bun run db:generate
@@ -23,7 +23,7 @@ jobs:
           pm2 stop crm-frontend
           bun run build:frontend
           pm2 start ecosystem.config.json --only crm-frontend
-          cd /var/www/crm/whatsapp-service && bun install && cd /var/www/crm
+          cd /var/www/crm/whatsapp-service && /home/github/.bun/bin/bun install && cd /var/www/crm
           pm2 start ecosystem.config.json --only crm-whatsapp
           pm2 restart crm-api crm-worker crm-scheduler
           pm2 save
