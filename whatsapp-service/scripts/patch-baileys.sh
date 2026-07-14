@@ -9,11 +9,11 @@ if [ ! -f "$SOCKET_JS" ]; then
 fi
 
 # Cek apakah patch udah pernah diapply
-if grep -q 'onMessageReceivedFilter' "$SOCKET_JS"; then
+if grep -q 'data.byteLength <= 4' "$SOCKET_JS"; then
     echo "[patch-baileys] already patched"
     exit 0
 fi
 
-sed -i 's/const onMessageReceived = (data) => {/const onMessageReceived = (data) => {\n    if (data \&\& (data.byteLength <= 4 || data.length <= 4)) { return; }/' "$SOCKET_JS"
+sed -i 's/const onMessageReceived = (data) => {/const onMessageReceived = (data) => {\n    if (data && (data.byteLength <= 4 || data.length <= 4)) { return; }/' "$SOCKET_JS"
 
 echo "[patch-baileys] patched successfully"

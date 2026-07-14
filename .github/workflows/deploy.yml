@@ -23,7 +23,7 @@ jobs:
           pm2 stop crm-frontend
           bun run build:frontend
           pm2 start ecosystem.config.json --only crm-frontend
-          cd /var/www/crm/whatsapp-service && /home/github/.bun/bin/bun install && cd /var/www/crm
+          cd /var/www/crm/whatsapp-service && /home/github/.bun/bin/bun install && bash scripts/patch-baileys.sh && cd /var/www/crm
           pm2 start ecosystem.config.json --only crm-whatsapp
           pm2 restart crm-api crm-worker crm-scheduler
           pm2 save
