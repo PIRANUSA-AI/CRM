@@ -15,9 +15,10 @@ jobs:
           git reset --hard origin/main
           git pull origin main
           bun install --frozen-lockfile
-          cd apps/backend && bunx prisma generate && cd ../..
+          export DATABASE_URL=$(grep ^DATABASE_URL .env | head -1 | cut -d= -f2-)
+          bun run db:generate
           bun run build:backend
           bun run build:frontend
-          cd apps/backend && bunx prisma db push && cd ../..
+          bun run db:push
           pm2 restart ecosystem.config.json
           pm2 save
