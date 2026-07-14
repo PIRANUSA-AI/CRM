@@ -8,9 +8,19 @@
 			"interpreter": "none",
 			"env": {
 				"APP_MODE": "api",
-				"NODE_ENV": "production"
-			},
-			"env_file": "/var/www/crm/.env.production"
+				"NODE_ENV": "production",
+				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
+				"BETTER_AUTH_SECRET": "development-secret-change-in-production",
+				"BETTER_AUTH_URL": "https://crm.contrivent.com",
+				"FRONTEND_URL": "https://crm.contrivent.com",
+				"APP_URL": "https://crm.contrivent.com",
+				"VITE_API_URL": "https://crm.contrivent.com",
+				"VITE_SOCKET_URL": "https://crm.contrivent.com",
+				"SOCKET_IO_CORS_ORIGIN": "https://crm.contrivent.com",
+				"REDIS_URL": "redis://localhost:6379",
+				"BACKEND_PORT": "3010",
+				"SOCKET_PORT": "3011"
+			}
 		},
 		{
 			"name": "crm-worker",
@@ -20,9 +30,15 @@
 			"interpreter": "none",
 			"env": {
 				"APP_MODE": "worker",
-				"NODE_ENV": "production"
-			},
-			"env_file": "/var/www/crm/.env.production"
+				"NODE_ENV": "production",
+				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
+				"BETTER_AUTH_SECRET": "development-secret-change-in-production",
+				"APP_URL": "https://crm.contrivent.com",
+				"FRONTEND_URL": "https://crm.contrivent.com",
+				"REDIS_URL": "redis://localhost:6379",
+				"BACKEND_PORT": "3010",
+				"SOCKET_PORT": "3011"
+			}
 		},
 		{
 			"name": "crm-scheduler",
@@ -32,9 +48,15 @@
 			"interpreter": "none",
 			"env": {
 				"APP_MODE": "scheduler",
-				"NODE_ENV": "production"
-			},
-			"env_file": "/var/www/crm/.env.production"
+				"NODE_ENV": "production",
+				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
+				"BETTER_AUTH_SECRET": "development-secret-change-in-production",
+				"APP_URL": "https://crm.contrivent.com",
+				"FRONTEND_URL": "https://crm.contrivent.com",
+				"REDIS_URL": "redis://localhost:6379",
+				"BACKEND_PORT": "3010",
+				"SOCKET_PORT": "3011"
+			}
 		},
 		{
 			"name": "crm-frontend",
@@ -44,9 +66,38 @@
 			"interpreter": "none",
 			"env": {
 				"PORT": "3100",
-				"NODE_ENV": "production"
-			},
-			"env_file": "/var/www/crm/.env.production"
+				"NODE_ENV": "production",
+				"VITE_API_URL": "https://crm.contrivent.com",
+				"VITE_SOCKET_URL": "https://crm.contrivent.com",
+				"FRONTEND_URL": "https://crm.contrivent.com",
+				"BETTER_AUTH_SECRET": "development-secret-change-in-production",
+				"BETTER_AUTH_URL": "https://crm.contrivent.com",
+				"APP_URL": "https://crm.contrivent.com",
+				"SOCKET_IO_CORS_ORIGIN": "https://crm.contrivent.com",
+				"BACKEND_PORT": "3010",
+				"SOCKET_PORT": "3011"
+			}
+		},
+		{
+			"name": "crm-whatsapp",
+			"cwd": "/var/www/crm/whatsapp-service",
+			"script": "/home/github/.bun/bin/bun",
+			"args": "src/index.ts",
+			"interpreter": "none",
+			"env": {
+				"NODE_ENV": "production",
+				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
+				"REDIS_URL": "redis://localhost:6379",
+				"BAILEYS_PORT": "3012",
+				"S3_ENDPOINT": "http://127.0.0.1:9000",
+				"S3_REGION": "auto",
+				"S3_ACCESS_KEY": "crm_minio",
+				"S3_SECRET_KEY": "crm_minio_change_me",
+				"S3_BUCKET": "crm-media",
+				"S3_PUBLIC_URL": "http://127.0.0.1:9000",
+				"BACKEND_PORT": "3010",
+				"SOCKET_PORT": "3011"
+			}
 		}
 	]
 }

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import {
 	AlertCircle,
 	ArrowLeft,
@@ -31,6 +31,7 @@ import {
 	UserCheck,
 	Video,
 	UserRound,
+	Smartphone,
 	X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -885,17 +886,13 @@ function PersonalWhatsappInbox() {
 							)}
 						</div>
 					) : filtered.length === 0 ? (
-						<State
-							icon={Inbox}
-							title={query ? 'Tidak ada hasil' : 'Belum ada percakapan'}
-							body={
-								query
-									? 'Coba cari dengan nama atau nomor lain.'
-									: connected
-										? 'Belum ada nomor tersimpan. Gunakan tombol +, atau buka Perlu keputusan saat nomor baru menghubungi kamu.'
-										: 'Hubungkan WhatsApp agar pesan pelanggan muncul di sini.'
-							}
-						/>
+						query ? (
+							<State icon={Search} title="Tidak ada hasil" body="Coba cari dengan nama atau nomor lain." />
+						) : connected ? (
+							<State icon={Inbox} title="Belum ada percakapan" body="Belum ada nomor tersimpan. Gunakan tombol +, atau buka Perlu keputusan saat nomor baru menghubungi kamu." />
+						) : (
+							<WhatsappOnboarding />
+						)
 					) : (
 						filtered.map((item) => (
 							<button
@@ -1579,6 +1576,90 @@ function State({ icon: Icon, title, body }: { icon: typeof Inbox; title: string;
 			</div>
 			<h3 className="mt-4 text-sm font-semibold text-foreground">{title}</h3>
 			<p className="mt-1.5 text-sm leading-6 text-muted-foreground">{body}</p>
+		</div>
+	)
+}
+
+const MOCK_MESSAGES = [
+	{ role: 'customer', text: 'Halo, saya mau tanya produk terbaru' },
+	{ role: 'ai', text: 'Halo! Terima kasih sudah menghubungi kami. Silakan, ada produk spesifik yang ingin ditanyakan?' },
+	{ role: 'customer', text: 'Yang laptop seri terbaru, berapa ya harganya?' },
+	{ role: 'ai', text: 'Untuk laptop seri terbaru kami mulai dari Rp 12.999.000. Ada dua varian warna: Space Grey dan Silver. Apakah Anda ingin tahu spesifikasi lengkapnya?' },
+	{ role: 'customer', text: 'Ada diskon untuk pembelian pertama?' },
+	{ role: 'ai', text: 'Tentu! Pembeli pertama mendapatkan diskon 10% + gratis aksesori senilai Rp 500.000. Kode promo: WELCOME10 🎉' },
+	{ role: 'customer', text: 'Menarik! Saya mau pesan yang varian Space Grey' },
+]
+
+function WhatsappOnboarding() {
+	const [visibleCount, setVisibleCount] = useState(0)
+	const [showTyping, setShowTyping] = useState(false)
+	const [hasRedirected, setHasRedirected] = useState(false)
+	const navigate = useNavigate()
+
+	useEffect(() => {
+		if (visibleCount >= MOCK_MESSAGES.length || hasRedirected) return
+		const msg = MOCK_MESSAGES[visibleCount]
+		if (msg.role === 'ai') {
+			setShowTyping(true)
+			const typingTimer = setTimeout(() => {
+				setShowTyping(false)
+				const showTimer = setTimeout(() => setVisibleCount((c) => c + 1), 600)
+				return () => clearTimeout(showTimer)
+			}, 1400)
+			return () => clearTimeout(typingTimer)
+		}
+		const timer = setTimeout(() => setVisibleCount((c) => c + 1), 800)
+		return () => clearTimeout(timer)
+	}, [visibleCount, hasRedirected])
+
+	return (
+		<div className="relative flex min-h-0 flex-1">
+			<div className="flex flex-1 flex-col gap-3 px-4 py-4" aria-hidden>
+				{MOCK_MESSAGES.slice(0, visibleCount).map((msg, i) => (
+					<div key={i} className={cn('flex', msg.role === 'ai' ? 'justify-start' : 'justify-end')}>
+						<div className={cn(
+							'max-w-[75%] animate-in fade-in slide-in-from-bottom-2 rounded-2xl px-4 py-2.5 text-sm duration-500',
+							msg.role === 'ai'
+								? 'rounded-bl-sm bg-muted text-foreground'
+								: 'rounded-br-sm bg-primary text-primary-foreground',
+						)}>
+							{msg.text}
+						</div>
+					</div>
+				))}
+				{showTyping && (
+					<div className="flex justify-start">
+						<div className="flex animate-in fade-in items-center gap-1.5 rounded-2xl rounded-bl-sm bg-muted px-4 py-3">
+							<span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+							<span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+							<span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
+						</div>
+					</div>
+				)}
+			</div>
+
+			<div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/20" />
+			<div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+				<div className="pointer-events-auto w-full max-w-sm animate-in fade-in zoom-in-95 rounded-xl border bg-background/95 p-6 text-center shadow-xl backdrop-blur-sm duration-500">
+					<div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10">
+						<Smartphone className="size-6 text-primary" />
+					</div>
+					<h3 className="mt-4 text-base font-semibold text-foreground">Hubungkan WhatsApp kamu di sini</h3>
+					<p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+						Semua pesan pelanggan akan muncul secara otomatis di kotak masuk ini. Koneksikan nomor WhatsApp bisnismu sekarang agar tim dapat merespons lebih cepat.
+					</p>
+					<button
+						onClick={() => {
+							setHasRedirected(true)
+							navigate({ to: '/whatsapp/connect' })
+						}}
+						className="mt-6 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<Smartphone className="size-4" />
+						Hubungkan WhatsApp
+					</button>
+				</div>
+			</div>
 		</div>
 	)
 }
