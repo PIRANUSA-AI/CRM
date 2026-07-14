@@ -19,6 +19,6 @@ jobs:
           bun run db:generate
           bun run build:backend
           bun run build:frontend
-          bun run db:push
+          bun run db:push -- --accept-data-loss
           pm2 restart ecosystem.config.json
           pm2 save
