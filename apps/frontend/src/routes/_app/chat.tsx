@@ -1597,7 +1597,7 @@ function WhatsappOnboarding() {
 	const [hasRedirected, setHasRedirected] = useState(false)
 	const navigate = useNavigate()
 	const { agent } = useAppContext()
-	const canConnect = agent?.role === 'ceo' || agent?.role === 'superadmin'
+	const canConnect = agent?.role === 'sales' || agent?.role === 'leader'
 
 	useEffect(() => {
 		if (visibleCount >= MOCK_MESSAGES.length || hasRedirected) return
