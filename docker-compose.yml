@@ -70,10 +70,5 @@ services:
 
 volumes:
   crm_postgres_data:
-    # Reuse the pre-rename physical volume so existing local data is preserved.
-    name: crm_postgres_data
-    external: true
   crm_redis_data:
-    name: crm_redis_data
-    external: true
   crm_minio_data:
