@@ -42,9 +42,10 @@ const origWSEmit = WebSocketClient.prototype.emit
 WebSocketClient.prototype.emit = function (event: string, ...args: unknown[]) {
 	if (event === 'message' && args[0]) {
 		const data = args[0] as { byteLength?: number; length?: number }
-		if (typeof data === 'object' && 'byteLength' in data) {
-			const len = (data as ArrayBuffer).byteLength ?? (data as { length: number }).length ?? 0
-			if (len > 0 && len <= 4) {
+		if (typeof data === 'object') {
+			const len = ('byteLength' in data ? (data as ArrayBuffer).byteLength : 0) || ('length' in data ? (data as { length: number }).length : 0) || 0
+			if (len > 0 && len <= 8) {
+				console.log('[BaileysService] Filtered short WS message', len, 'bytes')
 				return true
 			}
 		}
