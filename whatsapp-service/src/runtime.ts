@@ -1165,7 +1165,7 @@ export abstract class BaileysServiceRuntime {
 			void this.handleMessagesUpsert(entry, socket, messages, true)
 		})
 
-		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings, progress, isLatest }) => {
+		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings, progress, isLatest }: any) => {
 			reportHistoryProgress(entry, progress, messages.length, isLatest === true)
 			void (async () => {
 				if (lidPnMappings?.length) {
