@@ -120,6 +120,7 @@ type RuntimeEntry = {
 	pairingCodeRequested: boolean
 	restartTimer: ReturnType<typeof setTimeout> | null
 	lastHistoryProgress: number
+	restartAttempts: number
 }
 
 export type BaileysSessionSnapshot = {
@@ -142,6 +143,9 @@ const HISTORY_PROGRESS_STEP = Math.max(
 	1,
 	Math.min(100, Number(process.env.WHATSAPP_SYNC_PROGRESS_STEP || 10)),
 )
+const BASE_RESTART_DELAY_MS = 2_000
+const MAX_RESTART_DELAY_MS = 60_000
+const MAX_RESTART_ATTEMPTS = 10
 
 function reportHistoryProgress(
 	entry: RuntimeEntry,
@@ -400,6 +404,7 @@ function createEntry(params: {
 		pairingCodeRequested: false,
 		restartTimer: null,
 		lastHistoryProgress: -1,
+		restartAttempts: 0,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -777,13 +782,22 @@ export abstract class BaileysServiceRuntime {
 			phoneNumber: channel.phone_number,
 			apiKey: channel.api_key,
 		})
-		entry.desiredRunning = true
+
+		if (!entry.desiredRunning && !options?.forceRestart) {
+			return this.getSessionSnapshot(channel.id)
+		}
+
+		if (!entry.desiredRunning) {
+			entry.desiredRunning = true
+			entry.restartAttempts = 0
+		}
 
 		if (options?.forceRestart) {
 			this.clearRestartTimer(entry)
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
+			entry.restartAttempts = 0
 			if (currentSocket) currentSocket.end(undefined)
 		}
 
@@ -814,6 +828,7 @@ export abstract class BaileysServiceRuntime {
 
 		entry.desiredRunning = false
 		entry.pairingCodeRequested = false
+		entry.restartAttempts = 0
 		this.clearRestartTimer(entry)
 
 		const currentSocket = entry.socket
@@ -1289,6 +1304,7 @@ export abstract class BaileysServiceRuntime {
 
 		if (update.connection === 'open') {
 			entry.pairingCodeRequested = false
+			entry.restartAttempts = 0
 			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
@@ -1349,7 +1365,7 @@ export abstract class BaileysServiceRuntime {
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 250)
+			this.scheduleRestart(entry.channelId)
 			return
 		}
 
@@ -1364,7 +1380,8 @@ export abstract class BaileysServiceRuntime {
 				last_error: formattedDisconnectMessage,
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 1_000)
+			entry.restartAttempts = 0
+			this.scheduleRestart(entry.channelId)
 			return
 		}
 
@@ -1398,7 +1415,7 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		if (shouldReconnect) {
-			this.scheduleRestart(entry.channelId, 2_500)
+			this.scheduleRestart(entry.channelId)
 		}
 	}
 
@@ -1683,10 +1700,41 @@ export abstract class BaileysServiceRuntime {
 		return this.getSessionSnapshot(channelId)
 	}
 
-	private static scheduleRestart(channelId: string, delayMs: number) {
+	private static scheduleRestart(channelId: string, _fallbackDelayMs?: number) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
 		this.clearRestartTimer(entry)
+
+		entry.restartAttempts += 1
+
+		if (entry.restartAttempts > MAX_RESTART_ATTEMPTS) {
+			console.error('[BaileysService] Max restart attempts reached, giving up', {
+				channelId,
+				attempts: entry.restartAttempts,
+			})
+			entry.desiredRunning = false
+			entry.socket = null
+			void updateSessionByChannelId(channelId, {
+				status: 'error',
+				last_error: `Max restart attempts (${MAX_RESTART_ATTEMPTS}) reached`,
+				pairing_code: null,
+				qr_code: null,
+				updated_at: new Date(),
+			})
+			return
+		}
+
+		const delayMs = Math.min(
+			BASE_RESTART_DELAY_MS * Math.pow(2, entry.restartAttempts - 1),
+			MAX_RESTART_DELAY_MS,
+		)
+
+		console.warn('[BaileysService] Scheduling restart', {
+			channelId,
+			attempt: entry.restartAttempts,
+			delayMs,
+		})
+
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
 			void this.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
