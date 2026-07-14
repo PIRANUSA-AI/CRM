@@ -17,6 +17,8 @@ import makeWASocket, {
 	type WAMessageUpdate,
 	type WASocket,
 } from '@whiskeysockets/baileys'
+
+
 import {
 	BAILEYS_CHANNEL_SYNC_INTERVAL_MS,
 	BAILEYS_LINK_MODE,
