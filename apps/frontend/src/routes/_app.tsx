@@ -12,6 +12,7 @@ import {
 	useLocation,
 	useNavigate,
 } from '@tanstack/react-router'
+import { LoaderCircle } from 'lucide-react'
 import BottomNav from '@/components/BottomNav'
 import Sidebar from '@/components/Sidebar'
 import TopBar from '@/components/TopBar'
@@ -273,7 +274,13 @@ function AppLayout() {
 		return () => { active = false }
 	}, [agent, loading, navigate])
 
-	if (loading || resolvingAppContext || !connectionGateResolved) return null
+	if (loading || resolvingAppContext || !connectionGateResolved) {
+		return (
+			<div className="flex h-screen items-center justify-center bg-background">
+				<LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground motion-reduce:animate-none" />
+			</div>
+		)
+	}
 
 	if (!crmAllowed) return null
 

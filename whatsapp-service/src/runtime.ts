@@ -180,7 +180,7 @@ function rememberMessage(message: WAMessage) {
 }
 
 const baileysLogger = {
-	level: 'silent',
+	level: 'warn',
 	child() {
 		return baileysLogger
 	},

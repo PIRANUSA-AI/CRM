@@ -4,6 +4,10 @@ import QRCode from 'qrcode'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { whatsappChannels, type PersonalWhatsAppConnection } from '@/lib/api'
+import {
+	extractNormalizedRole,
+	getAllowedPrimaryPathsForRole,
+} from '@/lib/role-access'
 
 export const Route = createFileRoute('/whatsapp/connect')({ component: WhatsAppConnectPage })
 
@@ -19,6 +23,18 @@ function storedFirstName() {
 function WhatsAppConnectPage() {
 	const navigate = useNavigate()
 	const [connection, setConnection] = useState<PersonalWhatsAppConnection | null>(null)
+
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem('crm_user')
+			if (!raw) return
+			const role = extractNormalizedRole(JSON.parse(raw))
+			if (!['sales', 'agent'].includes(role)) {
+				const allowedPaths = getAllowedPrimaryPathsForRole(role)
+				void navigate({ to: allowedPaths?.[0] || '/dashboard', replace: true })
+			}
+		} catch {}
+	}, [navigate])
 	const [qrImage, setQrImage] = useState<string | null>(null)
 	const [error, setError] = useState('')
 	const [countdown, setCountdown] = useState(10)
