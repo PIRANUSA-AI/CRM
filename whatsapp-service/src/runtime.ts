@@ -797,7 +797,6 @@ export abstract class BaileysServiceRuntime {
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
-			entry.restartAttempts = 0
 			if (currentSocket) currentSocket.end(undefined)
 		}
 
