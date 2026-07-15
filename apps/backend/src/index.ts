@@ -1,6 +1,5 @@
 import { cors } from '@elysiajs/cors'
 import { Elysia } from 'elysia'
-import { node } from '@elysiajs/node'
 import { config as loadDotEnv } from 'dotenv'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -69,7 +68,7 @@ const normalizeOrigin = (origin: string) => {
 }
 
 // Create main application
-export const app = new Elysia({ adapter: node() })
+export const app = new Elysia()
 	// Middleware
 	.use(
 		cors({

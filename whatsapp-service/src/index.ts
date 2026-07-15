@@ -1,7 +1,6 @@
 import './bootstrap-env'
 
 import { Elysia, t } from 'elysia'
-import { node } from '@elysiajs/node'
 import { HOST, PORT } from './config'
 import { closeDb, ensureBaileysSessionStorage } from './db'
 import { BaileysServiceRuntime } from './runtime'
@@ -54,7 +53,7 @@ function isAuthorizedInternalRequest(headers: Record<string, unknown>) {
 	return receivedToken === expectedToken
 }
 
-const service = new Elysia({ adapter: node() })
+const service = new Elysia()
 	.get('/health', async () => {
 		await ensureBaileysSessionStorage()
 		return {

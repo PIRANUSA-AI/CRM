@@ -3,7 +3,7 @@
 		{
 			"name": "crm-api",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/usr/bin/node",
+			"script": "/home/github/.bun/bin/bun",
 			"args": "dist/index.js",
 			"env": {
 				"APP_MODE": "api",
@@ -32,7 +32,7 @@
 		{
 			"name": "crm-worker",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/usr/bin/node",
+			"script": "/home/github/.bun/bin/bun",
 			"args": "dist/index.js",
 			"env": {
 				"APP_MODE": "worker",
@@ -55,7 +55,7 @@
 		{
 			"name": "crm-scheduler",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/usr/bin/node",
+			"script": "/home/github/.bun/bin/bun",
 			"args": "dist/index.js",
 			"env": {
 				"APP_MODE": "scheduler",
@@ -78,7 +78,7 @@
 		{
 			"name": "crm-frontend",
 			"cwd": "/var/www/crm/apps/frontend",
-			"script": "/usr/bin/node",
+			"script": "/home/github/.bun/bin/bun",
 			"args": ".output/server/index.mjs",
 			"env": {
 				"PORT": "3100",
@@ -97,7 +97,7 @@
 		{
 "name": "crm-whatsapp",
 			"cwd": "/var/www/crm/whatsapp-service",
-			"script": "/var/www/crm/whatsapp-service/node_modules/.bin/tsx",
+			"script": "/home/github/.bun/bin/bun",
 			"args": "src/index.ts",
 			"env": {
 				"NODE_ENV": "production",
