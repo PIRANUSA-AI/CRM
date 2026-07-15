@@ -155,6 +155,8 @@ function WhatsAppConnectPage() {
 		try {
 			await whatsappChannels.startMyConnection(digits)
 			setPhoneInput('')
+			const updated = await refresh(true)
+			if (updated?.pairingCode) setQrImage(null)
 		} catch (e: any) {
 			setError(e?.message || 'Gagal menyimpan nomor')
 		}
