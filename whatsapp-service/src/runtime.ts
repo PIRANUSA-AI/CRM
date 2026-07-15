@@ -222,12 +222,7 @@ function sleep(ms: number) {
 }
 
 function normalizeDigits(value: string | null | undefined) {
-	const digits = String(value || '').replace(/\D/g, '').trim()
-	// Convert local Indonesian format (08xx) to international (628xx)
-	if (digits.startsWith('0') && digits.length > 1) {
-		return '62' + digits.slice(1)
-	}
-	return digits
+	return String(value || '').replace(/\D/g, '').trim()
 }
 
 function normalizeProviderChannelKey(metadata: unknown): string | null {
@@ -1166,50 +1161,14 @@ export abstract class BaileysServiceRuntime {
 			logger: baileysLogger as any,
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
-			connectTimeoutMs: 60_000,
-			qrTimeout: 60_000,
 			markOnlineOnConnect: false,
-			fireInitQueries: false,
 			agent,
-			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
+			getMessage: async () => undefined,
 		})
 
 		entry.socket = socket
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
-
-		// Pairing code: request immediately after socket creation (Baileys official pattern).
-		// If it fails (e.g. rate-limited), clear creds.me so the socket falls back to QR
-		// instead of getting stuck with a half-baked auth state that causes 401 errors.
-		const pairingPhoneNumber = normalizeDigits(channel.phone_number)
-		if (
-			shouldUsePairingCode(channel) &&
-			pairingPhoneNumber &&
-			!auth.state.creds.registered
-		) {
-			entry.pairingCodeRequested = true
-			void (async () => {
-				try {
-					const code = await socket.requestPairingCode(pairingPhoneNumber)
-					await updateSessionById(sessionRow.id, {
-						status: 'pairing_code_ready',
-						pairing_code: code,
-						qr_code: null,
-						last_error: null,
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-				} catch (error) {
-					// Reset creds.me so subsequent reconnect can fall back to QR
-					if (socket.authState?.creds?.me) {
-						socket.authState.creds.me = undefined as any
-						void auth.saveCreds().catch(() => null)
-					}
-					entry.pairingCodeRequested = false
-					console.error('[BaileysService] Pairing code request failed, falling back to QR', { channelId: channel.id })
-				}
-			})()
-		}
 
 		void auth.saveCreds().catch((error) => {
 			console.error('[BaileysService] Failed to persist initial auth creds', error)
