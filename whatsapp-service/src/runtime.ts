@@ -1164,7 +1164,7 @@ export abstract class BaileysServiceRuntime {
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.ubuntu('Chrome'),
+			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
 			connectTimeoutMs: 60_000,
 			qrTimeout: 60_000,
