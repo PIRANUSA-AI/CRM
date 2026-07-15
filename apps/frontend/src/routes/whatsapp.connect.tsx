@@ -93,7 +93,7 @@ function WhatsAppConnectPage() {
 					void refresh(true)
 				}
 			})
-		}, 2500)
+		}, 15_000)
 		return () => window.clearInterval(timer)
 	}, [connection?.isConnected, connection?.status, refresh, waitingForPresence])
 
