@@ -203,7 +203,7 @@ function PersonalWhatsappInbox() {
 	const [voiceRecording, setVoiceRecording] = useState(false)
 	const [voiceRecordingTime, setVoiceRecordingTime] = useState(0)
 	const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
-	const voiceDataRef = useRef<Uint8Array<ArrayBufferLike> | null>(null)
+	const voiceDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
 	const voiceTimerRef = useRef<number | null>(null)
 	const voiceCanvasRef = useRef<HTMLCanvasElement | null>(null)
 	const voiceAnimRef = useRef<number | null>(null)
@@ -730,7 +730,7 @@ function PersonalWhatsappInbox() {
 			analyser.fftSize = 64
 			source.connect(analyser)
 			voiceAnalyserRef.current = analyser
-			voiceDataRef.current = new Uint8Array(analyser.frequencyBinCount)
+			voiceDataRef.current = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>
 
 			voiceRecorderRef.current = recorder
 			recorder.start()
@@ -749,7 +749,7 @@ function PersonalWhatsappInbox() {
 				const draw = () => {
 					if (!ctx || !voiceAnalyserRef.current || !voiceDataRef.current) return
 					voiceAnimRef.current = requestAnimationFrame(draw)
-					voiceAnalyserRef.current.getByteFrequencyData(voiceDataRef.current)
+					if (voiceDataRef.current) voiceAnalyserRef.current.getByteFrequencyData(voiceDataRef.current)
 					ctx.clearRect(0, 0, canvas.width, canvas.height)
 					const data = voiceDataRef.current
 					const barW = canvas.width / data.length
