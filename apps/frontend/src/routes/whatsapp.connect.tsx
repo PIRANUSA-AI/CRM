@@ -24,9 +24,8 @@ function isMobile() {
 	if (typeof window === 'undefined' || !navigator) return false
 	try {
 		const ua = navigator.userAgent || ''
-		if (/Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true
-		if (/iPad/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) return true
-		return window.innerWidth < 768
+		return /Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini|iPad/i.test(ua)
+			|| (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))
 	} catch { return false }
 }
 
