@@ -763,7 +763,7 @@ export abstract class WhatsAppService {
 			})
 			await prisma.baileys_sessions.update({
 				where: { channel_id: existing.channelId },
-				data: { phone_number: phoneNumber },
+				data: { phone_number: phoneNumber, owner_user_id: params.userId },
 			})
 		}
 
@@ -779,6 +779,12 @@ export abstract class WhatsAppService {
 			},
 			params.appId,
 		)
+
+		// Set owner_user_id so getPersonalBaileysConnection can find this session
+		await prisma.baileys_sessions.update({
+			where: { channel_id: created.channel.id },
+			data: { owner_user_id: params.userId },
+		})
 
 		if (phoneNumber) {
 			await prisma.whatsapp_channels.update({
