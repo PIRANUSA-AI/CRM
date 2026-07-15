@@ -3,9 +3,8 @@
 		{
 			"name": "crm-api",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "/usr/bin/node",
 			"args": "dist/index.js",
-			"interpreter": "none",
 			"env": {
 				"APP_MODE": "api",
 				"NODE_ENV": "production",
@@ -33,9 +32,8 @@
 		{
 			"name": "crm-worker",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "/usr/bin/node",
 			"args": "dist/index.js",
-			"interpreter": "none",
 			"env": {
 				"APP_MODE": "worker",
 				"NODE_ENV": "production",
@@ -57,9 +55,8 @@
 		{
 			"name": "crm-scheduler",
 			"cwd": "/var/www/crm/apps/backend",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "/usr/bin/node",
 			"args": "dist/index.js",
-			"interpreter": "none",
 			"env": {
 				"APP_MODE": "scheduler",
 				"NODE_ENV": "production",
@@ -81,9 +78,8 @@
 		{
 			"name": "crm-frontend",
 			"cwd": "/var/www/crm/apps/frontend",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "/usr/bin/node",
 			"args": ".output/server/index.mjs",
-			"interpreter": "none",
 			"env": {
 				"PORT": "3100",
 				"NODE_ENV": "production",
@@ -99,12 +95,10 @@
 			}
 		},
 		{
-			"name": "crm-whatsapp",
+"name": "crm-whatsapp",
 			"cwd": "/var/www/crm/whatsapp-service",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "/var/www/crm/whatsapp-service/node_modules/.bin/tsx",
 			"args": "src/index.ts",
-			"interpreter": "none",
-			"wait_ready": true,
 			"env": {
 				"NODE_ENV": "production",
 				"DATABASE_URL": "postgresql://crm:2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog@localhost:5431/crm_db",
