@@ -1195,6 +1195,7 @@ function PersonalWhatsappInbox() {
 										{draft.trim() || pendingAttachments.length ? <SendHorizontal className={cn('size-4', sendingMessage && 'animate-pulse')} /> : <Mic className="size-4" />}
 									</button>
 								)}
+								</div>
 								{uploadingMedia && <p className="mt-2 text-xs text-muted-foreground">Menyiapkan dan mengunggah media…</p>}
 								{composerError && <p className="mt-2 text-xs leading-5 text-destructive" role="alert">{composerError}</p>}
 							</form>
