@@ -1169,8 +1169,9 @@ export abstract class BaileysServiceRuntime {
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
 
-		// Request pairing code immediately after socket creation (not waiting for QR)
-		// This follows Baileys official example: call requestPairingCode right after makeWASocket
+		// Pairing code: request immediately after socket creation (Baileys official pattern).
+		// If it fails (e.g. rate-limited), clear creds.me so the socket falls back to QR
+		// instead of getting stuck with a half-baked auth state that causes 401 errors.
 		const pairingPhoneNumber = normalizeDigits(channel.phone_number)
 		if (
 			shouldUsePairingCode(channel) &&
@@ -1190,8 +1191,13 @@ export abstract class BaileysServiceRuntime {
 						updated_at: new Date(),
 					})
 				} catch (error) {
+					// Reset creds.me so subsequent reconnect can fall back to QR
+					if (socket.authState?.creds?.me) {
+						socket.authState.creds.me = undefined as any
+						void auth.saveCreds().catch(() => null)
+					}
 					entry.pairingCodeRequested = false
-					console.error('[BaileysService] Pairing code request failed', { channelId: channel.id, error })
+					console.error('[BaileysService] Pairing code request failed, falling back to QR', { channelId: channel.id })
 				}
 			})()
 		}
