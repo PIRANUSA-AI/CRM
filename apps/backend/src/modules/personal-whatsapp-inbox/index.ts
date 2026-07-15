@@ -244,8 +244,16 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	}, { params: t.Object({ registrationId: t.String() }) })
 	.post('/leads/:registrationId/reject', async ({ resolvedAppId, userId, params, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'blocked' })
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'ignored' })
 		if (!registration) { set.status = 404; return { error: 'Permintaan lead tidak ditemukan' } }
+		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
+		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'ignored', conversationId: registration.conversation_id })
+		return { success: true }
+	}, { params: t.Object({ registrationId: t.String() }) })
+	.post('/leads/:registrationId/block', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'blocked' })
+		if (!registration) { set.status = 404; return { error: 'Nomor tidak ditemukan' } }
 		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
 		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
 		let whatsappBlocked = false
