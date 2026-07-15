@@ -90,8 +90,8 @@ function WhatsAppConnectPage() {
 		if (!connection?.qrCode) { setQrImage(null); return }
 		let active = true
 		const qr = new QRCodeStyling({
-			width: 288,
-			height: 288,
+			width: 340,
+			height: 340,
 			data: connection.qrCode,
 			margin: 8,
 			image: '/favicon.svg',
@@ -163,7 +163,7 @@ function WhatsAppConnectPage() {
 
 						<div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-white px-5 py-8 shadow-[0_4px_16px_rgba(16,42,76,0.08)] md:mt-8 md:min-h-[320px] md:px-6 md:py-10">
 							{qrImage ? (
-								<img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="mx-auto h-auto w-full max-w-[260px] md:max-w-[288px]" />
+								<img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="mx-auto h-auto w-full max-w-[300px] md:max-w-[340px]" />
 							) : mobile && !forceQr ? (
 								<div className="w-full text-center">
 									<div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#eef2f7] text-[#315d91] md:h-14 md:w-14">
