@@ -739,16 +739,41 @@ export abstract class WhatsAppService {
 		const existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
 		if (existing) return existing
 
+		const user = await (await import('../../lib/prisma')).default.users.findUnique({
+			where: { id: params.userId },
+			select: { phone_number: true },
+		})
+		const phoneNumber = user?.phone_number && user.phone_number !== '0000000000' ? user.phone_number : '0000000000'
+
 		const providerChannelKey = `personal-${params.appId}-${params.userId}`
 		const created = await this.createBaileysChannel(
 			{
 				name: `${params.userName || 'Sales'} WhatsApp`,
-				phoneNumber: '0000000000',
+				phoneNumber,
 				providerChannelKey,
 				providerWebhookUrl: params.providerWebhookUrl,
 			},
 			params.appId,
 		)
+
+		// Set pairing code mode kalo user punya nomor HP valid
+		if (phoneNumber !== '0000000000') {
+			const prisma = (await import('../../lib/prisma')).default
+			const existingMeta = await prisma.whatsapp_channels.findUnique({
+				where: { id: created.channel.id },
+				select: { extended_metadata: true },
+			})
+			await prisma.whatsapp_channels.update({
+				where: { id: created.channel.id },
+				data: {
+					phone_number: phoneNumber,
+					extended_metadata: {
+						...asRecord(existingMeta?.extended_metadata),
+						baileys_link_mode: 'pairing_code',
+					},
+				},
+			})
+		}
 		await prisma.$executeRawUnsafe(
 			`UPDATE baileys_sessions SET owner_user_id = $1::uuid, updated_at = now() WHERE channel_id = $2::uuid`,
 			params.userId,

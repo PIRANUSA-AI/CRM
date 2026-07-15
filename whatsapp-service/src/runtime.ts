@@ -1168,6 +1168,10 @@ export abstract class BaileysServiceRuntime {
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
 
+		void auth.saveCreds().catch((error) => {
+			console.error('[BaileysService] Failed to persist initial auth creds', error)
+		})
+
 		socket.ev.on('creds.update', () => {
 			void auth.saveCreds().catch((error) => {
 				console.error('[BaileysService] Failed to persist auth creds', error)
