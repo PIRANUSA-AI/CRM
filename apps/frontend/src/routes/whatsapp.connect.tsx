@@ -83,13 +83,13 @@ function WhatsAppConnectPage() {
 		}
 	}, [])
 
-	useEffect(() => { void refresh().then((value) => { if (value?.requiresPairing && value.status === 'not_paired') void refresh(true) }) }, [refresh])
+	useEffect(() => { void refresh().then((value) => { if (!value?.channelId) void refresh(true) }) }, [refresh])
 
 	useEffect(() => {
 		if (!connection || connection.isConnected || waitingForPresence) return
 		const timer = window.setInterval(() => {
 			void refresh().then((value) => {
-				if (value?.requiresPairing && value.status === 'not_paired') {
+				if (!value?.channelId) {
 					void refresh(true)
 				}
 			})

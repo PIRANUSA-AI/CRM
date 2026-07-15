@@ -1420,15 +1420,15 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.loggedOut) {
-			// Rate-limited / blocked by WhatsApp — stop auto-retry, wait for manual restart
+			// Rate-limited / blocked by WhatsApp — stop auto-retry
 			await updateSessionById(sessionRow.id, {
-				status: 'not_paired',
+				status: 'rate_limited',
 				auth_state: null,
 				first_connected_at: null,
 				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: null,
+				last_error: 'WhatsApp menolak koneksi, coba lagi nanti atau pakai proxy',
 				updated_at: new Date(),
 			})
 			entry.desiredRunning = false
