@@ -103,7 +103,7 @@ type Diagnostic = {
 
 type LeadRegistration = {
 	id: string
-	status: 'pending' | 'blocked'
+	status: 'pending' | 'blocked' | 'ignored'
 	name: string
 	phone: string
 	avatarUrl: string | null
@@ -113,7 +113,7 @@ type LeadRegistration = {
 	source: string
 }
 
-type InboxFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread' | 'pending' | 'blocked'
+type InboxFilter = 'all' | 'ai' | 'handover' | 'human' | 'unread' | 'pending' | 'blocked' | 'ignored'
 
 function authHeaders() {
 	const token = localStorage.getItem('crm_token')
@@ -172,6 +172,7 @@ function PersonalWhatsappInbox() {
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
 	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
+	const [ignoredLeads, setIgnoredLeads] = useState<LeadRegistration[]>([])
 	const [messages, setMessages] = useState<ChatMessage[]>([])
 	const [selectedId, setSelectedId] = useState<string | null>(null)
 	const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
@@ -255,16 +256,17 @@ function PersonalWhatsappInbox() {
 	}, [])
 
 	const loadLeadLists = useCallback(async () => {
-		const loadStatus = async (status: 'pending' | 'blocked') => {
+		const loadStatus = async (status: 'pending' | 'blocked' | 'ignored') => {
 			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/leads?status=${status}`, { headers: authHeaders() })
 			const payload = (await readApiResponse(response)) as { data?: LeadRegistration[]; error?: string }
 			if (!response.ok) throw new Error(payload.error || 'Daftar keputusan lead belum dapat dimuat')
 			return payload.data || []
 		}
 		try {
-			const [pending, blocked] = await Promise.all([loadStatus('pending'), loadStatus('blocked')])
+			const [pending, blocked, ignored] = await Promise.all([loadStatus('pending'), loadStatus('blocked'), loadStatus('ignored')])
 			setPendingLeads(pending)
 			setBlockedLeads(blocked)
+			setIgnoredLeads(ignored)
 		} catch (reason) {
 			setLeadActionError(reason instanceof Error ? reason.message : 'Daftar keputusan lead belum dapat dimuat')
 		}
@@ -405,7 +407,7 @@ function PersonalWhatsappInbox() {
 
 	const updateLeadStatus = useCallback(async (
 		lead: LeadRegistration,
-		action: 'confirm' | 'reject' | 'unblock',
+		action: 'confirm' | 'reject' | 'unblock' | 'block',
 	) => {
 		setLeadActionId(lead.id)
 		setLeadActionError(null)
@@ -811,7 +813,7 @@ function PersonalWhatsappInbox() {
 
 	const filtered = useMemo(() => {
 		const needle = query.trim().toLowerCase()
-		if (filter === 'pending' || filter === 'blocked') return []
+		if (filter === 'pending' || filter === 'blocked' || filter === 'ignored') return []
 		return conversations.filter((item) => {
 			const matchesFilter = filter === 'all' || (filter === 'unread' ? item.unread > 0 : item.workflow === filter)
 			const matchesQuery = !needle || `${item.name} ${item.phone} ${item.preview}`.toLowerCase().includes(needle)
@@ -827,12 +829,13 @@ function PersonalWhatsappInbox() {
 		unread: conversations.filter((item) => item.unread > 0).length,
 		pending: pendingLeads.length,
 		blocked: blockedLeads.length,
-	}), [blockedLeads.length, conversations, pendingLeads.length])
+		ignored: ignoredLeads.length,
+	}), [blockedLeads.length, conversations, ignoredLeads.length, pendingLeads.length])
 	const leadQueue = useMemo(() => {
-		const source = filter === 'pending' ? pendingLeads : filter === 'blocked' ? blockedLeads : []
+		const source = filter === 'pending' ? pendingLeads : filter === 'blocked' ? blockedLeads : filter === 'ignored' ? ignoredLeads : []
 		const needle = query.trim().toLowerCase()
 		return needle ? source.filter((lead) => `${lead.name} ${lead.phone} ${lead.preview}`.toLowerCase().includes(needle)) : source
-	}, [blockedLeads, filter, pendingLeads, query])
+	}, [blockedLeads, filter, ignoredLeads, pendingLeads, query])
 
 	const active = conversations.find((item) => item.id === selectedId) || null
 	const visibleMessages = messages.filter((message) => message.content_type !== 'reaction')
@@ -849,6 +852,7 @@ function PersonalWhatsappInbox() {
 		['all', 'Semua percakapan'],
 		['pending', 'Perlu keputusan'],
 		['blocked', 'Nomor diblokir'],
+		['ignored', 'Diabaikan'],
 		['ai', 'Ditangani AI'],
 		['handover', 'Menunggu handover'],
 		['human', 'Ditangani sales'],
@@ -895,7 +899,7 @@ function PersonalWhatsappInbox() {
 										key={id}
 									onClick={() => {
 										setFilter(id)
-										if (id === 'pending' || id === 'blocked') setSelectedId(null)
+										if (id === 'pending' || id === 'blocked' || id === 'ignored') setSelectedId(null)
 											setMenuOpen(false)
 										}}
 										className={cn(
@@ -935,7 +939,7 @@ function PersonalWhatsappInbox() {
 						<ListSkeleton />
 					) : error ? (
 						<State icon={AlertCircle} title="Kotak masuk belum dapat dibuka" body={error} />
-					) : filter === 'pending' || filter === 'blocked' ? (
+					) : filter === 'pending' || filter === 'blocked' || filter === 'ignored' ? (
 						<div className="divide-y divide-border/70">
 							{leadActionError && <p className="px-4 py-3 text-sm text-destructive" role="alert">{leadActionError}</p>}
 							{leadQueue.length ? leadQueue.map((lead) => (
@@ -946,12 +950,13 @@ function PersonalWhatsappInbox() {
 									onConfirm={() => void updateLeadStatus(lead, 'confirm')}
 									onReject={() => void updateLeadStatus(lead, 'reject')}
 									onUnblock={() => void updateLeadStatus(lead, 'unblock')}
+									onBlock={() => void updateLeadStatus(lead, 'block')}
 								/>
 							)) : (
 								<State
-									icon={filter === 'pending' ? UserCheck : Ban}
-									title={query ? 'Tidak ada hasil' : filter === 'pending' ? 'Tidak ada keputusan tertunda' : 'Tidak ada nomor diblokir'}
-									body={query ? 'Coba cari dengan nama atau nomor lain.' : filter === 'pending' ? 'Nomor yang belum kamu simpan akan menunggu di sini tanpa dibalas AI.' : 'Nomor yang kamu tolak tetap tersimpan untuk audit dan bisa dibuka lagi.'}
+									icon={filter === 'pending' ? UserCheck : filter === 'blocked' ? Ban : X}
+									title={query ? 'Tidak ada hasil' : filter === 'pending' ? 'Tidak ada keputusan tertunda' : filter === 'blocked' ? 'Tidak ada nomor diblokir' : 'Tidak ada lead diabaikan'}
+									body={query ? 'Coba cari dengan nama atau nomor lain.' : filter === 'pending' ? 'Nomor yang belum kamu simpan akan menunggu di sini tanpa dibalas AI.' : filter === 'blocked' ? 'Nomor yang kamu tolak tetap tersimpan untuk audit dan bisa dibuka lagi.' : 'Lead yang ditolak akan muncul di sini dan bisa diblokir atau diterima.'}
 								/>
 							)}
 						</div>
@@ -1372,14 +1377,17 @@ function LeadDecisionRow({
 	onConfirm,
 	onReject,
 	onUnblock,
+	onBlock,
 }: {
 	lead: LeadRegistration
 	busy: boolean
 	onConfirm: () => void
 	onReject: () => void
 	onUnblock: () => void
+	onBlock: () => void
 }) {
 	const pending = lead.status === 'pending'
+	const blocked = lead.status === 'blocked'
 	return (
 		<article className="px-4 py-3">
 			<div className="flex items-start gap-3">
@@ -1406,11 +1414,21 @@ function LeadDecisionRow({
 							{busy ? 'Menyimpan…' : 'Terima lead'}
 						</button>
 					</>
-				) : (
+				) : blocked ? (
 					<button type="button" onClick={onUnblock} disabled={busy} className="flex h-9 items-center gap-2 rounded-lg border border-input px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
 						<Undo2 className="size-4" />
 						{busy ? 'Membuka…' : 'Buka blokir'}
 					</button>
+				) : (
+					<>
+						<button type="button" onClick={onBlock} disabled={busy} className="h-9 rounded-lg px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							Blokir
+						</button>
+						<button type="button" onClick={onConfirm} disabled={busy} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							<UserCheck className="size-4" />
+							{busy ? 'Menyimpan…' : 'Terima lead'}
+						</button>
+					</>
 				)}
 			</div>
 		</article>

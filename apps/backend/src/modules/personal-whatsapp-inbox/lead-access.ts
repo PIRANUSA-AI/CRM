@@ -105,7 +105,7 @@ export async function registerInboundPersonalLead(params: {
 		ON CONFLICT ("app_id", "owner_user_id", "phone_number") DO UPDATE SET
 			"contact_id" = EXCLUDED."contact_id",
 			"conversation_id" = EXCLUDED."conversation_id",
-			"display_name" = COALESCE(EXCLUDED."display_name", "whatsapp_lead_registrations"."display_name"),
+			"display_name" = EXCLUDED."display_name",
 			"updated_at" = NOW()
 		RETURNING *
 	`

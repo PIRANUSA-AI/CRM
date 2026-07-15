@@ -216,7 +216,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 				}
 			}),
 		}
-	}, { query: t.Object({ status: t.Union([t.Literal('pending'), t.Literal('blocked')]) }) })
+	}, { query: t.Object({ status: t.Union([t.Literal('pending'), t.Literal('blocked'), t.Literal('ignored')]) }) })
 	.post('/leads/:registrationId/confirm', async ({ resolvedAppId, userId, params, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId: userId, registrationId: params.registrationId, status: 'confirmed' })
