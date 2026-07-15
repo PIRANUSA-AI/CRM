@@ -66,6 +66,8 @@ function WhatsAppConnectPage() {
 	}, [])
 	const [phoneInput, setPhoneInput] = useState('')
 	const [savingPhone, setSavingPhone] = useState(false)
+	const [phoneSubmitted, setPhoneSubmitted] = useState(false)
+	useEffect(() => { if (connection?.pairingCode) setPhoneSubmitted(false) }, [connection?.pairingCode])
 
 	const refresh = useCallback(async (start = false) => {
 		try {
@@ -152,6 +154,7 @@ function WhatsAppConnectPage() {
 		const digits = phoneInput.replace(/\D/g, '')
 		if (digits.length < 10) return
 		setSavingPhone(true)
+		setPhoneSubmitted(true)
 		try {
 			await whatsappChannels.startMyConnection(digits)
 			setPhoneInput('')
@@ -219,7 +222,7 @@ function WhatsAppConnectPage() {
 										<p>4. Masukkan kode di atas</p>
 									</div>
 								</div>
-							) : mobile ? (
+							) : mobile && !phoneSubmitted ? (
 								<div className="w-full text-center">
 									<div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#eef2f7] text-[#315d91] md:h-14 md:w-14">
 										<Phone className="h-6 w-6 md:h-7 md:w-7" />
@@ -251,7 +254,7 @@ function WhatsAppConnectPage() {
 							)}
 						</div>
 
-						{!connection?.pairingCode && !mobile ? (
+						{!connection?.pairingCode && !mobile && !phoneSubmitted ? (
 							<p className="mt-4 text-xs text-[#52657b] md:mt-5 md:text-sm">WhatsApp → Perangkat tertaut → Tautkan perangkat</p>
 						) : null}
 						{error ? <p className="mx-auto mt-4 max-w-xs rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700 md:max-w-sm md:text-sm">{error}</p> : null}
