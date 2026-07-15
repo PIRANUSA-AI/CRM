@@ -84,7 +84,7 @@
 		{
 			"name": "crm-whatsapp",
 			"cwd": "/var/www/crm/whatsapp-service",
-			"script": "/home/github/.bun/bin/bun",
+			"script": "node_modules/.bin/tsx",
 			"args": "src/index.ts",
 			"interpreter": "none",
 			"env": {
