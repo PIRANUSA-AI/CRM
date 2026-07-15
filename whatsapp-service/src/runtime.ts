@@ -19,9 +19,11 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys'
 
 
+import { SocksProxyAgent } from 'socks-proxy-agent'
 import {
 	BAILEYS_CHANNEL_SYNC_INTERVAL_MS,
 	BAILEYS_LINK_MODE,
+	BAILEYS_SOCKS_PROXY,
 	CRM_BAILEYS_WEBHOOK_URL,
 } from './config'
 import {
@@ -1150,6 +1152,7 @@ export abstract class BaileysServiceRuntime {
 			updated_at: new Date(),
 		})
 
+		const agent = BAILEYS_SOCKS_PROXY ? new SocksProxyAgent(BAILEYS_SOCKS_PROXY) : undefined
 		const socket = makeWASocket({
 			auth: {
 				creds: auth.state.creds,
@@ -1162,6 +1165,7 @@ export abstract class BaileysServiceRuntime {
 			qrTimeout: 60_000,
 			markOnlineOnConnect: false,
 			fireInitQueries: false,
+			agent,
 			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
 		})
 

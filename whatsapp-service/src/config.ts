@@ -37,3 +37,4 @@ export const CRM_BAILEYS_WEBHOOK_PATH = configuredWebhookPath.startsWith('/')
 	: `/${configuredWebhookPath}`
 
 export const CRM_BAILEYS_WEBHOOK_URL = `${CRM_API_BASE_URL}${CRM_BAILEYS_WEBHOOK_PATH}`
+export const BAILEYS_SOCKS_PROXY = String(process.env.BAILEYS_SOCKS_PROXY || '').trim() || null
