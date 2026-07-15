@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Check, LoaderCircle, LogOut, ShieldCheck, Smartphone } from 'lucide-react'
 import QRCode from 'qrcode'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { whatsappChannels, type PersonalWhatsAppConnection } from '@/lib/api'
 import {
