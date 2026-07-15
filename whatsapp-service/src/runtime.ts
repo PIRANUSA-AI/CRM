@@ -1164,7 +1164,7 @@ export abstract class BaileysServiceRuntime {
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.macOS('Google Chrome'),
+			browser: Browsers.ubuntu('Chrome'),
 			printQRInTerminal: false,
 			connectTimeoutMs: 60_000,
 			qrTimeout: 60_000,
@@ -1306,11 +1306,13 @@ export abstract class BaileysServiceRuntime {
 		const sessionRow = await getSessionByChannelId(channel.id)
 		if (!sessionRow?.id) return
 
+		const usePairing = shouldUsePairingCode(channel) && normalizeDigits(channel.phone_number)
+
 		if (update.qr) {
 			await updateSessionById(sessionRow.id, {
-				status: 'qr_ready',
+				status: usePairing ? 'connecting' : 'qr_ready',
 				qr_code: update.qr,
-				pairing_code: null,
+				pairing_code: usePairing ? sessionRow.pairing_code : null,
 				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
@@ -1319,8 +1321,7 @@ export abstract class BaileysServiceRuntime {
 
 		const normalizedPhoneNumber = normalizeDigits(channel.phone_number)
 		if (
-			shouldUsePairingCode(channel) &&
-			normalizedPhoneNumber &&
+			usePairing &&
 			!socket.authState.creds.registered &&
 			!entry.pairingCodeRequested &&
 			Boolean(update.qr)
