@@ -1,143 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>CRM — Maintenance</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f7f3e9;color:#142942;display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:20px}
-.card{background:#fff;border-radius:24px;padding:32px 24px;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(16,42,76,.1);text-align:center}
-.logo{width:64px;height:64px;margin:0 auto 20px;background:#102a4c;border-radius:20px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:800;line-height:1}
-h1{font-size:24px;font-weight:600;margin-bottom:8px}
-.sub{font-size:14px;color:#657487;margin-bottom:24px;line-height:1.5}
-.teka{background:#f0f4fa;border-radius:16px;padding:20px;margin-bottom:20px;text-align:left}
-.teka .q{font-size:15px;font-weight:600;margin-bottom:12px;line-height:1.4}
-.jawaban{display:flex;flex-direction:column;gap:8px}
-.jawaban button{background:#fff;border:1.5px solid #d0d7e2;border-radius:12px;padding:10px 14px;font-size:14px;color:#142942;cursor:pointer;transition:all .15s;text-align:left}
-.jawaban button:hover{border-color:#315d91;background:#f7faff}
-.jawaban button.benar{border-color:#22c55e;background:#f0fdf4;color:#166534}
-.jawaban button.salah{border-color:#ef4444;background:#fef2f2;color:#991b1b}
-.skor{font-size:13px;color:#657487;margin-top:16px}
-.next{background:#17365f;color:#fff;border:none;border-radius:12px;padding:10px 24px;font-size:14px;font-weight:500;cursor:pointer;transition:background .15s;margin-top:16px;width:100%}
-.next:hover{background:#102a4c}
-.next:disabled{opacity:.5;cursor:default}
-.status{display:flex;gap:6px;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
-.status span{width:10px;height:10px;border-radius:50%;background:#d0d7e2;transition:background .2s}
-.status span.aktif{background:#315d91;transform:scale(1.3)}
-.status span.benar{background:#22c55e}
-.status span.salah{background:#ef4444}
-.footer{font-size:12px;color:#b0b9c7;margin-top:20px}
-</style>
-</head>
-<body>
-<div class="card" id="app">
-  <div class="logo">CRM</div>
-  <h1>Kami Segera Kembali</h1>
-  <p class="sub">Lagi perbaikan dikit, santai aja. Sambil nunggu, jawab teka-teki ini biar ga bosen.</p>
-  <div class="status" id="status"></div>
-  <div class="teka" id="quiz">
-    <div class="q" id="question"></div>
-    <div class="jawaban" id="answers"></div>
-  </div>
-  <div class="skor" id="score"></div>
-  <button class="next" id="nextBtn" style="display:none" onclick="nextQ()">Lanjut</button>
-  <div class="footer">CRM Internal v1.0</div>
-</div>
-<script>
-const questions = [
-  {q:"Apa ibu kota Indonesia?",a:["Jakarta","Surabaya","Bandung","Yogyakarta"],c:0},
-  {q:"Siapa presiden pertama RI?",a:["Soeharto","B.J. Habibie","Ir. Soekarno","Mohammad Hatta"],c:2},
-  {q:"Gunung tertinggi di Indonesia?",a:["Rinjani","Semeru","Kerinci","Puncak Jaya"],c:3},
-  {q:"Danau terbesar di Indonesia?",a:["Toba","Singkarak","Maninjau","Limboto"],c:0},
-  {q:"Tahun berapa Indonesia merdeka?",a:["1942","1945","1949","1950"],c:1},
-  {q:"Hewan nasional Indonesia?",a:["Harimau","Komodo","Garuda","Orangutan"],c:2},
-  {q:"Suku bangsa terbesar di Indonesia?",a:["Sunda","Jawa","Batak","Bugis"],c:1},
-  {q:"Pulau terpadat di Indonesia?",a:["Sumatra","Kalimantan","Sulawesi","Jawa"],c:3},
-  {q:"Candi Buddha terbesar di dunia?",a:["Borobudur","Prambanan","Mendut","Sewu"],c:0},
-  {q:"Lagu kebangsaan Indonesia?",a:["Indonesia Raya","Tanah Airku","Garuda Pancasila","Satu Nusa Satu Bangsa"],c:0},
-  {q:"Mata uang Indonesia?",a:["Ringgit","Rupiah","Baht","Peso"],c:1},
-  {q:"Siapa pahlawan dari Surabaya?",a:["Cut Nyak Dien","Diponegoro","Bung Tomo","Imam Bonjol"],c:2},
-  {q:"Batik berasal dari daerah mana?",a:["Jawa","Sumatra","Bali","Kalimantan"],c:0},
-  {q:"Rendang masakan khas dari?",a:["Jakarta","Padang","Manado","Makassar"],c:1},
-  {q:"Alat musik angklung dari?",a:["Jawa Barat","Jawa Tengah","Bali","Sumatra"],c:0},
-  {q:"Siapa penemu telepon?",a:["Edison","Bell","Tesla","Einstein"],c:1},
-  {q:"Planet terbesar di tata surya?",a:["Bumi","Mars","Saturnus","Jupiter"],c:3},
-  {q:"Hewan apa yang bisa terbang?",a:["Ikan","Kucing","Elang","Anjing"],c:2},
-  {q:"Warna bendera Indonesia?",a:["Merah-Putih","Merah-Putih-Biru","Hijau-Kuning","Biru-Putih"],c:0},
-  {q:"Apa nama alat transportasi online?",a:["Gojek","Dokar","Becak","Andong"],c:0},
-  {q:"Siapa tokoh animasi Jepang terkenal?",a:["Doraemon","Pokemon","Naruto","One Piece"],c:0},
-  {q:"Masakan pedas khas Manado?",a:["Rendang","Sate","Cakalang","Tinutuan"],c:3},
-  {q:"Film Indonesia laris manis 2024?",a:["KKN di Desa Penari","Agak Laen","Pengabdi Setan 2","Sewu Dino"],c:1},
-  {q:"Hewan berkaki seribu?",a:["Kelabang","Luwing","Kaki Seribu","Semut"],c:2},
-  {q:"Apa ibukota Jepang?",a:["Osaka","Tokyo","Kyoto","Nagoya"],c:1},
-  {q:"Siapa penemu bola lampu?",a:["Edison","Newton","Galileo","Einstein"],c:0},
-  {q:"Gunung meletus terkenal di Indonesia?",a:["Merapi","Rinjani","Bromo","Semeru"],c:0},
-  {q:"Pahlawan dari Aceh?",a:["Cut Nyak Dien","Kartini","Dewi Sartika","Martha Tilaar"],c:0},
-  {q:"Alat musik tradisional gong?",a:["Sunda","Jawa","Bali","Kalimantan"],c:2},
-  {q:"Berapa jumlah provinsi Indonesia?",a:["34","37","38","33"],c:2},
-  {q:"Apa nama kerajaan Hindu tertua?",a:["Kutai","Majapahit","Sriwijaya","Singosari"],c:0},
-  {q:"Siapa penulis novel Laskar Pelangi?",a:["Andrea Hirata","Tere Liye","Dee Lestari","Ayudia Bing Slamet"],c:0},
-  {q:"Apa makanan khas Yogyakarta?",a:["Gudeg","Pempek","Rendang","Sate"],c:0},
-  {q:"Siapa atlet bulutangkis Indonesia?",a:["Taufik Hidayat","Rudy Hartono","Susy Susanti","Semua benar"],c:3},
-  {q:"Berapa warna dalam pelangi?",a:["5","6","7","8"],c:2},
-  {q:"Apa nama ilmuwan Indonesia?",a:["B.J. Habibie","Sudirman","Kartini","Sukarno"],c:0},
-  {q:"Apa ibukota negara bagian California?",a:["Los Angeles","San Francisco","Sacramento","San Diego"],c:2},
-  {q:"Berapa jumlah pemain sepak bola dalam satu tim?",a:["9","10","11","12"],c:2},
-  {q:"Apa nama kerajaan Islam pertama di Indonesia?",a:["Samudra Pasai","Demak","Aceh","Mataram"],c:0},
-  {q:"Siapa yang menemukan gravitasi?",a:["Newton","Einstein","Galileo","Archimedes"],c:0},
-];
-let idx=0,skor=0,dijawab=false,acak=[];
-function shuffle(a){for(let i=a.length-1;i>0;i--){let j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
-function init(){acak=shuffle([...Array(questions.length).keys()]);render()}
-function render(){
-  const i=acak[idx];
-  if(i===undefined){selesai();return}
-  document.getElementById('question').textContent=questions[i].q;
-  const div=document.getElementById('answers');div.innerHTML='';
-  const opts=questions[i].a.map((t,j)=>({t,j}));
-  shuffle(opts);
-  opts.forEach(o=>{
-    const b=document.createElement('button');
-    b.textContent=o.t;
-    b.onclick=()=>jawab(i,o.j,b);
-    div.appendChild(b)
-  });
-  dijawab=false;
-  document.getElementById('nextBtn').style.display='none';
-  updateStatus()
-}
-function jawab(i,p,b){
-  if(dijawab)return;
-  dijawab=true;
-  const benar=p===questions[i].c;
-  if(benar)skor++;
-  const btns=document.querySelectorAll('.jawaban button');
-  btns.forEach((btn,j)=>{
-    const asli=questions[i].a.indexOf(btn.textContent);
-    if(asli===questions[i].c)btn.classList.add('benar');
-    if(!benar&&p===j)btn.classList.add('salah');
-    btn.onclick=null;
-  });
-  document.getElementById('nextBtn').style.display='block';
-  updateStatus()
-}
-function nextQ(){idx++;render()}
-function selesai(){
-  document.getElementById('quiz').innerHTML=
-    '<div style="font-size:48px;margin-bottom:12px">🎉</div><div style="font-size:18px;font-weight:600">Selesai!</div><div style="font-size:14px;color:#657487;margin-top:8px">Skor kamu: '+skor+'/'+questions.length+'</div>';
-  document.getElementById('nextBtn').style.display='none'
-}
-function updateStatus(){
-  const div=document.getElementById('status');div.innerHTML='';
-  for(let i=0;i<Math.min(acak.length,40);i++){
-    const s=document.createElement('span');
-    if(i===idx)s.classList.add('aktif');
-    div.appendChild(s)
-  }
-  document.getElementById('score').textContent='Skor: '+skor+'/'+idx+(dijawab?'':'')
-}
-init()
-</script>
-</body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#17365f" />
+		<title>Maintenance</title>
+		<style>
+			:root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+			* { box-sizing: border-box; }
+			body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; background: #f7f3e9; color: #142942; }
+			main { width: min(100%, 420px); text-align: center; }
+			h1 { margin: 0; font-family: Georgia, serif; font-size: clamp(30px, 8vw, 42px); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; }
+			p { margin: 14px auto 0; max-width: 36ch; color: #58697c; font-size: 15px; line-height: 1.6; }
+			button { margin-top: 20px; min-height: 44px; border: 0; border-radius: 12px; padding: 0 18px; background: #17365f; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+			button:focus-visible { outline: 3px solid #8eb6e2; outline-offset: 3px; }
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Sedang maintenance</h1>
+			<p>Tunggu sebentar yaa, ini biasanya cuma beberapa menit kok :D.</p>
+			<button type="button" onclick="window.location.reload()">Coba lagi</button>
+		</main>
+	</body>
 </html>
