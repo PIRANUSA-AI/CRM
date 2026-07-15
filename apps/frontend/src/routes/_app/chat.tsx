@@ -200,6 +200,12 @@ function PersonalWhatsappInbox() {
 	const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
 	const [profileOpen, setProfileOpen] = useState(false)
 	const [voiceRecording, setVoiceRecording] = useState(false)
+	const [voiceRecordingTime, setVoiceRecordingTime] = useState(0)
+	const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
+	const voiceDataRef = useRef<Uint8Array | null>(null)
+	const voiceTimerRef = useRef<number | null>(null)
+	const voiceCanvasRef = useRef<HTMLCanvasElement | null>(null)
+	const voiceAnimRef = useRef<number | null>(null)
 	const [contactPresence, setContactPresence] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [repairing, setRepairing] = useState(false)
@@ -666,9 +672,23 @@ function PersonalWhatsappInbox() {
 		fileInputRef.current.click()
 	}, [])
 
+	const stopVoiceRecording = useCallback((send = true) => {
+		if (voiceTimerRef.current) clearInterval(voiceTimerRef.current)
+		if (voiceAnimRef.current) cancelAnimationFrame(voiceAnimRef.current)
+		voiceTimerRef.current = null
+		voiceAnalyserRef.current = null
+		voiceDataRef.current = null
+		voiceRecorderRef.current?.stop()
+		if (!send) {
+			const r = voiceRecorderRef.current
+			voiceRecorderRef.current = null
+			if (r) { r.ondataavailable = null; r.onstop = null }
+		}
+	}, [])
+
 	const toggleVoiceNote = useCallback(async () => {
 		if (voiceRecording) {
-			voiceRecorderRef.current?.stop()
+			stopVoiceRecording(true)
 			return
 		}
 		try {
@@ -682,19 +702,62 @@ function PersonalWhatsappInbox() {
 			const chunks: BlobPart[] = []
 			recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
 			recorder.onstop = () => {
+				if (voiceTimerRef.current) clearInterval(voiceTimerRef.current)
+				if (voiceAnimRef.current) cancelAnimationFrame(voiceAnimRef.current)
+				voiceTimerRef.current = null
 				stream.getTracks().forEach((track) => track.stop())
 				setVoiceRecording(false)
+				setVoiceRecordingTime(0)
 				const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
 				const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
-				if (blob.size) void uploadAndSend(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }), 'voice')
+				if (blob.size && voiceRecorderRef.current !== null) {
+					void uploadAndSend(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }), 'voice')
+				}
 			}
+
+			// Setup audio analyser for waveform
+			const audioCtx = new AudioContext()
+			const source = audioCtx.createMediaStreamSource(stream)
+			const analyser = audioCtx.createAnalyser()
+			analyser.fftSize = 64
+			source.connect(analyser)
+			voiceAnalyserRef.current = analyser
+			voiceDataRef.current = new Uint8Array(analyser.frequencyBinCount)
+
 			voiceRecorderRef.current = recorder
 			recorder.start()
 			setVoiceRecording(true)
+			setVoiceRecordingTime(0)
+
+			// Timer
+			voiceTimerRef.current = window.setInterval(() => {
+				setVoiceRecordingTime((t) => t + 1)
+			}, 1000)
+
+			// Waveform animation
+			const canvas = voiceCanvasRef.current
+			if (canvas) {
+				const ctx = canvas.getContext('2d')
+				const draw = () => {
+					if (!ctx || !voiceAnalyserRef.current || !voiceDataRef.current) return
+					voiceAnimRef.current = requestAnimationFrame(draw)
+					voiceAnalyserRef.current.getByteFrequencyData(voiceDataRef.current)
+					ctx.clearRect(0, 0, canvas.width, canvas.height)
+					const data = voiceDataRef.current
+					const barW = canvas.width / data.length
+					const mid = canvas.height / 2
+					for (let i = 0; i < data.length; i++) {
+						const h = (data[i] / 255) * canvas.height * 0.6
+						ctx.fillStyle = '#ef4444'
+						ctx.fillRect(i * barW, mid - h / 2, Math.max(1, barW - 1), Math.max(2, h))
+					}
+				}
+				draw()
+			}
 		} catch {
 			setComposerError('Mikrofon belum bisa diakses. Izinkan mikrofon lalu coba lagi.')
 		}
-	}, [uploadAndSend, voiceRecording])
+	}, [uploadAndSend, voiceRecording, stopVoiceRecording])
 
 	const deleteMessage = useCallback(async () => {
 		const ids = bulkDeleteIds.length ? bulkDeleteIds : deleteTarget ? [deleteTarget.id] : []
@@ -1085,6 +1148,23 @@ function PersonalWhatsappInbox() {
 											</div>
 										</PopoverContent>
 									</Popover>
+								{voiceRecording ? (
+									<div className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2">
+										<button type="button" onClick={() => stopVoiceRecording(false)} className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Batalkan rekaman">
+											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+										</button>
+										<div className="flex items-center gap-2 min-w-0 flex-1">
+											<span className="animate-pulse rounded-full bg-destructive size-2 shrink-0" />
+											<canvas ref={voiceCanvasRef} width={120} height={36} className="h-9 w-full max-w-[180px] rounded" />
+											<span className="text-xs tabular-nums text-muted-foreground shrink-0">
+												{String(Math.floor(voiceRecordingTime / 60)).padStart(2, '0')}:{String(voiceRecordingTime % 60).padStart(2, '0')}
+											</span>
+										</div>
+										<button type="button" onClick={() => stopVoiceRecording(true)} className="grid size-9 shrink-0 place-items-center rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90" aria-label="Kirim voice note">
+											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+										</button>
+									</div>
+								) : (
 									<textarea
 										value={draft}
 										onChange={(event) => {
@@ -1094,26 +1174,27 @@ function PersonalWhatsappInbox() {
 										onKeyDown={(event) => {
 											if (event.key === 'Enter' && !event.shiftKey) {
 												event.preventDefault()
-														void sendDraftMessage()
+													void sendDraftMessage()
 											}
 										}}
 										rows={1}
 										maxLength={4096}
 										placeholder={connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
-										disabled={!connected || sendingMessage || uploadingMedia || voiceRecording}
+										disabled={!connected || sendingMessage || uploadingMedia}
 										className="max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-muted px-4 py-3 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
 									/>
+								)}
+								{!voiceRecording && (
 									<button
 										type={draft.trim() || pendingAttachments.length ? 'submit' : 'button'}
 										onClick={draft.trim() || pendingAttachments.length ? undefined : () => void toggleVoiceNote()}
 										disabled={!connected || sendingMessage || uploadingMedia}
 										className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 motion-reduce:transform-none"
-										aria-label={draft.trim() || pendingAttachments.length ? 'Kirim pesan' : voiceRecording ? 'Selesai merekam voice note' : 'Rekam voice note'}
+										aria-label={draft.trim() || pendingAttachments.length ? 'Kirim pesan' : 'Rekam voice note'}
 									>
-										{draft.trim() || pendingAttachments.length ? <SendHorizontal className={cn('size-4', sendingMessage && 'animate-pulse')} /> : voiceRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
+										{draft.trim() || pendingAttachments.length ? <SendHorizontal className={cn('size-4', sendingMessage && 'animate-pulse')} /> : <Mic className="size-4" />}
 									</button>
-								</div>
-								{voiceRecording && <p className="mt-2 text-xs font-medium text-destructive">Merekam voice note… tekan tombol merah untuk mengirim.</p>}
+								)}
 								{uploadingMedia && <p className="mt-2 text-xs text-muted-foreground">Menyiapkan dan mengunggah media…</p>}
 								{composerError && <p className="mt-2 text-xs leading-5 text-destructive" role="alert">{composerError}</p>}
 							</form>
