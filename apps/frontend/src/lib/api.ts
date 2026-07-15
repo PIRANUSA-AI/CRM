@@ -2468,6 +2468,7 @@ export interface TaskListParams {
 	view?: 'today' | 'all' | 'overdue' | 'done'
 	status?: TaskStatus
 	priority?: TaskPriority
+	contactId?: string
 	cursor?: string
 	limit?: number
 }
@@ -2520,4 +2521,74 @@ export const tasks = {
 				body: JSON.stringify({ text }),
 			},
 		),
+}
+
+
+// Lead Import (CSV) — leader/ceo/superadmin only
+export type ImportRowStatus = 'ok' | 'warning' | 'error' | 'imported' | 'skipped'
+
+export interface ImportJobRow {
+	id: string
+	rowNumber: number
+	status: ImportRowStatus
+	messages: string[]
+	mapped: Record<string, unknown>
+	resolvedAssigneeId: string | null
+	contactId: string | null
+	taskId: string | null
+}
+
+export interface ImportJobView {
+	job: {
+		id: string
+		filename: string | null
+		status: string
+		totalRows: number
+		imported: number
+		updated: number
+		skipped: number
+		errors: number
+		tasksCreated: number
+		createdAt: string | null
+		completedAt: string | null
+	}
+	rows: ImportJobRow[]
+	assignableOptions?: Array<{ email: string; name: string | null }>
+	unmappedHeaders?: string[]
+}
+
+export interface ImportCommitResult {
+	id: string
+	status: string
+	imported: number
+	updated: number
+	skipped: number
+	errors: number
+	tasksCreated: number
+	errorLog: Array<{ row: number; reason: string }>
+}
+
+export const leadImport = {
+	preview: (filename: string, content: string) =>
+		apiRequest<{ data: ImportJobView }>('/import/csv/preview', {
+			method: 'POST',
+			body: JSON.stringify({ filename, content }),
+		}),
+
+	getJob: (jobId: string) =>
+		apiRequest<{ data: ImportJobView }>(`/import/jobs/${encodeURIComponent(jobId)}`),
+
+	updateRowAssignee: (jobId: string, rowId: string, assignedTo: string | null) =>
+		apiRequest<{ data: ImportJobView }>(
+			`/import/jobs/${encodeURIComponent(jobId)}/rows/${encodeURIComponent(rowId)}`,
+			{ method: 'PATCH', body: JSON.stringify({ assignedTo }) },
+		),
+
+	commit: (jobId: string) =>
+		apiRequest<{ data: ImportCommitResult }>(
+			`/import/jobs/${encodeURIComponent(jobId)}/commit`,
+			{ method: 'POST' },
+		),
+
+	history: () => apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
 }

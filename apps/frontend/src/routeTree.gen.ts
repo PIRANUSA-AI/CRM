@@ -25,6 +25,7 @@ import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
 import { Route as AppKelolaTimRouteImport } from './routes/_app/kelola-tim'
 import { Route as AppIntegrationRouteImport } from './routes/_app/integration'
+import { Route as AppImportRouteImport } from './routes/_app/import'
 import { Route as AppHelpRouteImport } from './routes/_app/help'
 import { Route as AppHandoverRouteImport } from './routes/_app/handover'
 import { Route as AppFlowsRouteImport } from './routes/_app/flows'
@@ -132,6 +133,11 @@ const AppKelolaTimRoute = AppKelolaTimRouteImport.update({
 const AppIntegrationRoute = AppIntegrationRouteImport.update({
   id: '/integration',
   path: '/integration',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppImportRoute = AppImportRouteImport.update({
+  id: '/import',
+  path: '/import',
   getParentRoute: () => AppRoute,
 } as any)
 const AppHelpRoute = AppHelpRouteImport.update({
@@ -301,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/flows': typeof AppFlowsRouteWithChildren
   '/handover': typeof AppHandoverRoute
   '/help': typeof AppHelpRoute
+  '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
   '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
@@ -347,6 +354,7 @@ export interface FileRoutesByTo {
   '/flows': typeof AppFlowsRouteWithChildren
   '/handover': typeof AppHandoverRoute
   '/help': typeof AppHelpRoute
+  '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
   '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
@@ -395,6 +403,7 @@ export interface FileRoutesById {
   '/_app/flows': typeof AppFlowsRouteWithChildren
   '/_app/handover': typeof AppHandoverRoute
   '/_app/help': typeof AppHelpRoute
+  '/_app/import': typeof AppImportRoute
   '/_app/integration': typeof AppIntegrationRoute
   '/_app/kelola-tim': typeof AppKelolaTimRoute
   '/_app/knowledge': typeof AppKnowledgeRoute
@@ -443,6 +452,7 @@ export interface FileRouteTypes {
     | '/flows'
     | '/handover'
     | '/help'
+    | '/import'
     | '/integration'
     | '/kelola-tim'
     | '/knowledge'
@@ -489,6 +499,7 @@ export interface FileRouteTypes {
     | '/flows'
     | '/handover'
     | '/help'
+    | '/import'
     | '/integration'
     | '/kelola-tim'
     | '/knowledge'
@@ -536,6 +547,7 @@ export interface FileRouteTypes {
     | '/_app/flows'
     | '/_app/handover'
     | '/_app/help'
+    | '/_app/import'
     | '/_app/integration'
     | '/_app/kelola-tim'
     | '/_app/knowledge'
@@ -690,6 +702,13 @@ declare module '@tanstack/react-router' {
       path: '/integration'
       fullPath: '/integration'
       preLoaderRoute: typeof AppIntegrationRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/import': {
+      id: '/_app/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof AppImportRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/help': {
@@ -958,6 +977,7 @@ interface AppRouteChildren {
   AppFlowsRoute: typeof AppFlowsRouteWithChildren
   AppHandoverRoute: typeof AppHandoverRoute
   AppHelpRoute: typeof AppHelpRoute
+  AppImportRoute: typeof AppImportRoute
   AppIntegrationRoute: typeof AppIntegrationRoute
   AppKelolaTimRoute: typeof AppKelolaTimRoute
   AppKnowledgeRoute: typeof AppKnowledgeRoute
@@ -993,6 +1013,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFlowsRoute: AppFlowsRouteWithChildren,
   AppHandoverRoute: AppHandoverRoute,
   AppHelpRoute: AppHelpRoute,
+  AppImportRoute: AppImportRoute,
   AppIntegrationRoute: AppIntegrationRoute,
   AppKelolaTimRoute: AppKelolaTimRoute,
   AppKnowledgeRoute: AppKnowledgeRoute,

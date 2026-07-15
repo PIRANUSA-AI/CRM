@@ -2411,3 +2411,41 @@ model task_events {
   @@index([task_id, created_at], map: "idx_task_events_task_created")
   @@index([event_type], map: "idx_task_events_type")
 }
+
+model import_jobs {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id        String    @db.Uuid
+  created_by    String?   @db.Uuid
+  source        String    @default("csv") @db.VarChar(20)
+  filename      String?   @db.VarChar(255)
+  status        String    @default("preview") @db.VarChar(20)
+  total_rows    Int       @default(0)
+  imported      Int       @default(0)
+  updated       Int       @default(0)
+  skipped       Int       @default(0)
+  errors        Int       @default(0)
+  tasks_created Int       @default(0)
+  error_log     Json?     @default("[]")
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+  completed_at  DateTime? @db.Timestamptz(6)
+
+  @@index([app_id, created_by, created_at], map: "idx_import_jobs_app_creator")
+}
+
+model import_job_rows {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  job_id               String   @db.Uuid
+  row_number           Int
+  raw                  Json     @default("{}")
+  mapped               Json     @default("{}")
+  resolved_assignee_id String?  @db.Uuid
+  status               String   @default("ok") @db.VarChar(20)
+  messages             Json?    @default("[]")
+  contact_id           String?  @db.Uuid
+  task_id              String?  @db.Uuid
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([job_id, row_number], map: "idx_import_job_rows_job")
+}

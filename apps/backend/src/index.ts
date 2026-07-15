@@ -23,6 +23,7 @@ import {
 	flow,
 	form,
 	handover,
+	importLeads,
 	inbox,
 	knowledge,
 	label,
@@ -144,6 +145,7 @@ export const app = new Elysia()
 			.use(orchestration)
 			.use(personalWhatsappInbox)
 			.use(tasks)
+			.use(importLeads)
 			.use(crm)
 			.use(teamModule)
 			.use(inbox)
@@ -305,6 +307,7 @@ export const app = new Elysia()
 			.use(flow)
 			.use(orchestration)
 			.use(tasks)
+			.use(importLeads)
 			.use(crm)
 			.use(teamModule)
 			.use(inbox)

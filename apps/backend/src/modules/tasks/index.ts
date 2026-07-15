@@ -67,6 +67,7 @@ export const tasks = new Elysia({ prefix: '/tasks', tags: ['Tasks'] })
 				view: query.view,
 				status: query.status,
 				priority: query.priority,
+				contactId: query.contactId,
 				cursor: query.cursor,
 				limit: query.limit ? Number(query.limit) : undefined,
 			})

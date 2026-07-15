@@ -61,6 +61,7 @@ export const LEADER_PATHS = [
 	'/metrics',
 	'/apps/meta-ads-tracker',
 	'/integration',
+	'/import',
 	'/channels/whatsapp',
 	'/channels/facebook',
 	'/channels/line',
@@ -74,7 +75,7 @@ export const LEADER_PATHS = [
 
 export const CEO_PATHS = ['/dashboard', '/kelola-tim', '/analytics', '/metrics', '/settings', '/help']
 
-export const SUPERADMIN_PATHS = ['/kelola-tim', '/developers', '/channels/whatsapp', '/settings', '/help']
+export const SUPERADMIN_PATHS = ['/kelola-tim', '/developers', '/import', '/channels/whatsapp', '/settings', '/help']
 
 /**
  * Returns null when unrestricted, otherwise returns exact allowed top-level paths.

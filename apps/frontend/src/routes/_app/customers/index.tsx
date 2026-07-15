@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Filter, MoreHorizontal, Plus, Upload } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -263,6 +263,9 @@ function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 }
 
 function CustomersPage() {
+	const navigate = useNavigate()
+	const openDetail = (id: string) =>
+		navigate({ to: '/customers/$customerId', params: { customerId: id } })
 	const [loading, setLoading] = useState(true)
 	const [loadError, setLoadError] = useState<string | null>(null)
 	const [rows, setRows] = useState<CustomerRow[]>([])
@@ -435,7 +438,11 @@ function CustomersPage() {
 							<Filter size={14} />
 							Segmentasi
 						</button>
-						<button type="button" className="ocm-btn">
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => navigate({ to: '/import' })}
+						>
 							<Upload size={14} />
 							Import CSV
 						</button>
@@ -520,12 +527,19 @@ function CustomersPage() {
 							{filteredRows.map((row) => (
 								<div
 									key={row.id}
-									className="grid grid-cols-[30px_1.8fr_170px_80px_140px_110px_140px_170px_34px] items-center border-b border-border px-4 py-2.5 text-sm last:border-0"
+									role="button"
+									tabIndex={0}
+									onClick={() => openDetail(row.id)}
+									onKeyDown={(event) => {
+										if (event.key === 'Enter') openDetail(row.id)
+									}}
+									className="grid cursor-pointer grid-cols-[30px_1.8fr_170px_80px_140px_110px_140px_170px_34px] items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40"
 								>
 									<div>
 										<input
 											type="checkbox"
 											aria-label={`select-${row.id}`}
+											onClick={(event) => event.stopPropagation()}
 											className="h-3.5 w-3.5 rounded border-border accent-primary"
 										/>
 									</div>
@@ -575,8 +589,19 @@ function CustomersPage() {
 											<span className="text-xs text-muted-foreground">-</span>
 										)}
 									</div>
-									<div className="flex justify-end text-muted-foreground">
-										<MoreHorizontal size={14} />
+									<div className="flex justify-end">
+										<button
+											type="button"
+											aria-label="Buka detail pelanggan"
+											title="Buka detail"
+											onClick={(event) => {
+												event.stopPropagation()
+												openDetail(row.id)
+											}}
+											className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+										>
+											<MoreHorizontal size={14} />
+										</button>
 									</div>
 								</div>
 							))}

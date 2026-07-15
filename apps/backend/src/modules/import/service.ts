@@ -1,0 +1,574 @@
+import prisma from '../../lib/prisma'
+import { getRealtimeIO } from '../../lib/realtime'
+import type { CanonicalRole } from '../../lib/require-role'
+import {
+	isClosedStage,
+	isValidEmail,
+	mapConsent,
+	mapHeaders,
+	normalizePhone,
+	parseAmount,
+	parseCsv,
+	parseIntSafe,
+	parseIsoDate,
+	splitTags,
+	type CanonicalField,
+} from './parser'
+
+export type ImportActor = {
+	appId: string
+	userId: string
+	role: CanonicalRole
+}
+
+export class ImportNotFoundError extends Error {}
+export class ImportError extends Error {}
+
+type RowStatus = 'ok' | 'warning' | 'error'
+
+type MappedRow = {
+	name: string
+	contact_title: string | null
+	phone: string | null
+	email: string | null
+	company: string | null
+	industry: string | null
+	company_size: string | null
+	city: string | null
+	province: string | null
+	country: string | null
+	source: string | null
+	product_interest: string | null
+	pipeline_stage: string | null
+	lead_score: number | null
+	probability: number | null
+	estimated_value: number | null
+	currency: string | null
+	assigned_to: string | null
+	last_contact_at: string | null
+	next_followup_at: string | null
+	expected_close_date: string | null
+	external_id: string | null
+	notes: string | null
+	tags: string[]
+	consent_status: string
+}
+
+type Assignable = { userId: string; teamId: string | null; name: string | null; email: string }
+
+const REQUIRED_HEADERS: CanonicalField[] = ['name', 'phone']
+
+function cell(row: string[], index: number | undefined): string {
+	if (index === undefined) return ''
+	return String(row[index] ?? '').trim()
+}
+
+function priorityForStage(stage: string | null): string {
+	const s = String(stage || '').toLowerCase()
+	if (s.includes('negosiasi')) return 'high'
+	if (s.includes('penawaran')) return 'high'
+	if (s.includes('kualifikasi') || s.includes('dihubungi')) return 'medium'
+	return 'low'
+}
+
+/**
+ * Users the actor may assign imported leads to.
+ * - leader: only members that share a team with the leader (task gets that team_id).
+ * - ceo/superadmin: any active sales/leader in the app.
+ */
+async function resolveAssignables(actor: ImportActor): Promise<Map<string, Assignable>> {
+	const appTeams = await prisma.teams.findMany({
+		where: { app_id: actor.appId, deleted_at: null },
+		select: { id: true },
+	})
+	const appTeamIds = appTeams.map((team) => team.id)
+	const appMembers = appTeamIds.length
+		? await prisma.team_members.findMany({
+				where: { team_id: { in: appTeamIds } },
+				select: { team_id: true, user_id: true },
+			})
+		: []
+
+	const userTeams = new Map<string, string[]>()
+	for (const member of appMembers) {
+		const list = userTeams.get(member.user_id) || []
+		list.push(member.team_id)
+		userTeams.set(member.user_id, list)
+	}
+	const leaderTeamIds = userTeams.get(actor.userId) || []
+
+	const users = await prisma.users.findMany({
+		where: {
+			app_id: actor.appId,
+			deleted_at: null,
+			active: true,
+			role: { in: ['sales', 'leader'] },
+		},
+		select: { id: true, name: true, email: true },
+	})
+
+	const map = new Map<string, Assignable>()
+	for (const user of users) {
+		if (!user.email) continue
+		const teamsOfUser = userTeams.get(user.id) || []
+		let teamId: string | null = null
+		if (actor.role === 'leader') {
+			const shared = teamsOfUser.find((id) => leaderTeamIds.includes(id))
+			if (!shared) continue // leader can only assign within their team
+			teamId = shared
+		} else {
+			teamId = teamsOfUser[0] || null
+		}
+		map.set(user.email.trim().toLowerCase(), {
+			userId: user.id,
+			teamId,
+			name: user.name,
+			email: user.email,
+		})
+	}
+	return map
+}
+
+function buildMappedRow(
+	row: string[],
+	mapping: Partial<Record<CanonicalField, number>>,
+): { mapped: MappedRow; raw: Record<string, string> } {
+	const get = (field: CanonicalField) => cell(row, mapping[field])
+	const raw: Record<string, string> = {}
+	for (const [field, index] of Object.entries(mapping)) {
+		raw[field] = cell(row, index as number)
+	}
+	const mapped: MappedRow = {
+		name: get('name'),
+		contact_title: get('contact_title') || null,
+		phone: normalizePhone(get('phone')),
+		email: get('email') || null,
+		company: get('company') || null,
+		industry: get('industry') || null,
+		company_size: get('company_size') || null,
+		city: get('city') || null,
+		province: get('province') || null,
+		country: get('country') || null,
+		source: get('source') || null,
+		product_interest: get('product_interest') || null,
+		pipeline_stage: get('pipeline_stage') || null,
+		lead_score: parseIntSafe(get('lead_score')),
+		probability: parseIntSafe(get('probability')),
+		estimated_value: parseAmount(get('estimated_value')),
+		currency: get('currency') || null,
+		assigned_to: get('assigned_to') ? get('assigned_to').toLowerCase() : null,
+		last_contact_at: get('last_contact_at') || null,
+		next_followup_at: get('next_followup_at') || null,
+		expected_close_date: get('expected_close_date') || null,
+		external_id: get('external_id') || null,
+		notes: get('notes') || null,
+		tags: splitTags(get('tags')),
+		consent_status: mapConsent(get('consent_status')),
+	}
+	return { mapped, raw }
+}
+
+function validateRow(
+	mapped: MappedRow,
+	rawPhone: string,
+	assignables: Map<string, Assignable>,
+): { status: RowStatus; messages: string[]; assignee: Assignable | null } {
+	const messages: string[] = []
+	let status: RowStatus = 'ok'
+	let assignee: Assignable | null = null
+
+	if (!mapped.name) {
+		messages.push('Nama kosong')
+		status = 'error'
+	}
+	if (!mapped.phone) {
+		messages.push(
+			rawPhone ? `Nomor telepon tidak valid: "${rawPhone}"` : 'Nomor telepon kosong',
+		)
+		if (!mapped.email) status = 'error'
+		else if (status !== 'error') status = 'warning'
+	}
+	if (mapped.email && !isValidEmail(mapped.email)) {
+		messages.push(`Email tidak valid: "${mapped.email}"`)
+		if (status !== 'error') status = 'warning'
+	}
+	for (const [label, value] of [
+		['last_contact_at', mapped.last_contact_at],
+		['next_followup_at', mapped.next_followup_at],
+		['expected_close_date', mapped.expected_close_date],
+	] as const) {
+		if (value && !parseIsoDate(value)) {
+			messages.push(`Tanggal ${label} tidak valid: "${value}"`)
+			if (status !== 'error') status = 'warning'
+		}
+	}
+
+	if (mapped.assigned_to) {
+		assignee = assignables.get(mapped.assigned_to) || null
+		if (!assignee) {
+			messages.push(
+				`Assignee "${mapped.assigned_to}" tidak ditemukan / di luar tim Anda — pilih manual`,
+			)
+			if (status !== 'error') status = 'warning'
+		}
+	} else if (!isClosedStage(mapped.pipeline_stage)) {
+		messages.push('Belum ada assignee — pilih sales tujuan')
+		if (status !== 'error') status = 'warning'
+	}
+
+	return { status, messages, assignee }
+}
+
+export abstract class ImportService {
+	static async preview(actor: ImportActor, filename: string | null, content: string) {
+		const table = parseCsv(content)
+		if (table.headers.length === 0) throw new ImportError('CSV kosong atau tidak terbaca')
+		const { mapping, unmapped } = mapHeaders(table.headers)
+		const missing = REQUIRED_HEADERS.filter((field) => mapping[field] === undefined)
+		if (missing.length) {
+			throw new ImportError(`Kolom wajib tidak ditemukan: ${missing.join(', ')}`)
+		}
+		if (table.rows.length === 0) throw new ImportError('CSV tidak memiliki baris data')
+
+		const assignables = await resolveAssignables(actor)
+
+		const job = await prisma.import_jobs.create({
+			data: {
+				app_id: actor.appId,
+				created_by: actor.userId,
+				source: 'csv',
+				filename: filename || 'leads.csv',
+				status: 'preview',
+				total_rows: table.rows.length,
+			},
+		})
+
+		const rowsData = table.rows.map((row, index) => {
+			const { mapped, raw } = buildMappedRow(row, mapping)
+			const rawPhone = cell(row, mapping.phone)
+			const { status, messages, assignee } = validateRow(mapped, rawPhone, assignables)
+			return {
+				job_id: job.id,
+				row_number: index + 1,
+				raw,
+				mapped: { ...mapped, _resolved_assignee_name: assignee?.name || null, _team_id: assignee?.teamId || null } as object,
+				resolved_assignee_id: assignee?.userId || null,
+				status,
+				messages,
+			}
+		})
+
+		await prisma.import_job_rows.createMany({ data: rowsData })
+
+		return ImportService.getJob(actor, job.id, {
+			assignableOptions: [...assignables.values()].map((a) => ({ email: a.email, name: a.name })),
+			unmappedHeaders: unmapped,
+		})
+	}
+
+	static async getJob(
+		actor: ImportActor,
+		jobId: string,
+		extra?: { assignableOptions?: Array<{ email: string; name: string | null }>; unmappedHeaders?: string[] },
+	) {
+		const job = await prisma.import_jobs.findFirst({
+			where: { id: jobId, app_id: actor.appId },
+		})
+		if (!job) throw new ImportNotFoundError('Import job tidak ditemukan')
+		if (actor.role === 'leader' && job.created_by !== actor.userId) {
+			throw new ImportNotFoundError('Import job tidak ditemukan')
+		}
+		const rows = await prisma.import_job_rows.findMany({
+			where: { job_id: jobId },
+			orderBy: { row_number: 'asc' },
+		})
+		return {
+			job: {
+				id: job.id,
+				filename: job.filename,
+				status: job.status,
+				totalRows: job.total_rows,
+				imported: job.imported,
+				updated: job.updated,
+				skipped: job.skipped,
+				errors: job.errors,
+				tasksCreated: job.tasks_created,
+				createdAt: job.created_at,
+				completedAt: job.completed_at,
+			},
+			rows: rows.map((row) => ({
+				id: row.id,
+				rowNumber: row.row_number,
+				status: row.status,
+				messages: row.messages,
+				mapped: row.mapped,
+				resolvedAssigneeId: row.resolved_assignee_id,
+				contactId: row.contact_id,
+				taskId: row.task_id,
+			})),
+			...(extra?.assignableOptions ? { assignableOptions: extra.assignableOptions } : {}),
+			...(extra?.unmappedHeaders ? { unmappedHeaders: extra.unmappedHeaders } : {}),
+		}
+	}
+
+	static async updateRowAssignee(
+		actor: ImportActor,
+		jobId: string,
+		rowId: string,
+		assignedTo: string | null,
+	) {
+		const job = await prisma.import_jobs.findFirst({ where: { id: jobId, app_id: actor.appId } })
+		if (!job || (actor.role === 'leader' && job.created_by !== actor.userId)) {
+			throw new ImportNotFoundError('Import job tidak ditemukan')
+		}
+		if (job.status !== 'preview') throw new ImportError('Import sudah diproses, tidak bisa diubah')
+		const row = await prisma.import_job_rows.findFirst({ where: { id: rowId, job_id: jobId } })
+		if (!row) throw new ImportNotFoundError('Baris tidak ditemukan')
+
+		const assignables = await resolveAssignables(actor)
+		const mapped = { ...(row.mapped as Record<string, unknown>) }
+		const email = assignedTo ? assignedTo.trim().toLowerCase() : null
+		const assignee = email ? assignables.get(email) || null : null
+
+		const messages: string[] = []
+		let status: RowStatus = 'ok'
+		if (mapped.name === '' || mapped.name === null || mapped.name === undefined) {
+			status = 'error'
+			messages.push('Nama kosong')
+		}
+		if (!mapped.phone && !mapped.email) {
+			status = 'error'
+			messages.push('Tanpa telepon & email')
+		}
+		if (email && !assignee) {
+			messages.push(`Assignee "${email}" di luar tim Anda`)
+			if (status !== 'error') status = 'warning'
+		}
+		if (!email && !isClosedStage(String(mapped.pipeline_stage || ''))) {
+			messages.push('Belum ada assignee')
+			if (status !== 'error') status = 'warning'
+		}
+
+		mapped.assigned_to = email
+		mapped._resolved_assignee_name = assignee?.name || null
+		mapped._team_id = assignee?.teamId || null
+
+		await prisma.import_job_rows.update({
+			where: { id: rowId },
+			data: { mapped: mapped as object, resolved_assignee_id: assignee?.userId || null, status, messages },
+		})
+		return ImportService.getJob(actor, jobId)
+	}
+
+	static async commit(actor: ImportActor, jobId: string) {
+		const job = await prisma.import_jobs.findFirst({ where: { id: jobId, app_id: actor.appId } })
+		if (!job || (actor.role === 'leader' && job.created_by !== actor.userId)) {
+			throw new ImportNotFoundError('Import job tidak ditemukan')
+		}
+		if (job.status !== 'preview') throw new ImportError('Import sudah diproses')
+
+		await prisma.import_jobs.update({ where: { id: jobId }, data: { status: 'processing' } })
+
+		const rows = await prisma.import_job_rows.findMany({
+			where: { job_id: jobId },
+			orderBy: { row_number: 'asc' },
+		})
+
+		let imported = 0
+		let updated = 0
+		let skipped = 0
+		let errors = 0
+		let tasksCreated = 0
+		const errorLog: Array<{ row: number; reason: string }> = []
+		const now = new Date()
+
+		for (const row of rows) {
+			if (row.status === 'error') {
+				skipped += 1
+				errorLog.push({ row: row.row_number, reason: (row.messages as string[])?.join('; ') || 'error' })
+				continue
+			}
+			const mapped = row.mapped as unknown as MappedRow & { _team_id?: string | null }
+			try {
+				const result = await prisma.$transaction(async (tx) => {
+					const orConds: Array<Record<string, unknown>> = []
+					if (mapped.phone) {
+						orConds.push({ phone_number: mapped.phone })
+						orConds.push({ whatsapp_id: mapped.phone })
+					}
+					if (mapped.email) orConds.push({ email: mapped.email })
+					const existing = orConds.length
+						? await tx.contacts.findFirst({
+								where: { app_id: actor.appId, deleted_at: null, OR: orConds },
+							})
+						: null
+
+					const customAttributes = {
+						...((existing?.custom_attributes as Record<string, unknown>) || {}),
+						assigned_user_id: row.resolved_assignee_id || null,
+						contact_title: mapped.contact_title,
+						industry: mapped.industry,
+						company_size: mapped.company_size,
+						province: mapped.province,
+						product_interest: mapped.product_interest,
+						pipeline_stage: mapped.pipeline_stage,
+						lead_score: mapped.lead_score,
+						probability: mapped.probability,
+						estimated_value: mapped.estimated_value,
+						currency: mapped.currency,
+						expected_close_date: mapped.expected_close_date,
+						external_id: mapped.external_id,
+						tags: mapped.tags,
+						last_contact_at: mapped.last_contact_at,
+						next_followup_at: mapped.next_followup_at,
+						import_notes: mapped.notes,
+					}
+
+					const contactData = {
+						name: mapped.name || existing?.name || mapped.phone || 'Lead',
+						email: mapped.email || existing?.email || null,
+						phone_number: mapped.phone || existing?.phone_number || null,
+						whatsapp_id: mapped.phone || existing?.whatsapp_id || null,
+						company: mapped.company || existing?.company || null,
+						city: mapped.city || existing?.city || null,
+						country: mapped.country || existing?.country || null,
+						source: mapped.source || existing?.source || 'import',
+						consent_status: mapped.consent_status,
+						custom_attributes: customAttributes as object,
+						channel_type: existing?.channel_type || 'whatsapp',
+						updated_at: now,
+					}
+
+					let contactId: string
+					let wasUpdate = false
+					if (existing) {
+						await tx.contacts.update({ where: { id: existing.id }, data: contactData })
+						contactId = existing.id
+						wasUpdate = true
+					} else {
+						const created = await tx.contacts.create({
+							data: {
+								app_id: actor.appId,
+								identifier: mapped.phone ? `wa:${actor.appId}:${mapped.phone}` : null,
+								first_contact_at: now,
+								created_at: now,
+								...contactData,
+							},
+						})
+						contactId = created.id
+					}
+
+					let taskId: string | null = null
+					const closed = isClosedStage(mapped.pipeline_stage)
+					if (!closed && row.resolved_assignee_id) {
+						const dueAt = parseIsoDate(mapped.next_followup_at) || new Date(now.getTime() + 3 * 24 * 3600_000)
+						const title = `Follow-up ${mapped.product_interest || 'lead'} — ${mapped.name}`.slice(0, 255)
+						const task = await tx.tasks.create({
+							data: {
+								app_id: actor.appId,
+								assignee_id: row.resolved_assignee_id,
+								team_id: mapped._team_id || null,
+								created_by: actor.userId,
+								contact_id: contactId,
+								action_kind: 'follow_up',
+								title,
+								description: mapped.notes,
+								priority: priorityForStage(mapped.pipeline_stage),
+								status: 'open',
+								due_at: dueAt,
+								source: 'import',
+								ai_snapshot: {},
+							},
+						})
+						await tx.task_events.create({
+							data: {
+								task_id: task.id,
+								event_type: 'created',
+								actor_id: actor.userId,
+								metadata: { source: 'import', job_id: jobId, row: row.row_number },
+							},
+						})
+						taskId = task.id
+					}
+
+					await tx.import_job_rows.update({
+						where: { id: row.id },
+						data: { status: taskId ? 'imported' : 'skipped', contact_id: contactId, task_id: taskId },
+					})
+					return { wasUpdate, taskCreated: Boolean(taskId) }
+				})
+				if (result.wasUpdate) updated += 1
+				else imported += 1
+				if (result.taskCreated) tasksCreated += 1
+			} catch (error) {
+				errors += 1
+				errorLog.push({
+					row: row.row_number,
+					reason: error instanceof Error ? error.message : String(error),
+				})
+				await prisma.import_job_rows.update({
+					where: { id: row.id },
+					data: { status: 'error', messages: [error instanceof Error ? error.message : 'gagal'] },
+				})
+			}
+		}
+
+		const finalized = await prisma.import_jobs.update({
+			where: { id: jobId },
+			data: {
+				status: 'completed',
+				imported,
+				updated,
+				skipped,
+				errors,
+				tasks_created: tasksCreated,
+				error_log: errorLog as object,
+				completed_at: new Date(),
+			},
+		})
+
+		getRealtimeIO()?.to(`app:${actor.appId}`).emit('import:completed', {
+			jobId,
+			imported,
+			updated,
+			skipped,
+			errors,
+			tasksCreated,
+		})
+
+		return {
+			id: finalized.id,
+			status: finalized.status,
+			imported,
+			updated,
+			skipped,
+			errors,
+			tasksCreated,
+			errorLog,
+		}
+	}
+
+	static async history(actor: ImportActor) {
+		const jobs = await prisma.import_jobs.findMany({
+			where: {
+				app_id: actor.appId,
+				...(actor.role === 'leader' ? { created_by: actor.userId } : {}),
+			},
+			orderBy: { created_at: 'desc' },
+			take: 50,
+		})
+		return jobs.map((job) => ({
+			id: job.id,
+			filename: job.filename,
+			status: job.status,
+			totalRows: job.total_rows,
+			imported: job.imported,
+			updated: job.updated,
+			skipped: job.skipped,
+			errors: job.errors,
+			tasksCreated: job.tasks_created,
+			createdAt: job.created_at,
+			completedAt: job.completed_at,
+		}))
+	}
+}

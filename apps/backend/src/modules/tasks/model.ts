@@ -66,6 +66,7 @@ export const TaskRequestModel = {
 		),
 		status: t.Optional(taskStatus),
 		priority: t.Optional(taskPriority),
+		contactId: t.Optional(t.String()),
 		cursor: t.Optional(t.String()),
 		limit: t.Optional(t.String()),
 	}),

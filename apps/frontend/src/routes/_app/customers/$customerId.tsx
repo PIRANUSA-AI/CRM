@@ -1,6 +1,12 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { customers, contactConversations, API_BASE } from '@/lib/api'
+import {
+	customers,
+	contactConversations,
+	tasks as tasksApi,
+	type Task,
+	API_BASE,
+} from '@/lib/api'
 import {
 	User,
 	Mail,
@@ -16,7 +22,48 @@ import {
 	ShieldCheck,
 	MapPin,
 	Info,
+	ListTodo,
+	CheckCircle2,
+	CirclePlay,
 } from 'lucide-react'
+
+const TASK_PRIORITY_LABEL: Record<string, string> = {
+	low: 'Rendah',
+	medium: 'Sedang',
+	high: 'Tinggi',
+	urgent: 'Mendesak',
+}
+const TASK_PRIORITY_STYLE: Record<string, string> = {
+	low: 'bg-slate-100 text-slate-600',
+	medium: 'bg-sky-100 text-sky-700',
+	high: 'bg-amber-100 text-amber-700',
+	urgent: 'bg-red-100 text-red-700',
+}
+const TASK_STATUS_LABEL: Record<string, string> = {
+	open: 'Belum dimulai',
+	in_progress: 'Sedang dikerjakan',
+	done: 'Selesai',
+	cancelled: 'Dibatalkan',
+}
+const TASK_ACTION_LABEL: Record<string, string> = {
+	reply_now: 'Balas sekarang',
+	follow_up: 'Tindak lanjut',
+	qualify_lead: 'Kualifikasi lead',
+	handover_review: 'Tinjau handover',
+	manual: 'Manual',
+}
+
+function formatTaskDue(value: string | null) {
+	if (!value) return 'Tanpa tenggat'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return 'Tanpa tenggat'
+	return new Intl.DateTimeFormat('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date)
+}
 import PageHeader from '@/components/PageHeader'
 import { EditCustomerModal } from '@/components/EditCustomerModal'
 
@@ -58,10 +105,12 @@ function CustomerDetail() {
 	const navigate = useNavigate()
 	const [customer, setCustomer] = useState<Customer | null>(null)
 	const [conversations, setConversations] = useState<Conversation[]>([])
+	const [contactTasks, setContactTasks] = useState<Task[]>([])
+	const [taskBusy, setTaskBusy] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [activeTab, setActiveTab] = useState<
-		'overview' | 'conversations' | 'activity'
+		'overview' | 'conversations' | 'tasks' | 'activity'
 	>('overview')
 	const [showEditModal, setShowEditModal] = useState(false)
 	const [returnToConversationId, setReturnToConversationId] = useState<
@@ -80,9 +129,10 @@ function CustomerDetail() {
 	const loadData = async () => {
 		setLoading(true)
 		try {
-			const [customerRes, convsRes]: any = await Promise.all([
+			const [customerRes, convsRes, tasksRes]: any = await Promise.all([
 				customers.get(customerId),
 				contactConversations.list(customerId),
+				tasksApi.list({ contactId: customerId, limit: 50 }).catch(() => ({ data: [] })),
 				])
 
 				setCustomer(customerRes.payload)
@@ -93,6 +143,7 @@ function CustomerDetail() {
 							? convsRes.data
 							: [],
 				)
+				setContactTasks(Array.isArray(tasksRes?.data) ? tasksRes.data : [])
 			} catch (error: any) {
 				console.error('Failed to load customer details:', error)
 				setError(error.message || 'Failed to load data')
@@ -108,6 +159,19 @@ function CustomerDetail() {
 		} catch (error) {
 			console.error('Update failed:', error)
 			throw error
+		}
+	}
+
+	const runTaskAction = async (taskId: string, action: 'start' | 'complete') => {
+		setTaskBusy(taskId)
+		try {
+			if (action === 'start') await tasksApi.start(taskId)
+			else await tasksApi.complete(taskId)
+			await loadData()
+		} catch (error) {
+			console.error('Task action failed:', error)
+		} finally {
+			setTaskBusy(null)
 		}
 	}
 
@@ -312,6 +376,16 @@ function CustomerDetail() {
 						}`}
 					>
 						Conversations
+					</button>
+					<button
+						onClick={() => setActiveTab('tasks')}
+						className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+							activeTab === 'tasks'
+								? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+								: 'text-gray-500 hover:bg-gray-50'
+						}`}
+					>
+						Tugas{contactTasks.length > 0 ? ` (${contactTasks.length})` : ''}
 					</button>
 					<button
 						onClick={() => setActiveTab('activity')}
@@ -568,6 +642,87 @@ function CustomerDetail() {
 									</tbody>
 								</table>
 							</div>
+						</div>
+					)}
+
+					{activeTab === 'tasks' && (
+						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+							{contactTasks.length === 0 ? (
+								<div className="flex flex-col items-center justify-center py-12 text-center">
+									<div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+										<ListTodo className="text-gray-300" size={32} />
+									</div>
+									<h3 className="text-lg font-bold text-gray-900 mb-1">
+										Belum ada tugas
+									</h3>
+									<p className="text-sm text-gray-400 max-w-xs">
+										Tugas follow-up untuk pelanggan ini akan muncul di sini
+										setelah lead di-assign atau dianalisis.
+									</p>
+								</div>
+							) : (
+								<ul className="divide-y divide-gray-50">
+									{contactTasks.map((task) => {
+										const isActive =
+											task.status === 'open' || task.status === 'in_progress'
+										const busy = taskBusy === task.id
+										return (
+											<li
+												key={task.id}
+												className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center"
+											>
+												<div className="min-w-0 flex-1">
+													<div className="mb-1 flex flex-wrap items-center gap-2">
+														<span
+															className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${TASK_PRIORITY_STYLE[task.priority] || ''}`}
+														>
+															{TASK_PRIORITY_LABEL[task.priority] || task.priority}
+														</span>
+														<span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+															{TASK_ACTION_LABEL[task.actionKind] || task.actionKind}
+														</span>
+														<span className="text-[11px] text-gray-400">
+															{TASK_STATUS_LABEL[task.status] || task.status}
+														</span>
+													</div>
+													<p className="font-bold text-gray-900">{task.title}</p>
+													{task.description ? (
+														<p className="mt-1 text-sm text-gray-500">
+															{task.description}
+														</p>
+													) : null}
+													<div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
+														<Clock size={13} />
+														{formatTaskDue(task.dueAt)}
+													</div>
+												</div>
+												<div className="flex shrink-0 gap-2">
+													{task.status === 'open' ? (
+														<button
+															type="button"
+															disabled={busy}
+															onClick={() => runTaskAction(task.id, 'start')}
+															className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+														>
+															<CirclePlay size={14} /> Mulai
+														</button>
+													) : null}
+													{isActive ? (
+														<button
+															type="button"
+															disabled={busy}
+															onClick={() => runTaskAction(task.id, 'complete')}
+															className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-600 disabled:opacity-50"
+														>
+															<CheckCircle2 size={14} /> {busy ? '...' : 'Selesai'}
+														</button>
+													) : null}
+												</div>
+											</li>
+										)
+									})}
+								</ul>
+							)}
 						</div>
 					)}
 

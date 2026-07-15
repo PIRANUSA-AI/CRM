@@ -440,11 +440,22 @@ export abstract class CustomerService {
 		]
 
 		if (params.viewerRole === 'sales' && params.viewerUserId) {
+			// A sales owns a contact if it has a conversation assigned to them,
+			// a task assigned to them (e.g. imported leads), or the contact was
+			// explicitly assigned to them (custom_attributes.assigned_user_id).
 			whereParts.push(
-				Prisma.sql`EXISTS (
-					SELECT 1 FROM conversations conv
-					WHERE conv.contact_id = c.id
-					AND conv.assignee_id = ${params.viewerUserId}::uuid
+				Prisma.sql`(
+					EXISTS (
+						SELECT 1 FROM conversations conv
+						WHERE conv.contact_id = c.id
+						AND conv.assignee_id = ${params.viewerUserId}::uuid
+					)
+					OR EXISTS (
+						SELECT 1 FROM tasks t
+						WHERE t.contact_id = c.id
+						AND t.assignee_id = ${params.viewerUserId}::uuid
+					)
+					OR c.custom_attributes->>'assigned_user_id' = ${params.viewerUserId}
 				)`,
 			)
 		}

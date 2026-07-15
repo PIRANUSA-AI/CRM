@@ -173,6 +173,7 @@ export abstract class TaskService {
 			view?: 'today' | 'all' | 'overdue' | 'done'
 			status?: string
 			priority?: string
+			contactId?: string
 			cursor?: string
 			limit?: number
 		},
@@ -182,7 +183,11 @@ export abstract class TaskService {
 		const scope = await taskVisibilityScope(actor)
 		const filters: Record<string, unknown>[] = []
 		const view = input.view || 'today'
-		if (view === 'done') filters.push({ status: 'done' })
+		if (input.contactId) {
+			// All tasks for one contact (used by the customer detail page) —
+			// ignore the date/view window.
+			filters.push({ contact_id: input.contactId })
+		} else if (view === 'done') filters.push({ status: 'done' })
 		else {
 			filters.push(activeAndVisibleAt(now))
 			if (view === 'today') filters.push({ due_at: { gte: start, lt: end } })

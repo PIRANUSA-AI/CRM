@@ -16,6 +16,7 @@ import {
 	Radio,
 	Settings,
 	Shuffle,
+	Upload,
 	UserCog,
 	Users,
 	WandSparkles,
@@ -154,6 +155,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/apps/meta-ads-tracker',
 		group: 'laporan',
 		icon: Megaphone,
+	},
+	{
+		id: 'import',
+		label: 'Import Data',
+		path: '/import',
+		group: 'sistem',
+		icon: Upload,
 	},
 	{
 		id: 'integration',
