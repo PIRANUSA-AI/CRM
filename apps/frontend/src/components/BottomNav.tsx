@@ -19,7 +19,7 @@ export default function BottomNav({
 
 	const mobileItems = useMemo(() => {
 		const preferredByRole: Record<string, string[]> = {
-			sales: ['/dashboard', '/chat', '/customers'],
+			sales: ['/dashboard', '/chat', '/tasks', '/customers'],
 			leader: ['/dashboard', '/chat', '/customers', '/flows'],
 			ceo: ['/dashboard', '/kelola-tim', '/analytics', '/metrics'],
 			superadmin: ['/kelola-tim', '/developers', '/settings', '/help'],

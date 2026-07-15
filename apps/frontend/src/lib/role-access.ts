@@ -34,7 +34,15 @@ export function extractNormalizedRole(source: AnyRecord): string {
 	return ''
 }
 
-export const SALES_PATHS = ['/dashboard', '/chat', '/handover', '/customers', '/settings', '/help']
+export const SALES_PATHS = [
+	'/dashboard',
+	'/chat',
+	'/tasks',
+	'/handover',
+	'/customers',
+	'/settings',
+	'/help',
+]
 
 export const LEADER_PATHS = [
 	'/dashboard',

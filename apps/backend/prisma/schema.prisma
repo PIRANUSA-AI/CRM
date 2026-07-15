@@ -2362,3 +2362,52 @@ model subscriptions {
   @@index([created_at], map: "idx_subscriptions_created_at")
   @@index([status], map: "idx_subscriptions_status")
 }
+
+model tasks {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id            String    @db.Uuid
+  assignee_id       String?   @db.Uuid
+  team_id           String?   @db.Uuid
+  created_by        String?   @db.Uuid
+  conversation_id   String?   @db.Uuid
+  contact_id        String?   @db.Uuid
+  source_message_id String?   @db.Uuid
+
+  action_kind       String    @db.VarChar(50)
+  title             String    @db.VarChar(255)
+  description       String?
+  priority          String    @default("medium") @db.VarChar(20)
+  status            String    @default("open") @db.VarChar(20)
+
+  due_at            DateTime? @db.Timestamptz(6)
+  snoozed_until     DateTime? @db.Timestamptz(6)
+  completed_at      DateTime? @db.Timestamptz(6)
+
+  source            String    @default("ai_whatsapp") @db.VarChar(50)
+  ai_snapshot       Json?     @default("{}")
+  analysis_version  String?   @db.VarChar(32)
+  confidence        Float?
+
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, source_message_id], map: "tasks_app_source_message_key")
+  @@index([app_id, assignee_id, status, due_at], map: "idx_tasks_assignee_status_due")
+  @@index([app_id, status, due_at], map: "idx_tasks_status_due")
+  @@index([conversation_id], map: "idx_tasks_conversation")
+  @@index([contact_id], map: "idx_tasks_contact")
+}
+
+model task_events {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  task_id     String   @db.Uuid
+  event_type  String   @db.VarChar(50)
+  actor_id    String?  @db.Uuid
+  actor_type  String   @default("user") @db.VarChar(20)
+  metadata    Json?    @default("{}")
+  reason      String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([task_id, created_at], map: "idx_task_events_task_created")
+  @@index([event_type], map: "idx_task_events_type")
+}

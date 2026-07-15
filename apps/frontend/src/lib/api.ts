@@ -1568,6 +1568,12 @@ export const whatsappChannels = {
 			'/whatsapp-channels/me/connection/start',
 			{ method: 'POST' },
 		),
+
+	stopMyConnection: () =>
+		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection | null }>(
+			'/whatsapp-channels/me/connection/stop',
+			{ method: 'POST' },
+		),
 	sync: (channelId: string) =>
 		apiRequest(`/whatsapp/${channelId}/sync`, {
 			method: 'POST',
@@ -2419,4 +2425,84 @@ export const tickets = {
 		}>(
 			`/tickets/conversations/${conversationId}${boardId ? `?board_id=${encodeURIComponent(boardId)}` : ''}`,
 		).then((response) => response.data),
+}
+
+
+export type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+export type TaskActionKind =
+	| 'reply_now'
+	| 'follow_up'
+	| 'qualify_lead'
+	| 'handover_review'
+	| 'manual'
+
+export interface Task {
+	id: string
+	appId: string
+	assigneeId: string | null
+	teamId: string | null
+	conversationId: string | null
+	contactId: string | null
+	sourceMessageId: string | null
+	actionKind: TaskActionKind
+	title: string
+	description: string | null
+	priority: TaskPriority
+	status: TaskStatus
+	dueAt: string | null
+	snoozedUntil: string | null
+	completedAt: string | null
+	source: string
+	aiSnapshot: unknown
+	analysisVersion: string | null
+	confidence: number | null
+	contactName: string | null
+	contactPhone: string | null
+	conversationStatus: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export interface TaskListParams {
+	view?: 'today' | 'all' | 'overdue' | 'done'
+	status?: TaskStatus
+	priority?: TaskPriority
+	cursor?: string
+	limit?: number
+}
+
+export interface TaskListResponse {
+	data: Task[]
+	nextCursor: string | null
+}
+
+export interface TaskSummary {
+	overdue: number
+	today: number
+	completedToday: number
+}
+
+export const tasks = {
+	list: (params: TaskListParams = {}) => {
+		const query = new URLSearchParams()
+		for (const [key, value] of Object.entries(params)) {
+			if (value === undefined || value === null) continue
+			query.set(key, String(value))
+		}
+		const suffix = query.toString() ? `?${query.toString()}` : ''
+		return apiRequest<TaskListResponse>(`/tasks${suffix}`)
+	},
+
+	summary: () => apiRequest<{ data: TaskSummary }>('/tasks/summary/today'),
+
+	start: (id: string) =>
+		apiRequest<{ data: Task }>(`/tasks/${encodeURIComponent(id)}/start`, {
+			method: 'POST',
+		}),
+
+	complete: (id: string) =>
+		apiRequest<{ data: Task }>(`/tasks/${encodeURIComponent(id)}/complete`, {
+			method: 'POST',
+		}),
 }

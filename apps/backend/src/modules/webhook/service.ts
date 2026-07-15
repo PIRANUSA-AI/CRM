@@ -1819,6 +1819,22 @@ export abstract class WebhookService {
 		})
 
 		if (result.channelProvider === 'baileys' && personalLeadOwnerUserId) {
+			// Pending and blocked personal leads return above. The worker revalidates
+			// this state, while the deterministic job ID prevents duplicate analysis.
+			try {
+				const { enqueueTaskAnalysis } = await import('../tasks/worker')
+				await enqueueTaskAnalysis({
+					appId: result.appId,
+					messageId: String(result.message.id),
+					ownerUserId: personalLeadOwnerUserId,
+				})
+			} catch (taskAnalysisError) {
+				console.error(
+					'[WebhookService] Failed to enqueue task analysis (fail-open):',
+					taskAnalysisError,
+				)
+			}
+
 			await PersonalAiReplyService.scheduleInbound({
 				appId: result.appId,
 				ownerUserId: personalLeadOwnerUserId,

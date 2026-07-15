@@ -8,6 +8,7 @@ import {
 	HelpCircle,
 	Kanban,
 	LayoutDashboard,
+	ListTodo,
 	Megaphone,
 	MessagesSquare,
 	Network,
@@ -45,6 +46,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/chat',
 		group: 'operasional',
 		icon: MessagesSquare,
+	},
+	{
+		id: 'tasks',
+		label: 'Daftar Tugas',
+		path: '/tasks',
+		group: 'operasional',
+		icon: ListTodo,
 	},
 	{
 		id: 'handover',

@@ -6,6 +6,7 @@ import { emitRealtimeToRoom } from '../lib/realtime-emitter'
 import { BAILEYS_INTERNAL_SEND_PATH } from '../modules/whatsapp/webhook-config'
 import { getBaileysServiceSendUrl } from '../modules/whatsapp/baileys-service-client'
 import {
+	aiProcessingQueue,
 	maintenanceQueue,
 	outboundMessageQueue,
 	webhookQueue,
@@ -18,6 +19,10 @@ import { BusinessWebhookDispatchService } from '../modules/business-webhooks/dis
 import { KnowledgeIndexService } from '../modules/knowledge/indexing-service'
 import { WebhookService } from '../modules/webhook/service'
 import { PersonalAiReplyService } from '../modules/personal-whatsapp-inbox/ai-reply'
+import {
+	processTaskAnalysisJob,
+	TASK_ANALYSIS_CONCURRENCY,
+} from '../modules/tasks/worker'
 import {
 	ConversationBulkEditService,
 	type ConversationBulkEditJobData,
@@ -2520,6 +2525,18 @@ export const webhookWorker = new Worker(
 			},
 			{ connection: redis, concurrency: 5 },
 		)
+
+export const taskAnalysisWorker = new Worker(
+	'ai-processing',
+	async (job: Job) => {
+		if (job.name !== 'task-analysis') {
+			console.warn(`[TaskAnalysisWorker] Unknown job type: ${job.name}`)
+			return { success: false, ignored: true, reason: 'unknown_job_type' }
+		}
+		return processTaskAnalysisJob(job.data)
+	},
+	{ connection: redis, concurrency: TASK_ANALYSIS_CONCURRENCY },
+)
 
 export const maintenanceWorker = WORKER_MODE_ENABLED
 	? new Worker(

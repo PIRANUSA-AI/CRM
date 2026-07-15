@@ -18,6 +18,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhatsappConnectRouteImport } from './routes/whatsapp.connect'
 import { Route as AppTemplatesRouteImport } from './routes/_app/templates'
+import { Route as AppTasksRouteImport } from './routes/_app/tasks'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
@@ -96,6 +97,11 @@ const WhatsappConnectRoute = WhatsappConnectRouteImport.update({
 const AppTemplatesRoute = AppTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTasksRoute = AppTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -301,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
   '/settings': typeof AppSettingsRoute
+  '/tasks': typeof AppTasksRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -346,6 +353,7 @@ export interface FileRoutesByTo {
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
   '/settings': typeof AppSettingsRoute
+  '/tasks': typeof AppTasksRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -393,6 +401,7 @@ export interface FileRoutesById {
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/_app/tasks': typeof AppTasksRoute
   '/_app/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/_app/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -440,6 +449,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/pipeline'
     | '/settings'
+    | '/tasks'
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
@@ -485,6 +495,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/pipeline'
     | '/settings'
+    | '/tasks'
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
@@ -531,6 +542,7 @@ export interface FileRouteTypes {
     | '/_app/metrics'
     | '/_app/pipeline'
     | '/_app/settings'
+    | '/_app/tasks'
     | '/_app/templates'
     | '/whatsapp/connect'
     | '/_app/ai-agents/$agentId'
@@ -629,6 +641,13 @@ declare module '@tanstack/react-router' {
       path: '/templates'
       fullPath: '/templates'
       preLoaderRoute: typeof AppTemplatesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tasks': {
+      id: '/_app/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof AppTasksRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -945,6 +964,7 @@ interface AppRouteChildren {
   AppMetricsRoute: typeof AppMetricsRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppSettingsRoute: typeof AppSettingsRoute
+  AppTasksRoute: typeof AppTasksRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
   AppAppsMetaAdsTrackerRoute: typeof AppAppsMetaAdsTrackerRoute
   AppChannelsBotRoute: typeof AppChannelsBotRoute
@@ -979,6 +999,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricsRoute: AppMetricsRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppSettingsRoute: AppSettingsRoute,
+  AppTasksRoute: AppTasksRoute,
   AppTemplatesRoute: AppTemplatesRoute,
   AppAppsMetaAdsTrackerRoute: AppAppsMetaAdsTrackerRoute,
   AppChannelsBotRoute: AppChannelsBotRoute,
