@@ -109,7 +109,7 @@ function WhatsAppConnectPage() {
 				color: '#315d91',
 			},
 			backgroundOptions: {
-				color: '#ffffff',
+				color: 'transparent',
 			},
 		})
 		void qr.getRawData('png').then((blob) => {
