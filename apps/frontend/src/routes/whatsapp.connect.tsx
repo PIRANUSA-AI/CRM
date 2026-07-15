@@ -94,7 +94,7 @@ function WhatsAppConnectPage() {
 			height: 288,
 			data: connection.qrCode,
 			margin: 8,
-			image: '',
+			image: '/favicon.svg',
 			dotsOptions: {
 				type: 'rounded',
 				color: '#102a4c',
