@@ -18,6 +18,7 @@ import {
 	type PersonalLeadRegistration,
 } from './lead-access'
 import { PersonalAiReplyService } from './ai-reply'
+import { enqueueTaskAnalysis } from '../tasks/worker'
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -237,6 +238,17 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 					inboundMessageId: latestInbound.id,
 				}).catch((error) => {
 					console.warn('[PersonalWhatsAppInbox] Failed resuming AI after lead confirmation:', error)
+				})
+				// Analyze the customer's latest message right after confirmation so a task
+				// appears without waiting for a brand-new inbound message. The worker
+				// re-validates confirmed status, and the deterministic job id keeps this
+				// idempotent with the webhook enqueue.
+				void enqueueTaskAnalysis({
+					appId: resolvedAppId,
+					messageId: latestInbound.id,
+					ownerUserId: userId,
+				}).catch((error) => {
+					console.warn('[PersonalWhatsAppInbox] Failed enqueueing task analysis after lead confirmation:', error)
 				})
 			}
 		}

@@ -187,7 +187,7 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 	})
 	if (!assignee?.role) return { skipped: true, reason: 'assignee_not_eligible' }
 
-	const historyRows = await prisma.messages.findMany({
+	const recentRows = await prisma.messages.findMany({
 		where: {
 			conversation_id: conversation.id,
 			app_id: data.appId,
@@ -196,9 +196,9 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 		},
 		select: { message_type: true, content: true },
 		orderBy: { created_at: 'desc' },
-		take: 10,
+		take: 20,
 	})
-	const history = historyRows
+	const chronological = recentRows
 		.reverse()
 		.map((row) => ({
 			role: row.message_type === 'incoming' ? ('Customer' as const) : ('Sales' as const),
@@ -206,10 +206,24 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 		}))
 		.filter((row) => row.content.length > 0)
 
+	// Analyze the whole unanswered customer turn (all trailing customer messages
+	// since the last sales reply), not just the single latest line. Otherwise a
+	// trailing "trims"/"ok" would mask an earlier actionable question and the
+	// lead would be missed.
+	let turnStart = chronological.length
+	while (turnStart > 0 && chronological[turnStart - 1].role === 'Customer') {
+		turnStart -= 1
+	}
+	const unansweredTurn = chronological.slice(turnStart)
+	const history = chronological.slice(0, turnStart)
+	const latestMessage = unansweredTurn.length
+		? unansweredTurn.map((row) => row.content).join('\n')
+		: latestContent
+
 	const decision = withHumanReview(
 		await TaskAnalyzer.analyze({
 			customerName: conversation.contacts?.name || null,
-			latestMessage: latestContent,
+			latestMessage,
 			history,
 		}),
 	)

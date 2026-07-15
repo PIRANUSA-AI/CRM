@@ -21,6 +21,7 @@
 		"db:seed": "bun prisma db seed",
 		"db:seed:electronics": "NODE_ENV=production bun run scripts/seed-electronics-catalog.ts",
 		"db:seed:ceo": "bun run scripts/seed-ceo.ts",
+		"db:seed:dev-users": "bun run scripts/seed-dev-users.ts",
 		"db:rename-legacy-roles": "bun run scripts/rename-legacy-roles.ts",
 		"db:migrate-orgs": "bun run scripts/migrate-to-orgs.ts",
 		"ops:verify-ai-telemetry": "bun run scripts/verify-ai-telemetry.ts"
@@ -32,6 +33,7 @@
 		"@elysiajs/swagger": "^1.1.0",
 		"@langchain/core": "^1.2.2",
 		"@langchain/ollama": "^1.3.0",
+		"@langchain/openai": "^1.5.5",
 		"@prisma/adapter-pg": "^7.0.0",
 		"@prisma/client": "^7.0.0",
 		"@prisma/client-runtime-utils": "^7.0.0",

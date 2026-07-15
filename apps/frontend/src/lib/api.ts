@@ -2505,4 +2505,19 @@ export const tasks = {
 		apiRequest<{ data: Task }>(`/tasks/${encodeURIComponent(id)}/complete`, {
 			method: 'POST',
 		}),
+
+	snooze: (id: string, snoozedUntil: string, reason?: string) =>
+		apiRequest<{ data: Task }>(`/tasks/${encodeURIComponent(id)}/snooze`, {
+			method: 'POST',
+			body: JSON.stringify({ snoozedUntil, reason }),
+		}),
+
+	replyWhatsapp: (id: string, text: string) =>
+		apiRequest<{ data: Task }>(
+			`/tasks/${encodeURIComponent(id)}/reply-whatsapp`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ text }),
+			},
+		),
 }

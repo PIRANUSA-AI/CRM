@@ -1,5 +1,6 @@
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
+import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 import type { TaskAnalysisDecision } from './analyzer'
 import {
 	assertAssignableTask,
@@ -359,6 +360,129 @@ export abstract class TaskService {
 		})
 		emitTask('task:updated', task)
 		return (await enrichTasks([task]))[0]
+	}
+
+	static async replyWhatsapp(actor: TaskActor, taskId: string, text: string) {
+		const trimmed = text.trim()
+		if (!trimmed) throw new Error('Balasan tidak boleh kosong')
+
+		const scope = await taskVisibilityScope(actor)
+		const task = await prisma.tasks.findFirst({
+			where: { id: taskId, app_id: actor.appId, ...scope } as any,
+		})
+		if (!task) throw new TaskNotFoundError('Task tidak ditemukan')
+		if (!ACTIVE_STATUSES.includes(task.status)) {
+			throw new TaskConflictError('Task sudah selesai atau dibatalkan')
+		}
+		if (!task.conversation_id) {
+			throw new Error('Task ini tidak terhubung ke percakapan WhatsApp')
+		}
+
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: task.conversation_id, app_id: actor.appId, deleted_at: null },
+			select: {
+				id: true,
+				inbox_id: true,
+				additional_attributes: true,
+				contacts: { select: { phone_number: true, whatsapp_id: true } },
+			},
+		})
+		if (!conversation?.inbox_id || !conversation.contacts) {
+			throw new Error('Percakapan WhatsApp tidak ditemukan')
+		}
+
+		const personal = ((conversation.additional_attributes as Record<string, unknown>)
+			?.personal_whatsapp || {}) as Record<string, unknown>
+		const ownerUserId =
+			(typeof personal.owner_user_id === 'string' && personal.owner_user_id) ||
+			task.assignee_id
+		if (!ownerUserId) throw new Error('Pemilik WhatsApp tidak diketahui')
+
+		const session = await prisma.baileys_sessions.findFirst({
+			where: { app_id: actor.appId, owner_user_id: ownerUserId, status: 'connected' },
+			select: { provider_channel_key: true, channel_id: true },
+		})
+		if (!session) throw new Error('WhatsApp sales sedang tidak terhubung')
+		const channel = await prisma.whatsapp_channels.findFirst({
+			where: {
+				id: session.channel_id,
+				app_id: actor.appId,
+				provider: 'baileys',
+				deleted_at: null,
+			},
+			select: { api_key: true, inbox_id: true },
+		})
+		if (!channel?.api_key || channel.inbox_id !== conversation.inbox_id) {
+			throw new Error('Channel WhatsApp sales tidak valid')
+		}
+		const phone = String(
+			conversation.contacts.phone_number || conversation.contacts.whatsapp_id || '',
+		).replace(/\D/g, '')
+		if (!phone) throw new Error('Nomor WhatsApp customer tidak tersedia')
+
+		const sent = await BaileysServiceClient.sendMessage(
+			{
+				channelKey: session.provider_channel_key,
+				recipientWhatsAppId: phone,
+				recipientAddressingMode: 'pn',
+				type: 'text',
+				text: { body: trimmed },
+			},
+			{
+				Authorization: `Bearer ${channel.api_key}`,
+				'X-Crm-Channel-Secret': channel.api_key,
+			},
+		)
+
+		const now = new Date()
+		const { task: updatedTask, message } = await prisma.$transaction(async (tx) => {
+			const created = await tx.messages.create({
+				data: {
+					conversation_id: conversation.id,
+					app_id: actor.appId,
+					inbox_id: conversation.inbox_id,
+					message_type: 'outgoing',
+					sender_type: 'user',
+					sender_id: actor.userId,
+					content: trimmed,
+					content_type: 'text',
+					status: 'sent',
+					external_id: sent.externalId || null,
+					content_attributes: { from_task_id: taskId } as any,
+					created_at: now,
+					updated_at: now,
+				},
+			})
+			await tx.conversations.update({
+				where: { id: conversation.id },
+				data: { last_message_at: now, last_activity_at: now, updated_at: now },
+			})
+			await tx.tasks.updateMany({
+				where: { id: taskId, app_id: actor.appId, status: { in: ACTIVE_STATUSES } },
+				data: { status: 'done', completed_at: now, snoozed_until: null },
+			})
+			await tx.task_events.create({
+				data: {
+					task_id: taskId,
+					event_type: 'replied_whatsapp',
+					actor_id: actor.userId,
+					metadata: { messageExternalId: sent.externalId || null },
+				},
+			})
+			const row = await tx.tasks.findUnique({ where: { id: taskId } })
+			if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
+			return { task: asTask(row), message: created }
+		})
+
+		const io = getRealtimeIO()
+		const payload = {
+			message,
+			conversation: { id: conversation.id, app_id: actor.appId, channel_type: 'whatsapp' },
+		}
+		io?.to(`app:${actor.appId}`).emit('message:created', payload)
+		io?.to(`conversation:${conversation.id}`).emit('message:created', payload)
+		emitTask('task:updated', updatedTask)
+		return (await enrichTasks([updatedTask]))[0]
 	}
 
 	static async createFromAnalysis(input: {

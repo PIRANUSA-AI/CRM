@@ -93,4 +93,7 @@ export const TaskRequestModel = {
 	cancel: t.Object({
 		reason: t.Optional(t.String({ maxLength: 500 })),
 	}),
+	replyWhatsapp: t.Object({
+		text: t.String({ minLength: 1, maxLength: 4000 }),
+	}),
 } as const
