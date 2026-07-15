@@ -7,7 +7,7 @@
 		"dev:api": "APP_MODE=api bun run --watch src/index.ts",
 		"dev:worker": "APP_MODE=worker bun run --watch src/index.ts",
 		"dev:scheduler": "APP_MODE=scheduler bun run --watch src/index.ts",
-		"build": "bun build src/index.ts --outdir dist --target bun",
+		"build": "bun build src/index.ts --outdir dist --target node",
 		"start": "bun run dist/index.js",
 		"start:api": "APP_MODE=api bun run dist/index.js",
 		"start:worker": "APP_MODE=worker bun run dist/index.js",
