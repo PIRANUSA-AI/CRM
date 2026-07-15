@@ -80,8 +80,12 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			const prisma = (await import('../../lib/prisma')).default
 
 			// Kalo ada phoneNumber di body, simpan ke profil user
-			const rawPhone = String(body?.phoneNumber || '').trim().replace(/\D/g, '')
+			let rawPhone = String(body?.phoneNumber || '').trim().replace(/\D/g, '')
 			if (rawPhone) {
+				// Convert local (08xx) to international (628xx) so requestPairingCode gets the right format
+				if (rawPhone.startsWith('0') && rawPhone.length > 1) {
+					rawPhone = '62' + rawPhone.slice(1)
+				}
 				await prisma.users.update({
 					where: { id: userId },
 					data: { phone_number: rawPhone },

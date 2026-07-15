@@ -222,7 +222,12 @@ function sleep(ms: number) {
 }
 
 function normalizeDigits(value: string | null | undefined) {
-	return String(value || '').replace(/\D/g, '').trim()
+	const digits = String(value || '').replace(/\D/g, '').trim()
+	// Convert local Indonesian format (08xx) to international (628xx)
+	if (digits.startsWith('0') && digits.length > 1) {
+		return '62' + digits.slice(1)
+	}
+	return digits
 }
 
 function normalizeProviderChannelKey(metadata: unknown): string | null {
