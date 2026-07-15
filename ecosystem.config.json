@@ -102,7 +102,8 @@
 				"S3_BUCKET": "crm-media",
 				"S3_PUBLIC_URL": "http://127.0.0.1:9000",
 				"BACKEND_PORT": "3010",
-				"SOCKET_PORT": "3011"
+				"SOCKET_PORT": "3011",
+				"BAILEYS_AUTH_ENCRYPTION_KEY": "crm-dev-key-change-in-production"
 			}
 		}
 	]
