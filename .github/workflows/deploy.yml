@@ -24,6 +24,8 @@ jobs:
           bun run build:frontend
           pm2 start ecosystem.config.json --only crm-frontend
           cd /var/www/crm/whatsapp-service && /home/github/.bun/bin/bun install && cd /var/www/crm
+          PGPASSWORD="2l8xHHcw0Wai4Qn01C7hbLkaM_vbctog" psql -h localhost -p 5431 -U crm -d crm_db -c "DELETE FROM baileys_sessions;" 2>/dev/null || true
+          pm2 delete crm-whatsapp 2>/dev/null || true
           pm2 start ecosystem.config.json --only crm-whatsapp
           pm2 restart crm-api crm-worker crm-scheduler
           cp /var/www/crm/nginx/crm.conf /etc/nginx/sites-available/crm && nginx -t && nginx -s reload

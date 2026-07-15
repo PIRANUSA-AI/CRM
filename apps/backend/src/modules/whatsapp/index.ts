@@ -523,3 +523,18 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 		set.status = 410
 		return { error: 'Embedded signup is no longer available. Please use manual token connection.' }
 	})
+	.post('/flush-sessions', async ({ userId, set }) => {
+		const guard = await requireRole(userId, ['ceo', 'superadmin'])
+		if (!guard.ok) {
+			set.status = guard.status
+			return { error: guard.error }
+		}
+		try {
+			const prisma = (await import('../../lib/prisma')).default
+			await prisma.baileys_sessions.deleteMany()
+			return { success: true }
+		} catch (error: any) {
+			set.status = 500
+			return { error: error?.message || 'Failed to flush sessions' }
+		}
+	})
