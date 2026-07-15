@@ -22,6 +22,7 @@ jobs:
           bun run db:push
           pm2 stop crm-frontend
           PATH="/home/github/.bun/bin:$PATH" bun run build:frontend
+          chown -R github:github /var/www/crm/apps/frontend/.output 2>/dev/null || true
           pm2 start ecosystem.config.json --only crm-frontend
           cd /var/www/crm/whatsapp-service && /home/github/.bun/bin/bun install && cd /var/www/crm
           pm2 delete crm-whatsapp 2>/dev/null || true
