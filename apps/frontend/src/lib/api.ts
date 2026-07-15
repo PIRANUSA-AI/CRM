@@ -1566,7 +1566,7 @@ export const whatsappChannels = {
 	startMyConnection: (phoneNumber?: string) =>
 		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
 			'/whatsapp-channels/me/connection/start',
-			{ method: 'POST', body: phoneNumber ? { phoneNumber } : undefined },
+			{ method: 'POST', body: phoneNumber ? JSON.stringify({ phoneNumber }) : undefined },
 		),
 	sync: (channelId: string) =>
 		apiRequest(`/whatsapp/${channelId}/sync`, {
