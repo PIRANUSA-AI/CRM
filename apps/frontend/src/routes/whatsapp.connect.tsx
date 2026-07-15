@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Check, LoaderCircle, LogOut, ShieldCheck, Smartphone } from 'lucide-react'
-import QRCode from 'qrcode'
+import QRCodeStyling from 'qr-code-styling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { whatsappChannels, type PersonalWhatsAppConnection } from '@/lib/api'
@@ -89,8 +89,34 @@ function WhatsAppConnectPage() {
 	useEffect(() => {
 		if (!connection?.qrCode) { setQrImage(null); return }
 		let active = true
-		void QRCode.toDataURL(connection.qrCode, { width: 288, margin: 2, color: { dark: '#102a4c', light: '#ffffff' } })
-			.then((url: string) => { if (active) setQrImage(url) })
+		const qr = new QRCodeStyling({
+			width: 288,
+			height: 288,
+			data: connection.qrCode,
+			margin: 8,
+			image: '',
+			dotsOptions: {
+				type: 'rounded',
+				color: '#102a4c',
+				roundSize: true,
+			},
+			cornersSquareOptions: {
+				type: 'extra-rounded',
+				color: '#17365f',
+			},
+			cornersDotOptions: {
+				type: 'dot',
+				color: '#315d91',
+			},
+			backgroundOptions: {
+				color: '#ffffff',
+			},
+		})
+		void qr.getRawData('png').then((blob) => {
+			if (!active || !blob) return
+			const url = URL.createObjectURL(blob)
+			setQrImage(url)
+		})
 		return () => { active = false }
 	}, [connection?.qrCode])
 
