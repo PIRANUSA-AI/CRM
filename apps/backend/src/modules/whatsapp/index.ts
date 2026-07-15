@@ -71,14 +71,25 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			},
 		}
 	})
-	.post('/me/connection/start', async ({ resolvedAppId, userId, request, headers, set }) => {
+	.post('/me/connection/start', async ({ resolvedAppId, userId, body, request, headers, set }) => {
 		if (!resolvedAppId || !userId) {
 			set.status = 401
 			return { error: 'Unauthorized' }
 		}
 		try {
-			const user = await (await import('../../lib/prisma')).default.users.findUnique({
-				where: { id: userId }, select: { name: true },
+			const prisma = (await import('../../lib/prisma')).default
+
+			// Kalo ada phoneNumber di body, simpan ke profil user
+			const rawPhone = String(body?.phoneNumber || '').trim().replace(/\D/g, '')
+			if (rawPhone) {
+				await prisma.users.update({
+					where: { id: userId },
+					data: { phone_number: rawPhone },
+				})
+			}
+
+			const user = await prisma.users.findUnique({
+				where: { id: userId }, select: { name: true, phone_number: true },
 			})
 			const connection = await WhatsAppService.ensurePersonalBaileysConnection({
 				appId: resolvedAppId,

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Check, Copy, LoaderCircle, LogOut, ShieldCheck, Smartphone } from 'lucide-react'
+import { Check, Copy, LoaderCircle, LogOut, Phone, ShieldCheck, Smartphone } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -53,6 +53,8 @@ function WhatsAppConnectPage() {
 	const [waitingForPresence, setWaitingForPresence] = useState(false)
 	const firstName = useMemo(storedFirstName, [])
 	const mobile = useMemo(isMobile, [])
+	const [phoneInput, setPhoneInput] = useState('')
+	const [savingPhone, setSavingPhone] = useState(false)
 
 	const refresh = useCallback(async (start = false) => {
 		try {
@@ -135,6 +137,19 @@ function WhatsAppConnectPage() {
 		} catch {}
 	}
 
+	const submitPhone = async () => {
+		const digits = phoneInput.replace(/\D/g, '')
+		if (digits.length < 10) return
+		setSavingPhone(true)
+		try {
+			await whatsappChannels.startMyConnection(digits)
+			setPhoneInput('')
+		} catch (e: any) {
+			setError(e?.message || 'Gagal menyimpan nomor')
+		}
+		setSavingPhone(false)
+	}
+
 	return (
 		<main className="flex min-h-svh items-center justify-center bg-[#f7f3e9] px-5 py-10 text-[#142942]">
 			<button type="button" onClick={() => void logout()} className="absolute right-5 top-5 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[#52657b] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315d91]">
@@ -190,7 +205,25 @@ function WhatsAppConnectPage() {
 									</p>
 								</div>
 							) : mobile ? (
-								<LoaderCircle className="h-8 w-8 animate-spin text-[#315d91] motion-reduce:animate-none" aria-label="Menyiapkan kode pairing" />
+								<div className="w-full text-center">
+									<Phone className="mx-auto h-8 w-8 text-[#315d91]" />
+									<p className="mt-3 text-sm font-medium text-[#102a4c]">Masukkan nomor WhatsApp kamu</p>
+									<div className="mx-auto mt-4 flex max-w-[260px] gap-2">
+										<input
+											type="tel"
+											inputMode="numeric"
+											placeholder="6281234567890"
+											value={phoneInput}
+											onChange={e => setPhoneInput(e.target.value)}
+											onKeyDown={e => e.key === 'Enter' && !savingPhone && submitPhone()}
+											className="flex-1 rounded-xl border border-[#d0d7e2] px-4 py-2.5 text-center text-sm text-[#102a4c] outline-none focus:border-[#315d91]"
+										/>
+										<Button onClick={submitPhone} disabled={savingPhone || phoneInput.replace(/\D/g, '').length < 10} className="h-10 rounded-xl bg-[#17365f] px-4 hover:bg-[#102a4c]">
+											{savingPhone ? <LoaderCircle className="h-4 w-4 animate-spin" /> : 'Simpan'}
+										</Button>
+									</div>
+									<p className="mt-3 text-xs text-[#657487]">Format internasional tanpa +, contoh: 6281234567890</p>
+								</div>
 							) : qrImage ? (
 								<img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="h-auto w-full max-w-[288px]" />
 							) : (
