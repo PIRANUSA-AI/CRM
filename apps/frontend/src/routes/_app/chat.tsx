@@ -203,7 +203,7 @@ function PersonalWhatsappInbox() {
 	const [voiceRecording, setVoiceRecording] = useState(false)
 	const [voiceRecordingTime, setVoiceRecordingTime] = useState(0)
 	const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
-	const voiceDataRef = useRef<Uint8Array | null>(null)
+	const voiceDataRef = useRef<Uint8Array<ArrayBufferLike> | null>(null)
 	const voiceTimerRef = useRef<number | null>(null)
 	const voiceCanvasRef = useRef<HTMLCanvasElement | null>(null)
 	const voiceAnimRef = useRef<number | null>(null)
