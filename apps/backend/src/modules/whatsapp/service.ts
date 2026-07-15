@@ -790,13 +790,6 @@ export abstract class WhatsAppService {
 		}
 		return this.getPersonalBaileysConnection(params.appId, params.userId)
 	}
-		await prisma.$executeRawUnsafe(
-			`UPDATE baileys_sessions SET owner_user_id = $1::uuid, updated_at = now() WHERE channel_id = $2::uuid`,
-			params.userId,
-			created.channel.id,
-		)
-		return this.getPersonalBaileysConnection(params.appId, params.userId)
-	}
 
 	static async updateChannel(id: string, data: any) {
 		if (!isUuid(id)) return null
