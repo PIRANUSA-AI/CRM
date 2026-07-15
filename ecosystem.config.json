@@ -26,7 +26,7 @@
 				"S3_ACCESS_KEY": "crm_minio",
 				"S3_SECRET_KEY": "crm_minio_change_me",
 				"S3_BUCKET": "crm-media",
-				"S3_PUBLIC_URL": "http://127.0.0.1:9000"
+				"S3_PUBLIC_URL": "https://crm.contrivent.com"
 			}
 		},
 		{
@@ -49,7 +49,7 @@
 				"S3_ACCESS_KEY": "crm_minio",
 				"S3_SECRET_KEY": "crm_minio_change_me",
 				"S3_BUCKET": "crm-media",
-				"S3_PUBLIC_URL": "http://127.0.0.1:9000"
+				"S3_PUBLIC_URL": "https://crm.contrivent.com"
 			}
 		},
 		{
@@ -72,7 +72,7 @@
 				"S3_ACCESS_KEY": "crm_minio",
 				"S3_SECRET_KEY": "crm_minio_change_me",
 				"S3_BUCKET": "crm-media",
-				"S3_PUBLIC_URL": "http://127.0.0.1:9000"
+				"S3_PUBLIC_URL": "https://crm.contrivent.com"
 			}
 		},
 		{
@@ -112,7 +112,7 @@
 				"S3_ACCESS_KEY": "crm_minio",
 				"S3_SECRET_KEY": "crm_minio_change_me",
 				"S3_BUCKET": "crm-media",
-				"S3_PUBLIC_URL": "http://127.0.0.1:9000",
+				"S3_PUBLIC_URL": "https://crm.contrivent.com",
 				"BACKEND_PORT": "3010",
 				"SOCKET_PORT": "3011",
 				"BAILEYS_AUTH_ENCRYPTION_KEY": "crm-dev-key-change-in-production",
