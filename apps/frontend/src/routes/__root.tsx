@@ -245,6 +245,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="id" suppressHydrationWarning>
 			<head>
+				<script>try{document.documentElement.className=localStorage.getItem('crm-theme')||''}catch(e){}</script>
 				<HeadContent />
 			</head>
 			<body className="min-h-screen bg-background text-foreground antialiased">
