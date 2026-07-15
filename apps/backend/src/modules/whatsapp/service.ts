@@ -747,12 +747,16 @@ export abstract class WhatsAppService {
 
 		// Update phone number & pairing mode kalo user punya nomor valid
 		if (phoneNumber && existing?.channelId) {
+			const channelRow = await prisma.whatsapp_channels.findUnique({
+				where: { id: existing.channelId },
+				select: { extended_metadata: true },
+			})
 			await prisma.whatsapp_channels.update({
 				where: { id: existing.channelId },
 				data: {
 					phone_number: phoneNumber,
 					extended_metadata: {
-						...(existing as any).extended_metadata || {},
+						...((channelRow?.extended_metadata || {}) as Record<string, unknown>),
 						baileys_link_mode: 'pairing_code',
 					},
 				},
