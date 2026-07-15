@@ -1157,12 +1157,7 @@ export abstract class BaileysServiceRuntime {
 			logger: baileysLogger as any,
 			browser: Browsers.macOS('Google Chrome'),
 			printQRInTerminal: false,
-			markOnlineOnConnect: false,
 			connectTimeoutMs: 60_000,
-			qrTimeout: 300_000,
-			syncFullHistory: false,
-			shouldSyncHistoryMessage: () => false,
-			fireInitQueries: false,
 			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
 		})
 
