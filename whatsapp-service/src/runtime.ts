@@ -803,6 +803,7 @@ export abstract class BaileysServiceRuntime {
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
+			entry.restartAttempts = 0
 			if (currentSocket) currentSocket.end(undefined)
 		}
 
@@ -1167,6 +1168,33 @@ export abstract class BaileysServiceRuntime {
 		entry.socket = socket
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
+
+		// Request pairing code immediately after socket creation (not waiting for QR)
+		// This follows Baileys official example: call requestPairingCode right after makeWASocket
+		const pairingPhoneNumber = normalizeDigits(channel.phone_number)
+		if (
+			shouldUsePairingCode(channel) &&
+			pairingPhoneNumber &&
+			!auth.state.creds.registered
+		) {
+			entry.pairingCodeRequested = true
+			void (async () => {
+				try {
+					const code = await socket.requestPairingCode(pairingPhoneNumber)
+					await updateSessionById(sessionRow.id, {
+						status: 'pairing_code_ready',
+						pairing_code: code,
+						qr_code: null,
+						last_error: null,
+						last_seen_at: new Date(),
+						updated_at: new Date(),
+					})
+				} catch (error) {
+					entry.pairingCodeRequested = false
+					console.error('[BaileysService] Pairing code request failed', { channelId: channel.id, error })
+				}
+			})()
+		}
 
 		void auth.saveCreds().catch((error) => {
 			console.error('[BaileysService] Failed to persist initial auth creds', error)
