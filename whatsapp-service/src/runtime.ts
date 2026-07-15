@@ -1159,7 +1159,7 @@ export abstract class BaileysServiceRuntime {
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.macOS('Google Chrome'),
+			browser: Browsers.windows('Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			agent,
