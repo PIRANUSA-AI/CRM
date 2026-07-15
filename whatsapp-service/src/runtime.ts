@@ -147,7 +147,7 @@ const HISTORY_PROGRESS_STEP = Math.max(
 	1,
 	Math.min(100, Number(process.env.WHATSAPP_SYNC_PROGRESS_STEP || 10)),
 )
-const BASE_RESTART_DELAY_MS = 2_000
+const BASE_RESTART_DELAY_MS = 30_000
 const MAX_RESTART_DELAY_MS = 60_000
 const MAX_RESTART_ATTEMPTS = 10
 
@@ -1420,18 +1420,19 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.loggedOut) {
+			// Rate-limited / blocked by WhatsApp — stop auto-retry, wait for manual restart
 			await updateSessionById(sessionRow.id, {
-				status: 'logged_out',
+				status: 'not_paired',
 				auth_state: null,
 				first_connected_at: null,
 				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: formattedDisconnectMessage,
+				last_error: null,
 				updated_at: new Date(),
 			})
-			entry.restartAttempts = 0
-			this.scheduleRestart(entry.channelId)
+			entry.desiredRunning = false
+			entry.socket = null
 			return
 		}
 
