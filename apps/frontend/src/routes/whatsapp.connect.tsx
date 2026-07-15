@@ -21,8 +21,13 @@ function storedFirstName() {
 }
 
 function isMobile() {
-	if (typeof window === 'undefined') return false
-	return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+	if (typeof window === 'undefined' || !navigator) return false
+	try {
+		const ua = navigator.userAgent || ''
+		if (/Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true
+		if (/iPad/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) return true
+		return window.innerWidth < 768
+	} catch { return false }
 }
 
 function formatPairingCode(code: string) {
@@ -52,7 +57,13 @@ function WhatsAppConnectPage() {
 	const [pairingRemaining, setPairingRemaining] = useState(300)
 	const [waitingForPresence, setWaitingForPresence] = useState(false)
 	const firstName = useMemo(storedFirstName, [])
-	const mobile = useMemo(isMobile, [])
+	const [mobile, setMobile] = useState(false)
+	useEffect(() => {
+		const check = () => { try { setMobile(isMobile()) } catch {} }
+		check()
+		window.addEventListener('resize', check)
+		return () => window.removeEventListener('resize', check)
+	}, [])
 	const [phoneInput, setPhoneInput] = useState('')
 	const [savingPhone, setSavingPhone] = useState(false)
 
