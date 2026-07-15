@@ -1265,56 +1265,14 @@ export abstract class BaileysServiceRuntime {
 		const sessionRow = await getSessionByChannelId(channel.id)
 		if (!sessionRow?.id) return
 
-		const usePairing = shouldUsePairingCode(channel) && normalizeDigits(channel.phone_number)
-
 		if (update.qr) {
 			await updateSessionById(sessionRow.id, {
-				status: usePairing ? 'connecting' : 'qr_ready',
+				status: 'qr_ready',
 				qr_code: update.qr,
-				pairing_code: usePairing ? sessionRow.pairing_code : null,
 				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-		}
-
-		const normalizedPhoneNumber = normalizeDigits(channel.phone_number)
-		if (
-			usePairing &&
-			!socket.authState.creds.registered &&
-			!entry.pairingCodeRequested &&
-			Boolean(update.qr)
-		) {
-			entry.pairingCodeRequested = true
-			void (async () => {
-				try {
-					const pairingCode = await socket.requestPairingCode(
-						normalizedPhoneNumber,
-					)
-					await updateSessionById(sessionRow.id, {
-						status: 'pairing_code_ready',
-						pairing_code: pairingCode,
-						qr_code: null,
-						last_error: null,
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-				} catch (error) {
-					entry.pairingCodeRequested = false
-					const latestSession = await getSessionByChannelId(channel.id)
-					await updateSessionById(sessionRow.id, {
-						status: latestSession?.qr_code ? 'qr_ready' : 'connecting',
-						pairing_code: latestSession?.pairing_code || null,
-						qr_code: latestSession?.qr_code || null,
-						last_error:
-							error instanceof Error
-								? error.message
-								: 'Failed to request Baileys pairing code',
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-				}
-			})()
 		}
 
 		if (update.connection === 'open') {
