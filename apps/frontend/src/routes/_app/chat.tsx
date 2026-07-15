@@ -455,6 +455,12 @@ function PersonalWhatsappInbox() {
 		else publishPresence('paused')
 	}, [publishPresence, voiceRecording])
 
+	useEffect(() => {
+		if (diagnostic && diagnostic.connection !== 'connected') {
+			void navigate({ to: '/whatsapp/connect', replace: true })
+		}
+	}, [diagnostic, navigate])
+
 	useEffect(() => () => {
 		if (recorderTimeoutRef.current) window.clearTimeout(recorderTimeoutRef.current)
 		const recorder = recorderRef.current
