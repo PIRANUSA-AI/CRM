@@ -1,9 +1,12 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { Bell, Search } from 'lucide-react'
+import { Bell, Bot, Search, UserCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import CommandPalette from '@/components/CommandPalette'
 import { CrmAvatar } from '@/components/crm/shared'
 import ThemeToggle from '@/components/ThemeToggle'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { personalAi, type PersonalTakeoverItem } from '@/lib/api'
+import { connectSocket } from '@/lib/socket'
 import { CRM_NAV_ITEMS } from '@/lib/crm-navigation'
 import { useAppContext } from '@/routes/_app'
 
@@ -35,6 +38,8 @@ export default function TopBar() {
 	const { agent } = useAppContext()
 	const [isPaletteOpen, setIsPaletteOpen] = useState(false)
 	const [displayAgent, setDisplayAgent] = useState<TopBarUser | null>(agent || null)
+	const [notifOpen, setNotifOpen] = useState(false)
+	const [takeovers, setTakeovers] = useState<PersonalTakeoverItem[]>([])
 
 	useEffect(() => {
 		if (agent) {
@@ -63,6 +68,30 @@ export default function TopBar() {
 		}
 		window.addEventListener('keydown', onKeyDown)
 		return () => window.removeEventListener('keydown', onKeyDown)
+	}, [])
+
+	// Notifications: leads currently handed over / taken over that need a human.
+	useEffect(() => {
+		let active = true
+		const refresh = () => {
+			personalAi
+				.listTakeovers()
+				.then((response) => {
+					if (active) setTakeovers(response.data)
+				})
+				.catch(() => {
+					/* non-blocking: notifications are best-effort */
+				})
+		}
+		refresh()
+		const socket = connectSocket()
+		socket.on('personal-takeover:updated', refresh)
+		const interval = setInterval(refresh, 60_000)
+		return () => {
+			active = false
+			socket.off('personal-takeover:updated', refresh)
+			clearInterval(interval)
+		}
 	}, [])
 
 	const activeItem = useMemo(() => {
@@ -114,14 +143,80 @@ export default function TopBar() {
 
 				<ThemeToggle />
 
-				<button
-					type="button"
-					className="relative rounded-md p-2 text-muted-foreground hover:bg-muted"
-					aria-label="Notifikasi"
-				>
-					<Bell size={18} />
-					<span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500" />
-				</button>
+				<Popover open={notifOpen} onOpenChange={setNotifOpen}>
+					<PopoverTrigger
+						className="relative rounded-md p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label="Notifikasi alih tugas"
+					>
+						<Bell size={18} />
+						{takeovers.length > 0 ? (
+							<span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white">
+								{Math.min(takeovers.length, 99)}
+							</span>
+						) : null}
+					</PopoverTrigger>
+					<PopoverContent align="end" sideOffset={8} className="w-[min(22rem,calc(100vw-2rem))] p-0">
+						<div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+							<p className="text-sm font-semibold">Alih Tugas</p>
+							<span className="text-xs text-muted-foreground">{takeovers.length} menunggu</span>
+						</div>
+						{takeovers.length === 0 ? (
+							<div className="px-3 py-6 text-center text-sm text-muted-foreground">
+								Tidak ada lead yang perlu ditangani manusia.
+							</div>
+						) : (
+							<ul className="max-h-80 divide-y divide-border overflow-y-auto">
+								{takeovers.slice(0, 8).map((item) => {
+									const isAi = item.source === 'ai'
+									return (
+										<li key={item.conversationId}>
+											<button
+												type="button"
+												onClick={() => {
+													setNotifOpen(false)
+													navigate({ to: '/alih-tugas' })
+												}}
+												className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+											>
+												<span
+													className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${
+														isAi
+															? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+															: 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
+													}`}
+												>
+													{isAi ? <Bot size={13} /> : <UserCheck size={13} />}
+												</span>
+												<span className="min-w-0 flex-1">
+													<span className="flex items-center justify-between gap-2">
+														<span className="truncate text-sm font-medium">{item.contactName}</span>
+														{item.overdue ? (
+															<span className="shrink-0 text-[10px] font-semibold text-rose-500">lewat SLA</span>
+														) : null}
+													</span>
+													<span className="line-clamp-1 text-xs text-muted-foreground">
+														{isAi ? 'Dialihkan AI' : 'Diambil sales'}
+														{item.aiReason ? ` · ${item.aiReason}` : ''}
+													</span>
+												</span>
+											</button>
+										</li>
+									)
+								})}
+							</ul>
+						)}
+						<button
+							type="button"
+							onClick={() => {
+								setNotifOpen(false)
+								navigate({ to: '/alih-tugas' })
+							}}
+							className="w-full border-t border-border px-3 py-2.5 text-center text-sm font-semibold text-primary hover:bg-muted/60"
+						>
+							Buka Alih Tugas
+						</button>
+					</PopoverContent>
+				</Popover>
 
 				<button type="button" onClick={() => navigate({ to: '/settings' })} className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-1.5 py-1 transition-colors hover:bg-muted sm:px-2" aria-label="Buka pengaturan profil">
 					<CrmAvatar name={displayName} imageUrl={displayAgent?.avatar_url} size={26} online />

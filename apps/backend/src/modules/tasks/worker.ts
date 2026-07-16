@@ -31,6 +31,20 @@ export const TASK_ANALYSIS_CONCURRENCY = Math.max(
 	Math.min(10, Number(process.env.TASK_ANALYSIS_CONCURRENCY || 3)),
 )
 
+// Escalating read window: analyze the most recent messages first, then widen to
+// more history only when the first pass is an uncertain "ignore". Keeps the
+// common case cheap while still catching leads buried deeper in the thread.
+const TASK_ANALYSIS_WINDOW_INITIAL = Math.max(
+	1,
+	Math.min(200, Number(process.env.TASK_ANALYSIS_WINDOW_INITIAL || 25)),
+)
+const TASK_ANALYSIS_WINDOW_MAX = Math.max(
+	TASK_ANALYSIS_WINDOW_INITIAL,
+	Math.min(200, Number(process.env.TASK_ANALYSIS_WINDOW_MAX || 50)),
+)
+const PRODUCT_CONTEXT_MAX_CHARS = 4_000
+const PRODUCT_CONTEXT_MAX_SNIPPETS = 5
+
 export type TaskAnalysisJobData = {
 	appId: string
 	messageId: string
@@ -44,6 +58,74 @@ function normalizedText(value: unknown) {
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
 	return value as Record<string, unknown>
+}
+
+function tokenize(value: string) {
+	return [
+		...new Set(
+			value
+				.toLowerCase()
+				.replace(/[^a-z0-9\p{L}\p{N}\s]/gu, ' ')
+				.split(/\s+/)
+				.filter((word) => word.length >= 3),
+		),
+	]
+}
+
+// Product-awareness for the classifier via keyword retrieval only (no
+// embeddings) so it degrades gracefully when the embedding provider is down.
+// Returns '' when the knowledge base is empty or nothing matches, in which case
+// the analyzer simply runs without product context.
+async function buildProductContext(appId: string, query: string) {
+	const queryTokens = tokenize(query)
+	if (!queryTokens.length) return ''
+	const [faqs, chunks] = await Promise.all([
+		prisma.knowledge_faqs.findMany({
+			where: { app_id: appId, is_active: true },
+			orderBy: [{ priority: 'desc' }, { updated_at: 'desc' }],
+			take: 100,
+			select: { question: true, answer: true, keywords: true },
+		}),
+		prisma.knowledge_chunks.findMany({
+			where: { app_id: appId },
+			orderBy: { updated_at: 'desc' },
+			take: 160,
+			select: { chunk_text: true, locator_label: true },
+		}),
+	])
+	const candidates = [
+		...faqs.map((faq) => ({
+			label: faq.question,
+			text: `Q: ${faq.question}\nA: ${faq.answer}${
+				faq.keywords.length ? `\nKata kunci: ${faq.keywords.join(', ')}` : ''
+			}`,
+		})),
+		...chunks.map((chunk) => ({
+			label: chunk.locator_label || 'Knowledge',
+			text: normalizedText(chunk.chunk_text),
+		})),
+	]
+		.filter((item) => item.text.length > 0)
+		.map((item) => {
+			const haystack = item.text.toLowerCase()
+			const score = queryTokens.reduce(
+				(total, token) => total + (haystack.includes(token) ? 1 : 0),
+				0,
+			)
+			return { ...item, score }
+		})
+		.filter((item) => item.score > 0)
+		.sort((a, b) => b.score - a.score)
+		.slice(0, PRODUCT_CONTEXT_MAX_SNIPPETS)
+	if (!candidates.length) return ''
+
+	let context = ''
+	for (const candidate of candidates) {
+		const block = `- ${candidate.label}: ${candidate.text}`.slice(0, 1_200)
+		if (context.length + block.length + 1 > PRODUCT_CONTEXT_MAX_CHARS) break
+		context += (context ? '\n' : '') + block
+	}
+	return context
 }
 
 function withHumanReview(
@@ -164,12 +246,14 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 				app_id: data.appId,
 				owner_user_id: ownerUserId,
 				conversation_id: conversation.id,
-				status: 'confirmed',
 			},
-			select: { id: true },
+			select: { status: true },
 		})
-		if (!registration) {
-			return { skipped: true, reason: 'personal_lead_not_confirmed' }
+		// Auto-detect leads regardless of confirmation state. Only explicitly
+		// blocked leads (spam / opt-out) are skipped, so genuine buying signals
+		// are never missed while a lead is still pending.
+		if (registration?.status === 'blocked') {
+			return { skipped: true, reason: 'personal_lead_blocked' }
 		}
 	}
 
@@ -196,7 +280,7 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 		},
 		select: { message_type: true, content: true },
 		orderBy: { created_at: 'desc' },
-		take: 20,
+		take: TASK_ANALYSIS_WINDOW_MAX,
 	})
 	const chronological = recentRows
 		.reverse()
@@ -206,27 +290,52 @@ export async function processTaskAnalysisJob(data: TaskAnalysisJobData) {
 		}))
 		.filter((row) => row.content.length > 0)
 
-	// Analyze the whole unanswered customer turn (all trailing customer messages
-	// since the last sales reply), not just the single latest line. Otherwise a
-	// trailing "trims"/"ok" would mask an earlier actionable question and the
-	// lead would be missed.
-	let turnStart = chronological.length
-	while (turnStart > 0 && chronological[turnStart - 1].role === 'Customer') {
-		turnStart -= 1
-	}
-	const unansweredTurn = chronological.slice(turnStart)
-	const history = chronological.slice(0, turnStart)
-	const latestMessage = unansweredTurn.length
-		? unansweredTurn.map((row) => row.content).join('\n')
-		: latestContent
-
-	const decision = withHumanReview(
-		await TaskAnalyzer.analyze({
+	// Analyze the most recent `windowSize` messages. The unanswered customer turn
+	// (all trailing customer messages since the last sales reply) is always
+	// analyzed in full so a trailing "ok"/emoji cannot mask an earlier actionable
+	// question; older messages are context/history for the classifier.
+	const analyzeWithWindow = async (windowSize: number) => {
+		const window = chronological.slice(
+			Math.max(0, chronological.length - windowSize),
+		)
+		let turnStart = window.length
+		while (turnStart > 0 && window[turnStart - 1].role === 'Customer') {
+			turnStart -= 1
+		}
+		const unansweredTurn = window.slice(turnStart)
+		const history = window.slice(0, turnStart)
+		const latestMessage = unansweredTurn.length
+			? unansweredTurn.map((row) => row.content).join('\n')
+			: latestContent
+		const customerText = window
+			.filter((row) => row.role === 'Customer')
+			.map((row) => row.content)
+			.join('\n')
+		const productContext = await buildProductContext(
+			data.appId,
+			customerText || latestMessage,
+		)
+		return TaskAnalyzer.analyze({
 			customerName: conversation.contacts?.name || null,
 			latestMessage,
 			history,
-		}),
-	)
+			productContext,
+		})
+	}
+
+	// First pass reads the recent window. If it lands on an uncertain "ignore"
+	// and more history exists, widen to the max window before concluding the
+	// thread is not a lead. A confident "ignore" stops here to save model calls.
+	let rawDecision = await analyzeWithWindow(TASK_ANALYSIS_WINDOW_INITIAL)
+	if (
+		rawDecision.action === 'ignore' &&
+		rawDecision.confidence < TASK_ANALYSIS_MIN_CONFIDENCE &&
+		chronological.length > TASK_ANALYSIS_WINDOW_INITIAL
+	) {
+		rawDecision = await analyzeWithWindow(TASK_ANALYSIS_WINDOW_MAX)
+	}
+
+	const decision = withHumanReview(rawDecision)
 	if (!decision) return { skipped: true, reason: 'decision_not_actionable' }
 
 	const actor: TaskActor = {

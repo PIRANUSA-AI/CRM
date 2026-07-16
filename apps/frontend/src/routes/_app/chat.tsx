@@ -4,6 +4,7 @@ import {
 	AlertCircle,
 	ArrowLeft,
 	Ban,
+	Bot,
 	Check,
 	CheckCheck,
 	CheckSquare,
@@ -66,6 +67,7 @@ type Conversation = {
 	id: string
 	contactId: string | null
 	workflow: 'ai' | 'handover' | 'human'
+	aiHandling: boolean
 	name: string
 	phone: string
 	avatarUrl: string | null
@@ -199,6 +201,7 @@ function PersonalWhatsappInbox() {
 	const [uploadingMedia, setUploadingMedia] = useState(false)
 	const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
 	const [profileOpen, setProfileOpen] = useState(false)
+	const [takeoverBusy, setTakeoverBusy] = useState(false)
 	const [voiceRecording, setVoiceRecording] = useState(false)
 	const [contactPresence, setContactPresence] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
@@ -247,6 +250,33 @@ function PersonalWhatsappInbox() {
 			setLoading(false)
 		}
 	}, [])
+
+	// Toggle takeover: switch a lead between AI handling and human handling.
+	// enable=true -> take over (AI stops); enable=false -> return to AI.
+	const toggleTakeover = useCallback(
+		async (conversationId: string, takeover: boolean) => {
+			setTakeoverBusy(true)
+			setError(null)
+			try {
+				const response = await fetch(
+					`${API_BASE}/personal-whatsapp-inbox/${conversationId}/${takeover ? 'takeover' : 'release'}`,
+					{
+						method: 'POST',
+						headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+						body: JSON.stringify({}),
+					},
+				)
+				const payload = (await readApiResponse(response)) as { error?: string }
+				if (!response.ok) throw new Error(payload.error || 'Aksi alih tugas gagal')
+				await loadConversations()
+			} catch (reason) {
+				setError(reason instanceof Error ? reason.message : 'Aksi alih tugas gagal')
+			} finally {
+				setTakeoverBusy(false)
+			}
+		},
+		[loadConversations],
+	)
 
 	const loadLeadLists = useCallback(async () => {
 		const loadStatus = async (status: 'pending' | 'blocked') => {
@@ -372,6 +402,7 @@ function PersonalWhatsappInbox() {
 		socket.on('contact:profile_updated', loadConversations)
 		socket.on('message:revoked', refresh)
 		socket.on('personal-lead:updated', refresh)
+		socket.on('personal-takeover:updated', loadConversations)
 		return () => {
 			socket.off('message:created', handleMessageCreated)
 			socket.off('message:deleted', refresh)
@@ -381,6 +412,7 @@ function PersonalWhatsappInbox() {
 			socket.off('contact:profile_updated', loadConversations)
 			socket.off('message:revoked', refresh)
 			socket.off('personal-lead:updated', refresh)
+			socket.off('personal-takeover:updated', loadConversations)
 		}
 	}, [loadConversations, loadLeadLists, loadMessages, markRead, selectedId, selectedPhone])
 
@@ -997,6 +1029,29 @@ function PersonalWhatsappInbox() {
 										</div>
 										<Info className="mr-1 size-4 shrink-0 text-muted-foreground" />
 									</button>
+									{active.aiHandling ? (
+										<button
+											type="button"
+											onClick={() => void toggleTakeover(active.id, true)}
+											disabled={takeoverBusy}
+											className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+											title="Ambil alih percakapan ini dari AI"
+										>
+											<UserCheck className="size-4" />
+											<span className="hidden sm:inline">{takeoverBusy ? '...' : 'Ambil Alih'}</span>
+										</button>
+									) : (
+										<button
+											type="button"
+											onClick={() => void toggleTakeover(active.id, false)}
+											disabled={takeoverBusy}
+											className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:text-sky-300"
+											title="Kembalikan percakapan ini ke AI"
+										>
+											<Bot className="size-4" />
+											<span className="hidden sm:inline">{takeoverBusy ? '...' : 'Kembalikan ke AI'}</span>
+										</button>
+									)}
 								</>
 							)}
 						</header>

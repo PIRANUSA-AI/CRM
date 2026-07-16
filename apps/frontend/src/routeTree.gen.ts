@@ -18,7 +18,6 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhatsappConnectRouteImport } from './routes/whatsapp.connect'
 import { Route as AppTemplatesRouteImport } from './routes/_app/templates'
-import { Route as AppTasksRouteImport } from './routes/_app/tasks'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
@@ -33,10 +32,13 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppChatRouteImport } from './routes/_app/chat'
 import { Route as AppBroadcastRouteImport } from './routes/_app/broadcast'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
+import { Route as AppAlihTugasRouteImport } from './routes/_app/alih-tugas'
 import { Route as AppAiAgentsRouteImport } from './routes/_app/ai-agents'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
+import { Route as AppTasksIndexRouteImport } from './routes/_app/tasks/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/_app/developers/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/_app/customers/index'
+import { Route as AppTasksTaskIdRouteImport } from './routes/_app/tasks/$taskId'
 import { Route as AppFlowsFlowIdRouteImport } from './routes/_app/flows/$flowId'
 import { Route as AppDevelopersWebhooksRouteImport } from './routes/_app/developers/webhooks'
 import { Route as AppDevelopersMessagesSentByApiRouteImport } from './routes/_app/developers/messages-sent-by-api'
@@ -98,11 +100,6 @@ const WhatsappConnectRoute = WhatsappConnectRouteImport.update({
 const AppTemplatesRoute = AppTemplatesRouteImport.update({
   id: '/templates',
   path: '/templates',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppTasksRoute = AppTasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -175,6 +172,11 @@ const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAlihTugasRoute = AppAlihTugasRouteImport.update({
+  id: '/alih-tugas',
+  path: '/alih-tugas',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAiAgentsRoute = AppAiAgentsRouteImport.update({
   id: '/ai-agents',
   path: '/ai-agents',
@@ -185,6 +187,11 @@ const AppAiRoute = AppAiRouteImport.update({
   path: '/ai',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTasksIndexRoute = AppTasksIndexRouteImport.update({
+  id: '/tasks/',
+  path: '/tasks/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
   id: '/developers/',
   path: '/developers/',
@@ -193,6 +200,11 @@ const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
 const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
   id: '/customers/',
   path: '/customers/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTasksTaskIdRoute = AppTasksTaskIdRouteImport.update({
+  id: '/tasks/$taskId',
+  path: '/tasks/$taskId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFlowsFlowIdRoute = AppFlowsFlowIdRouteImport.update({
@@ -300,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ai': typeof AppAiRoute
   '/ai-agents': typeof AppAiAgentsRouteWithChildren
+  '/alih-tugas': typeof AppAlihTugasRoute
   '/analytics': typeof AppAnalyticsRoute
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
@@ -314,7 +327,6 @@ export interface FileRoutesByFullPath {
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
   '/settings': typeof AppSettingsRoute
-  '/tasks': typeof AppTasksRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -332,8 +344,10 @@ export interface FileRoutesByFullPath {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/customers/': typeof AppCustomersIndexRoute
   '/developers/': typeof AppDevelopersIndexRoute
+  '/tasks/': typeof AppTasksIndexRoute
   '/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
   '/channels/whatsapp/success': typeof AppChannelsWhatsappSuccessRoute
   '/developers/api-tools/new': typeof AppDevelopersApiToolsNewRoute
@@ -347,6 +361,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ai': typeof AppAiRoute
   '/ai-agents': typeof AppAiAgentsRouteWithChildren
+  '/alih-tugas': typeof AppAlihTugasRoute
   '/analytics': typeof AppAnalyticsRoute
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
@@ -361,7 +376,6 @@ export interface FileRoutesByTo {
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
   '/settings': typeof AppSettingsRoute
-  '/tasks': typeof AppTasksRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -379,8 +393,10 @@ export interface FileRoutesByTo {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/customers': typeof AppCustomersIndexRoute
   '/developers': typeof AppDevelopersIndexRoute
+  '/tasks': typeof AppTasksIndexRoute
   '/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
   '/channels/whatsapp/success': typeof AppChannelsWhatsappSuccessRoute
   '/developers/api-tools/new': typeof AppDevelopersApiToolsNewRoute
@@ -396,6 +412,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_app/ai': typeof AppAiRoute
   '/_app/ai-agents': typeof AppAiAgentsRouteWithChildren
+  '/_app/alih-tugas': typeof AppAlihTugasRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/broadcast': typeof AppBroadcastRoute
   '/_app/chat': typeof AppChatRoute
@@ -410,7 +427,6 @@ export interface FileRoutesById {
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/settings': typeof AppSettingsRoute
-  '/_app/tasks': typeof AppTasksRoute
   '/_app/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/_app/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
@@ -428,8 +444,10 @@ export interface FileRoutesById {
   '/_app/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/_app/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/_app/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/_app/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/_app/customers/': typeof AppCustomersIndexRoute
   '/_app/developers/': typeof AppDevelopersIndexRoute
+  '/_app/tasks/': typeof AppTasksIndexRoute
   '/_app/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
   '/_app/channels/whatsapp/success': typeof AppChannelsWhatsappSuccessRoute
   '/_app/developers/api-tools/new': typeof AppDevelopersApiToolsNewRoute
@@ -445,6 +463,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ai'
     | '/ai-agents'
+    | '/alih-tugas'
     | '/analytics'
     | '/broadcast'
     | '/chat'
@@ -459,7 +478,6 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/pipeline'
     | '/settings'
-    | '/tasks'
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
@@ -477,8 +495,10 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/tasks/$taskId'
     | '/customers/'
     | '/developers/'
+    | '/tasks/'
     | '/channels/whatsapp/$channelId'
     | '/channels/whatsapp/success'
     | '/developers/api-tools/new'
@@ -492,6 +512,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ai'
     | '/ai-agents'
+    | '/alih-tugas'
     | '/analytics'
     | '/broadcast'
     | '/chat'
@@ -506,7 +527,6 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/pipeline'
     | '/settings'
-    | '/tasks'
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
@@ -524,8 +544,10 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/tasks/$taskId'
     | '/customers'
     | '/developers'
+    | '/tasks'
     | '/channels/whatsapp/$channelId'
     | '/channels/whatsapp/success'
     | '/developers/api-tools/new'
@@ -540,6 +562,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_app/ai'
     | '/_app/ai-agents'
+    | '/_app/alih-tugas'
     | '/_app/analytics'
     | '/_app/broadcast'
     | '/_app/chat'
@@ -554,7 +577,6 @@ export interface FileRouteTypes {
     | '/_app/metrics'
     | '/_app/pipeline'
     | '/_app/settings'
-    | '/_app/tasks'
     | '/_app/templates'
     | '/whatsapp/connect'
     | '/_app/ai-agents/$agentId'
@@ -572,8 +594,10 @@ export interface FileRouteTypes {
     | '/_app/developers/messages-sent-by-api'
     | '/_app/developers/webhooks'
     | '/_app/flows/$flowId'
+    | '/_app/tasks/$taskId'
     | '/_app/customers/'
     | '/_app/developers/'
+    | '/_app/tasks/'
     | '/_app/channels/whatsapp/$channelId'
     | '/_app/channels/whatsapp/success'
     | '/_app/developers/api-tools/new'
@@ -653,13 +677,6 @@ declare module '@tanstack/react-router' {
       path: '/templates'
       fullPath: '/templates'
       preLoaderRoute: typeof AppTemplatesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/tasks': {
-      id: '/_app/tasks'
-      path: '/tasks'
-      fullPath: '/tasks'
-      preLoaderRoute: typeof AppTasksRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -760,6 +777,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAnalyticsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/alih-tugas': {
+      id: '/_app/alih-tugas'
+      path: '/alih-tugas'
+      fullPath: '/alih-tugas'
+      preLoaderRoute: typeof AppAlihTugasRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/ai-agents': {
       id: '/_app/ai-agents'
       path: '/ai-agents'
@@ -774,6 +798,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAiRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/tasks/': {
+      id: '/_app/tasks/'
+      path: '/tasks'
+      fullPath: '/tasks/'
+      preLoaderRoute: typeof AppTasksIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/developers/': {
       id: '/_app/developers/'
       path: '/developers'
@@ -786,6 +817,13 @@ declare module '@tanstack/react-router' {
       path: '/customers'
       fullPath: '/customers/'
       preLoaderRoute: typeof AppCustomersIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tasks/$taskId': {
+      id: '/_app/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/tasks/$taskId'
+      preLoaderRoute: typeof AppTasksTaskIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/flows/$flowId': {
@@ -970,6 +1008,7 @@ const AppDevelopersApiToolsRouteWithChildren =
 interface AppRouteChildren {
   AppAiRoute: typeof AppAiRoute
   AppAiAgentsRoute: typeof AppAiAgentsRouteWithChildren
+  AppAlihTugasRoute: typeof AppAlihTugasRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppBroadcastRoute: typeof AppBroadcastRoute
   AppChatRoute: typeof AppChatRoute
@@ -984,7 +1023,6 @@ interface AppRouteChildren {
   AppMetricsRoute: typeof AppMetricsRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppSettingsRoute: typeof AppSettingsRoute
-  AppTasksRoute: typeof AppTasksRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
   AppAppsMetaAdsTrackerRoute: typeof AppAppsMetaAdsTrackerRoute
   AppChannelsBotRoute: typeof AppChannelsBotRoute
@@ -999,13 +1037,16 @@ interface AppRouteChildren {
   AppDevelopersApiToolsRoute: typeof AppDevelopersApiToolsRouteWithChildren
   AppDevelopersMessagesSentByApiRoute: typeof AppDevelopersMessagesSentByApiRoute
   AppDevelopersWebhooksRoute: typeof AppDevelopersWebhooksRoute
+  AppTasksTaskIdRoute: typeof AppTasksTaskIdRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
+  AppTasksIndexRoute: typeof AppTasksIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAiRoute: AppAiRoute,
   AppAiAgentsRoute: AppAiAgentsRouteWithChildren,
+  AppAlihTugasRoute: AppAlihTugasRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppBroadcastRoute: AppBroadcastRoute,
   AppChatRoute: AppChatRoute,
@@ -1020,7 +1061,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricsRoute: AppMetricsRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppSettingsRoute: AppSettingsRoute,
-  AppTasksRoute: AppTasksRoute,
   AppTemplatesRoute: AppTemplatesRoute,
   AppAppsMetaAdsTrackerRoute: AppAppsMetaAdsTrackerRoute,
   AppChannelsBotRoute: AppChannelsBotRoute,
@@ -1035,8 +1075,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevelopersApiToolsRoute: AppDevelopersApiToolsRouteWithChildren,
   AppDevelopersMessagesSentByApiRoute: AppDevelopersMessagesSentByApiRoute,
   AppDevelopersWebhooksRoute: AppDevelopersWebhooksRoute,
+  AppTasksTaskIdRoute: AppTasksTaskIdRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,
+  AppTasksIndexRoute: AppTasksIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

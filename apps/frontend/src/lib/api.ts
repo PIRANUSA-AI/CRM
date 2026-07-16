@@ -1134,6 +1134,38 @@ export type PersonalAiDraft = {
 	updatedAt: string
 }
 
+export type PersonalTakeoverItem = {
+	conversationId: string
+	contactName: string
+	contactPhone: string
+	preview: string | null
+	lastMessageAt: string | null
+	ownerUserId: string
+	ownerName: string | null
+	takenBy: string | null
+	takenByName: string | null
+	source: 'manual' | 'ai' | string
+	reason: string | null
+	note: string | null
+	aiReason: string | null
+	aiSuggestedReply: string | null
+	takenAt: string | null
+	waitingMinutes: number
+	slaMinutes: number
+	overdue: boolean
+}
+
+export type PersonalTakeoverHistoryItem = {
+	id: string
+	action: 'personal_takeover' | 'personal_release' | string
+	actorType: string
+	actorName: string | null
+	source: string | null
+	reason: string | null
+	note: string | null
+	createdAt: string
+}
+
 export const personalAi = {
 	getSettings: () =>
 		apiRequest<{ data: PersonalAiSettings }>('/personal-whatsapp-inbox/ai/settings'),
@@ -1151,6 +1183,25 @@ export const personalAi = {
 		}),
 	dismissDraft: (taskId: string) =>
 		apiRequest<{ success: boolean }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/dismiss`, { method: 'POST' }),
+	// Per-conversation takeover (AI -> human) for personal WhatsApp leads.
+	listTakeovers: () =>
+		apiRequest<{ data: PersonalTakeoverItem[] }>('/personal-whatsapp-inbox/takeovers'),
+	takeoverCount: () =>
+		apiRequest<{ count: number }>('/personal-whatsapp-inbox/takeovers/count'),
+	takeoverHistory: (conversationId: string) =>
+		apiRequest<{ data: PersonalTakeoverHistoryItem[] }>(
+			`/personal-whatsapp-inbox/${conversationId}/takeover-history`,
+		),
+	takeover: (conversationId: string, options?: { reason?: string; note?: string }) =>
+		apiRequest<{ success: boolean; conversationId: string; aiHandling: boolean }>(
+			`/personal-whatsapp-inbox/${conversationId}/takeover`,
+			{ method: 'POST', body: JSON.stringify(options || {}) },
+		),
+	release: (conversationId: string, note?: string) =>
+		apiRequest<{ success: boolean; conversationId: string; aiHandling: boolean }>(
+			`/personal-whatsapp-inbox/${conversationId}/release`,
+			{ method: 'POST', body: JSON.stringify(note ? { note } : {}) },
+		),
 }
 
 // Metrics
@@ -2521,6 +2572,48 @@ export const tasks = {
 				body: JSON.stringify({ text }),
 			},
 		),
+
+	detail: (id: string) =>
+		apiRequest<{ data: TaskDetail }>(`/tasks/${encodeURIComponent(id)}/detail`),
+}
+
+export interface TaskMessage {
+	id: string
+	content: string | null
+	contentType: string | null
+	direction: 'in' | 'out'
+	senderType: string | null
+	status: string | null
+	createdAt: string | null
+}
+
+export interface TaskEventEntry {
+	id: string
+	eventType: string
+	actorType: string | null
+	actorName: string | null
+	reason: string | null
+	metadata: unknown
+	createdAt: string | null
+}
+
+export interface TaskContact {
+	id: string
+	name: string | null
+	email: string | null
+	phone_number: string | null
+	whatsapp_id: string | null
+	company: string | null
+	city: string | null
+	source: string | null
+	custom_attributes: Record<string, unknown> | null
+}
+
+export interface TaskDetail {
+	task: Task
+	contact: TaskContact | null
+	messages: TaskMessage[]
+	events: TaskEventEntry[]
 }
 
 

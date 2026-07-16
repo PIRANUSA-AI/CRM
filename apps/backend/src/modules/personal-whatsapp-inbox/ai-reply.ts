@@ -7,6 +7,7 @@ import { webhookQueue } from '../../lib/queue'
 import { getRealtimeIO } from '../../lib/realtime'
 import { redis } from '../../lib/redis'
 import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
+import { PersonalTakeoverService } from './takeover'
 
 const OLLAMA_BASE_URL = String(
 	process.env.OLLAMA_BASE_URL || 'https://ollama.contrivent.com',
@@ -532,6 +533,14 @@ export abstract class PersonalAiReplyService {
 		inboundMessageId: string
 	}) {
 		await ensureStorage()
+		// Respect takeover: once a human has taken over this lead the AI must stay
+		// silent until it is returned to the AI (from the "Alih Tugas" page).
+		const aiHandling = await PersonalTakeoverService.isAiHandlingEnabled(
+			params.appId,
+			params.ownerUserId,
+			params.conversationId,
+		)
+		if (!aiHandling) return { skipped: true, reason: 'human_takeover' }
 		await PersonalAiReplyService.getSettings(params.appId, params.ownerUserId)
 		await prisma.$executeRaw`
 			UPDATE "personal_ai_reply_tasks" SET "status" = 'cancelled', "updated_at" = NOW()
@@ -647,6 +656,15 @@ export abstract class PersonalAiReplyService {
 					reviewResult: decision,
 					reviewReason: decision.reason,
 					reviewConfidence: decision.confidence,
+				})
+				// Auto-takeover: the AI escalates the whole lead to a human. This is
+				// sticky (AI stops replying) and surfaces it in the "Alih Tugas" page.
+				await PersonalTakeoverService.takeover({
+					appId: task.app_id,
+					ownerUserId: task.owner_user_id,
+					conversationId: task.conversation_id,
+					source: 'ai',
+					reason: decision.reason,
 				})
 				getRealtimeIO()
 					?.to(`app:${task.app_id}`)

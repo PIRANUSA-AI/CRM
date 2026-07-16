@@ -134,13 +134,17 @@ function buildContextBlock(input: {
 	customerName?: string | null
 	latestMessage: string
 	history: ConversationTurn[]
+	productContext?: string | null
 }) {
 	const history = input.history
 		.map(({ role, content }) => `${role}: ${content || '[tanpa teks]'}`)
 		.join('\n')
+	const productBlock = input.productContext?.trim()
+		? `\n\nReferensi produk (knowledge base, gunakan hanya untuk memahami apakah customer menanyakan/berminat pada produk yang dijual; jangan mengarang di luar ini):\n${input.productContext.trim()}`
+		: ''
 	return `Nama customer: ${
 		input.customerName || 'tidak diketahui'
-	}\n\nRiwayat chat:\n${history}\n\nPesan inbound terbaru:\n${input.latestMessage}`
+	}${productBlock}\n\nRiwayat chat:\n${history}\n\nPesan inbound terbaru:\n${input.latestMessage}`
 }
 
 export abstract class TaskAnalyzer {
@@ -148,6 +152,7 @@ export abstract class TaskAnalyzer {
 		customerName?: string | null
 		latestMessage: string
 		history: ConversationTurn[]
+		productContext?: string | null
 	}): Promise<TaskAnalysisDecision> {
 		assertApiKey()
 		const contextBlock = buildContextBlock(input)

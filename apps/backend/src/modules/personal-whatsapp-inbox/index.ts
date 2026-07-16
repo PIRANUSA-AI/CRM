@@ -19,6 +19,8 @@ import {
 } from './lead-access'
 import { PersonalAiReplyService } from './ai-reply'
 import { enqueueTaskAnalysis } from '../tasks/worker'
+import { TaskService } from '../tasks/service'
+import { PersonalTakeoverService } from './takeover'
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -388,22 +390,140 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			}) : []
 		const visibleRows = rows
 		const storedMessages = visibleRows.length ? await prisma.messages.count({ where: { conversation_id: { in: visibleRows.map((row) => row.id) }, deleted_at: null } }) : 0
+		// Real takeover state per conversation drives the workflow badge/filters:
+		// AI-sourced takeover -> "handover" (waiting for a human), manual takeover
+		// -> "human" (sales handling), otherwise the AI is still in control.
+		const takeoverByConversation = new Map<string, { aiHandling: boolean; source: string | null }>()
+		if (visibleRows.length) {
+			const registrations = await prisma.whatsapp_lead_registrations.findMany({
+				where: {
+					app_id: resolvedAppId,
+					owner_user_id: userId,
+					conversation_id: { in: visibleRows.map((row) => row.id) },
+				},
+				select: { conversation_id: true, ai_handling_enabled: true, takeover_source: true },
+			})
+			for (const registration of registrations) {
+				if (registration.conversation_id) {
+					takeoverByConversation.set(registration.conversation_id, {
+						aiHandling: registration.ai_handling_enabled,
+						source: registration.takeover_source,
+					})
+				}
+			}
+		}
 		return {
-			data: visibleRows.map((row) => ({
-				id: row.id,
-				contactId: row.contact_id || null,
-				workflow: row.status === 'pending' ? 'handover' : row.assignee_id ? 'human' : 'ai',
-				name: row.contacts?.name || row.contacts?.phone_number || 'Kontak WhatsApp',
-				phone: row.contacts?.phone_number || row.contacts?.whatsapp_id || '',
-				avatarUrl: normalizeS3PublicUrl(row.contacts?.avatar_url) || null,
-				source: row.contacts?.source || null,
-				preview: row.messages[0]?.content || 'Belum ada isi pesan',
-				lastMessageAt: row.messages[0]?.created_at || row.last_message_at,
-				unread: row.unread_count || 0,
-			})),
+			data: visibleRows.map((row) => {
+				const takeover = takeoverByConversation.get(row.id)
+				const aiHandling = takeover ? takeover.aiHandling : true
+				const workflow = !aiHandling
+					? takeover?.source === 'ai'
+						? 'handover'
+						: 'human'
+					: row.status === 'pending'
+						? 'handover'
+						: row.assignee_id
+							? 'human'
+							: 'ai'
+				return {
+					id: row.id,
+					contactId: row.contact_id || null,
+					workflow,
+					aiHandling,
+					name: row.contacts?.name || row.contacts?.phone_number || 'Kontak WhatsApp',
+					phone: row.contacts?.phone_number || row.contacts?.whatsapp_id || '',
+					avatarUrl: normalizeS3PublicUrl(row.contacts?.avatar_url) || null,
+					source: row.contacts?.source || null,
+					preview: row.messages[0]?.content || 'Belum ada isi pesan',
+					lastMessageAt: row.messages[0]?.created_at || row.last_message_at,
+					unread: row.unread_count || 0,
+				}
+			}),
 			diagnostic: { connection: session.status, storedMessages, lastSeenAt: session.last_seen_at },
 		}
 	})
+	.get('/takeovers', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const user = await prisma.users.findFirst({
+			where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+			select: { role: true },
+		})
+		const data = await PersonalTakeoverService.list({
+			appId: resolvedAppId,
+			userId,
+			role: user?.role || 'sales',
+		})
+		return { data }
+	})
+	.get('/takeovers/count', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const user = await prisma.users.findFirst({
+			where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+			select: { role: true },
+		})
+		const count = await PersonalTakeoverService.count({
+			appId: resolvedAppId,
+			userId,
+			role: user?.role || 'sales',
+		})
+		return { count }
+	})
+	.post('/:conversationId/takeover', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, deleted_at: null },
+			select: { additional_attributes: true },
+		})
+		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		const personal = ((conversation.additional_attributes as Record<string, unknown>)?.personal_whatsapp || {}) as Record<string, unknown>
+		const ownerUserId = typeof personal.owner_user_id === 'string' && personal.owner_user_id ? personal.owner_user_id : userId
+		const result = await PersonalTakeoverService.takeover({
+			appId: resolvedAppId,
+			ownerUserId,
+			conversationId: params.conversationId,
+			source: 'manual',
+			byUserId: userId,
+			reason: typeof body?.reason === 'string' ? body.reason : null,
+			note: typeof body?.note === 'string' ? body.note : null,
+		})
+		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan untuk dialihkan' } }
+		// Cancel any AI draft/reply already queued for this lead.
+		await PersonalAiReplyService.cancelConversationTasks(resolvedAppId, ownerUserId, params.conversationId)
+		return { success: true, ...result }
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Optional(t.Object({
+			reason: t.Optional(t.String({ maxLength: 2000 })),
+			note: t.Optional(t.String({ maxLength: 2000 })),
+		})),
+	})
+	.post('/:conversationId/release', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, deleted_at: null },
+			select: { additional_attributes: true },
+		})
+		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		const personal = ((conversation.additional_attributes as Record<string, unknown>)?.personal_whatsapp || {}) as Record<string, unknown>
+		const ownerUserId = typeof personal.owner_user_id === 'string' && personal.owner_user_id ? personal.owner_user_id : userId
+		const result = await PersonalTakeoverService.release({
+			appId: resolvedAppId,
+			ownerUserId,
+			conversationId: params.conversationId,
+			byUserId: userId,
+			note: typeof body?.note === 'string' ? body.note : null,
+		})
+		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan' } }
+		return { success: true, ...result }
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Optional(t.Object({ note: t.Optional(t.String({ maxLength: 2000 })) })),
+	})
+	.get('/:conversationId/takeover-history', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const data = await PersonalTakeoverService.history(resolvedAppId, params.conversationId)
+		return { data }
+	}, { params: t.Object({ conversationId: t.String() }) })
 	.post('/:conversationId/read', async ({ resolvedAppId, userId, params, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
@@ -647,6 +767,18 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			const io = getRealtimeIO()
 			io?.to(`app:${resolvedAppId}`).emit('message:created', realtimePayload)
 			io?.to(`conversation:${conversation.id}`).emit('message:created', realtimePayload)
+			// Replying starts the task (marks it "in progress"), it does NOT finish
+			// it — the sales decides when the conversation is actually done.
+			void TaskService.markInProgressOnConversationReply(
+				resolvedAppId,
+				conversation.id,
+				userId,
+			).catch((error) => {
+				console.error(
+					'[PersonalInbox] Failed to mark task in progress on reply (fail-open):',
+					error,
+				)
+			})
 			return { data: created }
 		} catch (error) {
 			set.status = 503

@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { CrmAvatar } from '@/components/crm/shared'
-import { API_BASE } from '@/lib/api'
+import { API_BASE, personalAi } from '@/lib/api'
+import { connectSocket } from '@/lib/socket'
 import {
 	CRM_GROUP_LABELS,
 	CRM_NAV_ITEMS,
@@ -52,6 +53,7 @@ export default function Sidebar({
 	const [currentAgent, setCurrentAgent] = useState<Agent | null>(
 		agentProp || null,
 	)
+	const [alihTugasCount, setAlihTugasCount] = useState(0)
 
 	useEffect(() => {
 		if (!agentProp) {
@@ -91,6 +93,30 @@ export default function Sidebar({
 		}
 		window.addEventListener('crm:user-updated', handleUserUpdated)
 		return () => window.removeEventListener('crm:user-updated', handleUserUpdated)
+	}, [])
+
+	// Live count of leads waiting on a human, shown as a badge on "Alih Tugas".
+	useEffect(() => {
+		let active = true
+		const refresh = () => {
+			personalAi
+				.takeoverCount()
+				.then((response) => {
+					if (active) setAlihTugasCount(response.count || 0)
+				})
+				.catch(() => {
+					/* non-blocking: badge is best-effort */
+				})
+		}
+		refresh()
+		const socket = connectSocket()
+		socket.on('personal-takeover:updated', refresh)
+		const interval = setInterval(refresh, 60_000)
+		return () => {
+			active = false
+			socket.off('personal-takeover:updated', refresh)
+			clearInterval(interval)
+		}
 	}, [])
 
 	const menuGroups = useMemo(() => {
@@ -197,13 +223,23 @@ export default function Sidebar({
 							onClick={() => onClose?.()}
 											aria-label={item.label}
 											title={isCollapsed ? item.label : undefined}
-											className={`group flex h-9 items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+											className={`group relative flex h-9 items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
 												isCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
 											} ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
 										>
 											<Icon className={`shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} size={17} strokeWidth={isActive ? 2.5 : 2} />
 											<span className={isCollapsed ? 'sr-only' : ''}>{item.label}</span>
-											{item.badge ? (
+											{item.id === 'alih-tugas' && alihTugasCount > 0 ? (
+												<span
+													className={
+														isCollapsed
+															? 'absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white'
+															: 'ml-auto grid min-w-5 place-items-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-white'
+													}
+												>
+													{Math.min(alihTugasCount, 99)}
+												</span>
+											) : item.badge ? (
 												<span className={isCollapsed ? 'sr-only' : 'ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]'}>
 													{item.badge}
 												</span>

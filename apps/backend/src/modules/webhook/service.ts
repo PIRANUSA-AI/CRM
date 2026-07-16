@@ -1760,6 +1760,25 @@ export abstract class WebhookService {
 					status: registration?.status || 'pending',
 					conversationId: result.conversationId,
 				})
+				// Auto-detect leads before confirmation: analyze pending leads so real
+				// buying signals surface as tasks. Blocked leads are skipped. The
+				// worker revalidates state and the deterministic job ID dedupes.
+				// Auto-reply stays confirmed-only (handled in the confirmed path below).
+				if (registration?.status !== 'blocked' && personalLeadOwnerUserId) {
+					try {
+						const { enqueueTaskAnalysis } = await import('../tasks/worker')
+						await enqueueTaskAnalysis({
+							appId: result.appId,
+							messageId: String(result.message.id),
+							ownerUserId: personalLeadOwnerUserId,
+						})
+					} catch (taskAnalysisError) {
+						console.error(
+							'[WebhookService] Failed to enqueue task analysis for pending lead (fail-open):',
+							taskAnalysisError,
+						)
+					}
+				}
 				return
 			}
 		}
@@ -1819,8 +1838,10 @@ export abstract class WebhookService {
 		})
 
 		if (result.channelProvider === 'baileys' && personalLeadOwnerUserId) {
-			// Pending and blocked personal leads return above. The worker revalidates
-			// this state, while the deterministic job ID prevents duplicate analysis.
+			// Confirmed personal leads: enqueue analysis and schedule the auto-reply.
+			// Pending leads already enqueued analysis in the early return above;
+			// blocked leads returned without enqueueing. The deterministic job ID
+			// prevents duplicate analysis across both paths.
 			try {
 				const { enqueueTaskAnalysis } = await import('../tasks/worker')
 				await enqueueTaskAnalysis({

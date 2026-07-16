@@ -93,6 +93,15 @@ export const tasks = new Elysia({ prefix: '/tasks', tags: ['Tasks'] })
 			return toErrorResponse(error, set)
 		}
 	}, { params: t.Object({ id: t.String() }) })
+	.get('/:id/detail', async ({ resolvedAppId, userId, params, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId, set)
+		if (!actor) return { error: 'Sesi CRM tidak valid' }
+		try {
+			return { data: await TaskService.detail(actor, params.id) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, { params: t.Object({ id: t.String() }) })
 	.get('/:id', async ({ resolvedAppId, userId, params, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
 		if (!actor) return { error: 'Sesi CRM tidak valid' }

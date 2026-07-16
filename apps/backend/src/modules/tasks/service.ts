@@ -242,6 +242,86 @@ export abstract class TaskService {
 		}))
 	}
 
+	static async detail(actor: TaskActor, taskId: string) {
+		const task = await TaskService.get(actor, taskId)
+
+		const [eventRows, messageRows] = await Promise.all([
+			prisma.task_events.findMany({
+				where: { task_id: taskId },
+				orderBy: { created_at: 'desc' },
+				take: 100,
+			}),
+			task.conversationId
+				? prisma.messages.findMany({
+						where: { conversation_id: task.conversationId, deleted_at: null },
+						orderBy: { created_at: 'asc' },
+						take: 200,
+						select: {
+							id: true,
+							content: true,
+							content_type: true,
+							message_type: true,
+							sender_type: true,
+							status: true,
+							created_at: true,
+						},
+					})
+				: Promise.resolve([]),
+		])
+
+		const actorIds = [
+			...new Set(eventRows.map((e) => e.actor_id).filter(Boolean)),
+		] as string[]
+		const [actors, contact] = await Promise.all([
+			actorIds.length
+				? prisma.users.findMany({
+						where: { id: { in: actorIds } },
+						select: { id: true, name: true, email: true },
+					})
+				: Promise.resolve([]),
+			task.contactId
+				? prisma.contacts.findFirst({
+						where: { id: task.contactId, app_id: actor.appId },
+						select: {
+							id: true,
+							name: true,
+							email: true,
+							phone_number: true,
+							whatsapp_id: true,
+							company: true,
+							city: true,
+							source: true,
+							custom_attributes: true,
+						},
+					})
+				: Promise.resolve(null),
+		])
+		const actorName = new Map(actors.map((u) => [u.id, u.name || u.email]))
+
+		return {
+			task,
+			contact,
+			messages: messageRows.map((m) => ({
+				id: m.id,
+				content: m.content,
+				contentType: m.content_type,
+				direction: m.message_type === 'incoming' ? 'in' : 'out',
+				senderType: m.sender_type,
+				status: m.status,
+				createdAt: m.created_at,
+			})),
+			events: eventRows.map((e) => ({
+				id: e.id,
+				eventType: e.event_type,
+				actorType: e.actor_type,
+				actorName: e.actor_id ? actorName.get(e.actor_id) || null : null,
+				reason: e.reason,
+				metadata: e.metadata,
+				createdAt: e.created_at,
+			})),
+		}
+	}
+
 	static async summary(actor: TaskActor) {
 		const now = new Date()
 		const { start, end } = dayBounds(now)
@@ -346,6 +426,45 @@ export abstract class TaskService {
 
 	static async cancel(actor: TaskActor, taskId: string, reason?: string) {
 		return TaskService.transition(actor, taskId, ACTIVE_STATUSES, 'cancelled', 'cancelled', reason)
+	}
+
+	// When the sales agent starts replying to the customer (via the chat inbox or
+	// the task reply box), move the task to "in progress" so it clearly shows as
+	// being worked on. Replying does NOT complete the task — the conversation is
+	// still ongoing and only the sales decides when it is done. Only untouched
+	// (open) tasks are advanced; in_progress tasks are left as-is. Fail-open.
+	static async markInProgressOnConversationReply(
+		appId: string,
+		conversationId: string,
+		actorUserId: string | null,
+	) {
+		const open = await prisma.tasks.findMany({
+			where: {
+				app_id: appId,
+				conversation_id: conversationId,
+				status: 'open',
+			},
+			select: { id: true },
+		})
+		if (!open.length) return 0
+		const ids = open.map((row) => row.id)
+		await prisma.$transaction(async (tx) => {
+			await tx.tasks.updateMany({
+				where: { id: { in: ids }, status: 'open' },
+				data: { status: 'in_progress', snoozed_until: null },
+			})
+			await tx.task_events.createMany({
+				data: ids.map((id) => ({
+					task_id: id,
+					event_type: 'started',
+					actor_id: actorUserId,
+					reason: 'Mulai otomatis: sales membalas customer',
+				})),
+			})
+		})
+		const rows = await prisma.tasks.findMany({ where: { id: { in: ids } } })
+		for (const row of rows) emitTask('task:updated', asTask(row))
+		return ids.length
 	}
 
 	static async snooze(actor: TaskActor, taskId: string, snoozedUntil: Date, reason?: string) {
@@ -462,9 +581,11 @@ export abstract class TaskService {
 				where: { id: conversation.id },
 				data: { last_message_at: now, last_activity_at: now, updated_at: now },
 			})
+			// Replying marks the task as being worked on, not finished. The sales
+			// keeps the conversation going and completes the task manually later.
 			await tx.tasks.updateMany({
-				where: { id: taskId, app_id: actor.appId, status: { in: ACTIVE_STATUSES } },
-				data: { status: 'done', completed_at: now, snoozed_until: null },
+				where: { id: taskId, app_id: actor.appId, status: 'open' },
+				data: { status: 'in_progress', snoozed_until: null },
 			})
 			await tx.task_events.create({
 				data: {

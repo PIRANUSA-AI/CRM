@@ -2083,11 +2083,22 @@ model whatsapp_lead_registrations {
   source          String    @default("inbound") @db.VarChar(40)
   confirmed_at    DateTime? @db.Timestamptz(6)
   blocked_at      DateTime? @db.Timestamptz(6)
+  // Per-conversation takeover: when ai_handling_enabled is false the AI stops
+  // auto-replying to this lead and a human handles it (surfaced in "Alih Tugas").
+  // takeover_source distinguishes a manual takeover from an automatic AI handover.
+  ai_handling_enabled Boolean   @default(true)
+  takeover_by         String?   @db.Uuid
+  takeover_at         DateTime? @db.Timestamptz(6)
+  takeover_source     String?   @db.VarChar(20)
+  takeover_reason     String?
+  handoff_note        String?
+  released_at         DateTime? @db.Timestamptz(6)
   created_at      DateTime  @default(now()) @db.Timestamptz(6)
   updated_at      DateTime  @default(now()) @db.Timestamptz(6)
 
   @@unique([app_id, owner_user_id, phone_number], map: "whatsapp_lead_registrations_owner_phone_key")
   @@index([app_id, owner_user_id, status, updated_at], map: "idx_whatsapp_lead_registrations_owner_status")
+  @@index([app_id, ai_handling_enabled, updated_at], map: "idx_whatsapp_lead_registrations_takeover")
 }
 
 model personal_ai_settings {

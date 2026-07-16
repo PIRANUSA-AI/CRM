@@ -38,7 +38,7 @@ export const SALES_PATHS = [
 	'/dashboard',
 	'/chat',
 	'/tasks',
-	'/handover',
+	'/alih-tugas',
 	'/customers',
 	'/settings',
 	'/help',
@@ -47,7 +47,8 @@ export const SALES_PATHS = [
 export const LEADER_PATHS = [
 	'/dashboard',
 	'/chat',
-	'/handover',
+	'/tasks',
+	'/alih-tugas',
 	'/kelola-tim',
 	'/customers',
 	'/pipeline',
