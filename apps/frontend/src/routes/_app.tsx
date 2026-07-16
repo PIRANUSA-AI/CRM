@@ -162,6 +162,16 @@ function AppLayout() {
 					return
 				}
 
+				if (context.user) {
+					setAgent({
+						id: String(context.user.id || ''),
+						email: String(context.user.email || ''),
+						name: String(context.user.name || context.user.email?.split('@')[0] || 'User'),
+						role: context.user.role || 'agent',
+						avatar_url: context.user.avatar_url || null,
+					})
+				}
+
 				if (context.onboardingRequired) {
 					navigate({ to: '/onboarding', replace: true })
 				}
@@ -318,13 +328,15 @@ function AppLayout() {
 
 				<div className="flex min-w-0 flex-1 flex-col bg-background lg:pt-3">
 					<TopBar />
-					<div className={cn('relative flex min-h-0 flex-1 lg:pb-0', isChatWorkspace ? 'pb-20' : 'pb-16')}>
+				<div className={cn('relative flex min-h-0 flex-1 lg:pb-0', isChatWorkspace ? 'pb-0' : 'pb-16')}>
 						<Outlet />
 					</div>
-					<BottomNav
-						onMenuClick={() => setIsMobileSidebarOpen((open) => !open)}
-						isMenuOpen={isMobileSidebarOpen}
-					/>
+					{!isChatWorkspace && (
+						<BottomNav
+							onMenuClick={() => setIsMobileSidebarOpen((open) => !open)}
+							isMenuOpen={isMobileSidebarOpen}
+						/>
+					)}
 				</div>
 			</div>
 		</AppContext.Provider>

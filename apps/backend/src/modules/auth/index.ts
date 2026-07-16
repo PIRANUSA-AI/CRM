@@ -432,6 +432,11 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 			return { success: false, error: 'Unauthorized' }
 		}
 
+		const user = await prisma.users.findUnique({
+			where: { id: sessionUser.id },
+			select: { id: true, name: true, email: true, role: true, avatar_url: true },
+		})
+
 		const context = await resolveWorkspaceContextForUser(sessionUser.id)
 		const organization = context?.organization || null
 
@@ -439,6 +444,15 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 			success: true,
 			onboardingRequired: !organization,
 			organization,
+			user: user
+				? {
+						id: user.id,
+						name: user.name,
+						email: user.email,
+						role: user.role,
+						avatar_url: user.avatar_url,
+					}
+				: null,
 		}
 	})
 
