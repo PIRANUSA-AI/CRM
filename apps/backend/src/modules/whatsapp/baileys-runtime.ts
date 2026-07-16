@@ -26,7 +26,50 @@ import {
 	s3,
 } from '../../lib/s3'
 import { WebhookService } from '../webhook/service'
+import { NotificationService } from '../notifications/service'
 import { ensureBaileysSessionStorage } from './baileys-storage'
+
+// Notify the owning sales when their WhatsApp session drops for good (logged out
+// or non-recoverable disconnect) so they reconnect before leads pile up unanswered.
+async function notifyWhatsappDisconnected(sessionId: string, reason: string | null) {
+	try {
+		const session = await prisma.baileys_sessions.findUnique({
+			where: { id: sessionId },
+			select: { app_id: true, owner_user_id: true, channel_id: true },
+		})
+		if (!session?.app_id || !session.owner_user_id) return
+		await NotificationService.notify({
+			appId: session.app_id,
+			userId: session.owner_user_id,
+			type: 'wa_disconnected',
+			title: 'WhatsApp terputus',
+			body:
+				reason ||
+				'Nomor WhatsApp kamu terputus. Sambungkan ulang agar AI dan balasan tetap berjalan.',
+			dedupKey: `wa_disconnected:${session.channel_id || sessionId}`,
+		})
+	} catch (error) {
+		console.error('[BaileysRuntime] Failed to notify WhatsApp disconnect:', error)
+	}
+}
+
+// Clear the "WhatsApp terputus" notification once the session reconnects.
+async function resolveWhatsappReconnected(sessionId: string) {
+	try {
+		const session = await prisma.baileys_sessions.findUnique({
+			where: { id: sessionId },
+			select: { app_id: true, owner_user_id: true, channel_id: true },
+		})
+		if (!session?.app_id || !session.owner_user_id) return
+		await NotificationService.resolve(
+			session.app_id,
+			session.owner_user_id,
+			`wa_disconnected:${session.channel_id || sessionId}`,
+		)
+	} catch (error) {
+		console.error('[BaileysRuntime] Failed to resolve WhatsApp reconnect:', error)
+	}
+}
 
 const BAILEYS_PROVIDER = 'baileys'
 
@@ -858,6 +901,8 @@ export abstract class BaileysRuntimeService {
 					updated_at: new Date(),
 				},
 			})
+			// WhatsApp is back online — clear any "disconnected" notification.
+			void resolveWhatsappReconnected(sessionRow.id)
 			return
 		}
 
@@ -911,6 +956,7 @@ export abstract class BaileysRuntimeService {
 					updated_at: new Date(),
 				},
 			})
+			void notifyWhatsappDisconnected(sessionRow.id, formattedDisconnectMessage)
 			return
 		}
 
@@ -927,6 +973,10 @@ export abstract class BaileysRuntimeService {
 				updated_at: new Date(),
 			},
 		})
+
+		if (!shouldReconnect) {
+			void notifyWhatsappDisconnected(sessionRow.id, formattedDisconnectMessage)
+		}
 
 		if (shouldReconnect) {
 			this.scheduleRestart(entry.channelId, 2_500)

@@ -1,14 +1,60 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import { Bell, Bot, Search, UserCheck } from 'lucide-react'
+import {
+	Bell,
+	Bot,
+	CheckCheck,
+	ListTodo,
+	Search,
+	Smartphone,
+	Sparkles,
+	UserPlus,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import CommandPalette from '@/components/CommandPalette'
 import { CrmAvatar } from '@/components/crm/shared'
 import ThemeToggle from '@/components/ThemeToggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { personalAi, type PersonalTakeoverItem } from '@/lib/api'
+import { notifications as notificationsApi, type NotificationItem } from '@/lib/api'
 import { connectSocket } from '@/lib/socket'
 import { CRM_NAV_ITEMS } from '@/lib/crm-navigation'
 import { useAppContext } from '@/routes/_app'
+
+const NOTIF_ICON: Record<string, LucideIcon> = {
+	takeover: Bot,
+	lead_pending: UserPlus,
+	task_urgent: ListTodo,
+	ai_draft: Sparkles,
+	wa_disconnected: Smartphone,
+}
+
+// Where each notification type takes the user when clicked.
+function notifDestination(item: NotificationItem): string {
+	switch (item.type) {
+		case 'takeover':
+			return '/alih-tugas'
+		case 'task_urgent':
+			return item.taskId ? `/tasks/${item.taskId}` : '/tasks'
+		case 'wa_disconnected':
+			return '/whatsapp/connect'
+		case 'lead_pending':
+		case 'ai_draft':
+			return '/chat'
+		default:
+			return '/dashboard'
+	}
+}
+
+function formatNotifTime(value: string) {
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return ''
+	return new Intl.DateTimeFormat('id-ID', {
+		day: '2-digit',
+		month: 'short',
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date)
+}
 
 type TopBarUser = {
 	id?: string
@@ -39,7 +85,8 @@ export default function TopBar() {
 	const [isPaletteOpen, setIsPaletteOpen] = useState(false)
 	const [displayAgent, setDisplayAgent] = useState<TopBarUser | null>(agent || null)
 	const [notifOpen, setNotifOpen] = useState(false)
-	const [takeovers, setTakeovers] = useState<PersonalTakeoverItem[]>([])
+	const [notifItems, setNotifItems] = useState<NotificationItem[]>([])
+	const [unreadCount, setUnreadCount] = useState(0)
 
 	useEffect(() => {
 		if (agent) {
@@ -70,29 +117,59 @@ export default function TopBar() {
 		return () => window.removeEventListener('keydown', onKeyDown)
 	}, [])
 
-	// Notifications: leads currently handed over / taken over that need a human.
+	// In-app notifications (takeover, pending leads, urgent tasks, AI drafts,
+	// WhatsApp disconnect). The socket only pings; content is fetched via API,
+	// which is scoped to the authenticated user server-side.
 	useEffect(() => {
 		let active = true
 		const refresh = () => {
-			personalAi
-				.listTakeovers()
+			notificationsApi
+				.list({ limit: 20 })
 				.then((response) => {
-					if (active) setTakeovers(response.data)
+					if (active) setNotifItems(response.data)
 				})
 				.catch(() => {
 					/* non-blocking: notifications are best-effort */
 				})
+			// Badge uses the accurate server-side unread count (not just the
+			// first page of the list), so it stays correct beyond 20 items.
+			notificationsApi
+				.count()
+				.then((response) => {
+					if (active) setUnreadCount(response.count || 0)
+				})
+				.catch(() => {
+					/* non-blocking */
+				})
 		}
 		refresh()
 		const socket = connectSocket()
-		socket.on('personal-takeover:updated', refresh)
+		socket.on('notification:new', refresh)
 		const interval = setInterval(refresh, 60_000)
 		return () => {
 			active = false
-			socket.off('personal-takeover:updated', refresh)
+			socket.off('notification:new', refresh)
 			clearInterval(interval)
 		}
 	}, [])
+
+	const openNotification = (item: NotificationItem) => {
+		setNotifOpen(false)
+		if (!item.read) {
+			setUnreadCount((current) => Math.max(0, current - 1))
+			setNotifItems((current) =>
+				current.map((entry) => (entry.id === item.id ? { ...entry, read: true } : entry)),
+			)
+			void notificationsApi.markRead(item.id).catch(() => undefined)
+		}
+		navigate({ to: notifDestination(item) })
+	}
+
+	const markAllRead = () => {
+		setUnreadCount(0)
+		setNotifItems((current) => current.map((entry) => ({ ...entry, read: true })))
+		void notificationsApi.markAllRead().catch(() => undefined)
+	}
 
 	const activeItem = useMemo(() => {
 		const byExact = CRM_NAV_ITEMS.find((item) => item.path === location.pathname)
@@ -146,57 +223,64 @@ export default function TopBar() {
 				<Popover open={notifOpen} onOpenChange={setNotifOpen}>
 					<PopoverTrigger
 						className="relative rounded-md p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label="Notifikasi alih tugas"
+						aria-label="Notifikasi"
 					>
 						<Bell size={18} />
-						{takeovers.length > 0 ? (
+						{unreadCount > 0 ? (
 							<span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-4 text-white">
-								{Math.min(takeovers.length, 99)}
+								{Math.min(unreadCount, 99)}
 							</span>
 						) : null}
 					</PopoverTrigger>
-					<PopoverContent align="end" sideOffset={8} className="w-[min(22rem,calc(100vw-2rem))] p-0">
+					<PopoverContent align="end" sideOffset={8} className="w-[min(23rem,calc(100vw-2rem))] p-0">
 						<div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-							<p className="text-sm font-semibold">Alih Tugas</p>
-							<span className="text-xs text-muted-foreground">{takeovers.length} menunggu</span>
+							<p className="text-sm font-semibold">Notifikasi</p>
+							{unreadCount > 0 ? (
+								<button
+									type="button"
+									onClick={markAllRead}
+									className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+								>
+									<CheckCheck size={13} /> Tandai semua dibaca
+								</button>
+							) : (
+								<span className="text-xs text-muted-foreground">{notifItems.length} item</span>
+							)}
 						</div>
-						{takeovers.length === 0 ? (
+						{notifItems.length === 0 ? (
 							<div className="px-3 py-6 text-center text-sm text-muted-foreground">
-								Tidak ada lead yang perlu ditangani manusia.
+								Belum ada notifikasi.
 							</div>
 						) : (
-							<ul className="max-h-80 divide-y divide-border overflow-y-auto">
-								{takeovers.slice(0, 8).map((item) => {
-									const isAi = item.source === 'ai'
+							<ul className="max-h-96 divide-y divide-border overflow-y-auto">
+								{notifItems.map((item) => {
+									const Icon = NOTIF_ICON[item.type] || Bell
 									return (
-										<li key={item.conversationId}>
+										<li key={item.id}>
 											<button
 												type="button"
-												onClick={() => {
-													setNotifOpen(false)
-													navigate({ to: '/alih-tugas' })
-												}}
-												className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+												onClick={() => openNotification(item)}
+												className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60 ${
+													item.read ? '' : 'bg-primary/5'
+												}`}
 											>
-												<span
-													className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${
-														isAi
-															? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
-															: 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
-													}`}
-												>
-													{isAi ? <Bot size={13} /> : <UserCheck size={13} />}
+												<span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+													<Icon size={13} />
 												</span>
 												<span className="min-w-0 flex-1">
-													<span className="flex items-center justify-between gap-2">
-														<span className="truncate text-sm font-medium">{item.contactName}</span>
-														{item.overdue ? (
-															<span className="shrink-0 text-[10px] font-semibold text-rose-500">lewat SLA</span>
-														) : null}
+													<span className="flex items-center gap-2">
+														{item.read ? null : (
+															<span className="size-1.5 shrink-0 rounded-full bg-primary" />
+														)}
+														<span className={`truncate text-sm ${item.read ? 'font-medium' : 'font-semibold'}`}>
+															{item.title}
+														</span>
 													</span>
-													<span className="line-clamp-1 text-xs text-muted-foreground">
-														{isAi ? 'Dialihkan AI' : 'Diambil sales'}
-														{item.aiReason ? ` · ${item.aiReason}` : ''}
+													{item.body ? (
+														<span className="line-clamp-2 text-xs text-muted-foreground">{item.body}</span>
+													) : null}
+													<span className="text-[11px] text-muted-foreground/70">
+														{formatNotifTime(item.createdAt)}
 													</span>
 												</span>
 											</button>
@@ -205,16 +289,6 @@ export default function TopBar() {
 								})}
 							</ul>
 						)}
-						<button
-							type="button"
-							onClick={() => {
-								setNotifOpen(false)
-								navigate({ to: '/alih-tugas' })
-							}}
-							className="w-full border-t border-border px-3 py-2.5 text-center text-sm font-semibold text-primary hover:bg-muted/60"
-						>
-							Buka Alih Tugas
-						</button>
 					</PopoverContent>
 				</Popover>
 

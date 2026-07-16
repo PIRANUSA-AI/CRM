@@ -9,6 +9,7 @@ import {
 	resolvePersonalLeadOwner,
 } from '../personal-whatsapp-inbox/lead-access'
 import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
+import { NotificationService } from '../notifications/service'
 import { AIResponseLogService } from '../chatbot/response-log-service'
 import { FlowRuntimeService } from '../flow/runtime-service'
 import { MessageService } from '../message/service'
@@ -1777,6 +1778,18 @@ export abstract class WebhookService {
 							'[WebhookService] Failed to enqueue task analysis for pending lead (fail-open):',
 							taskAnalysisError,
 						)
+					}
+					// Notify the owner that a new number is waiting for a decision.
+					if (registration?.status === 'pending') {
+						await NotificationService.notify({
+							appId: result.appId,
+							userId: personalLeadOwnerUserId,
+							type: 'lead_pending',
+							title: 'Lead baru perlu keputusan',
+							body: `${result.contact.name || result.contact.phone_number || 'Nomor baru'} menghubungi kamu dan menunggu dikonfirmasi.`,
+							conversationId: result.conversationId,
+							dedupKey: `lead_pending:${result.conversationId}`,
+						})
 					}
 				}
 				return

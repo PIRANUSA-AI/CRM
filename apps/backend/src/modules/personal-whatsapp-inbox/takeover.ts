@@ -1,5 +1,6 @@
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
+import { NotificationService } from '../notifications/service'
 
 // Per-conversation takeover for personal WhatsApp leads. A lead is either
 // handled by the AI (ai_handling_enabled = true) or taken over by a human
@@ -156,6 +157,19 @@ export abstract class PersonalTakeoverService {
 				note: input.note || null,
 			},
 		})
+		// Notify the owning sales when the AI escalates a lead to them. A manual
+		// takeover is initiated by the sales, so no self-notification is needed.
+		if (input.source === 'ai') {
+			await NotificationService.notify({
+				appId: input.appId,
+				userId: input.ownerUserId,
+				type: 'takeover',
+				title: 'Lead dialihkan ke kamu oleh AI',
+				body: input.reason || 'AI menilai percakapan ini perlu ditangani manusia.',
+				conversationId: input.conversationId,
+				dedupKey: `takeover:${input.conversationId}`,
+			})
+		}
 		emit(input.appId, input.conversationId, false)
 		return { conversationId: input.conversationId, aiHandling: false }
 	}
@@ -191,6 +205,12 @@ export abstract class PersonalTakeoverService {
 			actorType: 'user',
 			metadata: { note: input.note || null },
 		})
+		// The takeover is over — clear its notification for the owner.
+		await NotificationService.resolve(
+			input.appId,
+			input.ownerUserId,
+			`takeover:${input.conversationId}`,
+		)
 		emit(input.appId, input.conversationId, true)
 		return { conversationId: input.conversationId, aiHandling: true }
 	}

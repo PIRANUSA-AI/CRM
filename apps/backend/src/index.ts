@@ -30,6 +30,7 @@ import {
 	media,
 	message,
 	metrics,
+	notifications,
 	orchestration,
 	personalWhatsappInbox,
 	tasks,
@@ -145,6 +146,7 @@ export const app = new Elysia()
 			.use(orchestration)
 			.use(personalWhatsappInbox)
 			.use(tasks)
+			.use(notifications)
 			.use(importLeads)
 			.use(crm)
 			.use(teamModule)
@@ -307,6 +309,7 @@ export const app = new Elysia()
 			.use(flow)
 			.use(orchestration)
 			.use(tasks)
+			.use(notifications)
 			.use(importLeads)
 			.use(crm)
 			.use(teamModule)

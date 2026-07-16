@@ -1155,6 +1155,45 @@ export type PersonalTakeoverItem = {
 	overdue: boolean
 }
 
+export type NotificationType =
+	| 'takeover'
+	| 'lead_pending'
+	| 'task_urgent'
+	| 'ai_draft'
+	| 'wa_disconnected'
+	| string
+
+export type NotificationItem = {
+	id: string
+	type: NotificationType
+	title: string
+	body: string | null
+	conversationId: string | null
+	taskId: string | null
+	metadata: Record<string, unknown>
+	read: boolean
+	createdAt: string
+}
+
+export const notifications = {
+	list: (options?: { limit?: number; unreadOnly?: boolean }) => {
+		const params = new URLSearchParams()
+		if (options?.limit) params.set('limit', String(options.limit))
+		if (options?.unreadOnly) params.set('unreadOnly', 'true')
+		const query = params.toString()
+		return apiRequest<{ data: NotificationItem[] }>(
+			`/notifications${query ? `?${query}` : ''}`,
+		)
+	},
+	count: () => apiRequest<{ count: number }>('/notifications/count'),
+	markRead: (id: string) =>
+		apiRequest<{ success: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
+	markAllRead: () =>
+		apiRequest<{ success: boolean; count: number }>('/notifications/read-all', {
+			method: 'POST',
+		}),
+}
+
 export type PersonalTakeoverHistoryItem = {
 	id: string
 	action: 'personal_takeover' | 'personal_release' | string

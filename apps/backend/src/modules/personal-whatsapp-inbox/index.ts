@@ -21,6 +21,7 @@ import { PersonalAiReplyService } from './ai-reply'
 import { enqueueTaskAnalysis } from '../tasks/worker'
 import { TaskService } from '../tasks/service'
 import { PersonalTakeoverService } from './takeover'
+import { NotificationService } from '../notifications/service'
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -227,6 +228,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
 		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'confirmed', conversationId: registration.conversation_id })
 		if (registration.conversation_id) {
+			await NotificationService.resolve(resolvedAppId, userId, `lead_pending:${registration.conversation_id}`)
 			const latestInbound = await prisma.messages.findFirst({
 				where: { conversation_id: registration.conversation_id, app_id: resolvedAppId, deleted_at: null, message_type: 'incoming' },
 				orderBy: { created_at: 'desc' },
@@ -270,6 +272,9 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			} catch (error) {
 				console.warn('[PersonalWhatsAppInbox] CRM block saved, but WhatsApp block failed:', error)
 			}
+		}
+		if (registration.conversation_id) {
+			await NotificationService.resolve(resolvedAppId, userId, `lead_pending:${registration.conversation_id}`)
 		}
 		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'blocked', conversationId: registration.conversation_id })
 		return { success: true, whatsappBlocked }

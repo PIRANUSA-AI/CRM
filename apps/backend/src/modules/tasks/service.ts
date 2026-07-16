@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
 import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
+import { NotificationService } from '../notifications/service'
 import type { TaskAnalysisDecision } from './analyzer'
 import {
 	assertAssignableTask,
@@ -676,6 +677,27 @@ export abstract class TaskService {
 			return { task: asTask(created), event: 'task:created' as const }
 		})
 		if (result.event) emitTask(result.event, result.task)
+		// Notify the assignee when a newly created task is high/urgent, so it is
+		// not buried in the list. Updates to existing tasks do not re-notify.
+		if (
+			result.event === 'task:created' &&
+			result.task.assignee_id &&
+			(result.task.priority === 'high' || result.task.priority === 'urgent')
+		) {
+			await NotificationService.notify({
+				appId: input.actor.appId,
+				userId: result.task.assignee_id,
+				type: 'task_urgent',
+				title:
+					result.task.priority === 'urgent'
+						? 'Tugas mendesak baru'
+						: 'Tugas prioritas tinggi baru',
+				body: result.task.title,
+				conversationId: result.task.conversation_id,
+				taskId: result.task.id,
+				dedupKey: `task:${result.task.id}`,
+			})
+		}
 		return result.task
 	}
 

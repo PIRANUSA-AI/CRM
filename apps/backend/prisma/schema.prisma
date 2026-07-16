@@ -2101,6 +2101,28 @@ model whatsapp_lead_registrations {
   @@index([app_id, ai_handling_enabled, updated_at], map: "idx_whatsapp_lead_registrations_takeover")
 }
 
+// In-app notifications for sales/leaders. dedup_key keeps one live notification
+// per subject (e.g. one "lead pending" per conversation); re-notifying the same
+// subject refreshes it and marks it unread again.
+model notifications {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String    @db.Uuid
+  user_id         String    @db.Uuid
+  type            String    @db.VarChar(40)
+  title           String    @db.VarChar(255)
+  body            String?
+  conversation_id String?   @db.Uuid
+  task_id         String?   @db.Uuid
+  dedup_key       String    @db.VarChar(200)
+  metadata        Json?     @default("{}")
+  read_at         DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([app_id, user_id, dedup_key], map: "notifications_dedup_key")
+  @@index([app_id, user_id, read_at, created_at], map: "idx_notifications_user_unread")
+}
+
 model personal_ai_settings {
   id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   app_id                String   @db.Uuid

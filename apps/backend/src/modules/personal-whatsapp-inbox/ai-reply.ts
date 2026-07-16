@@ -8,6 +8,7 @@ import { getRealtimeIO } from '../../lib/realtime'
 import { redis } from '../../lib/redis'
 import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 import { PersonalTakeoverService } from './takeover'
+import { NotificationService } from '../notifications/service'
 
 const OLLAMA_BASE_URL = String(
 	process.env.OLLAMA_BASE_URL || 'https://ollama.contrivent.com',
@@ -783,6 +784,15 @@ export abstract class PersonalAiReplyService {
 						taskId: task.id,
 						status: 'draft_ready',
 					})
+				await NotificationService.notify({
+					appId: task.app_id,
+					userId: task.owner_user_id,
+					type: 'ai_draft',
+					title: 'Draf balasan AI siap ditinjau',
+					body: draft.slice(0, 200),
+					conversationId: task.conversation_id,
+					dedupKey: `ai_draft:${task.conversation_id}`,
+				})
 				return { draft: true }
 			}
 			const claimed = await claimTaskForSending(task.id, 'composing', draft)
