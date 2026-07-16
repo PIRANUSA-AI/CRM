@@ -369,6 +369,24 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!dismissed) { set.status = 404; return { error: 'Draft tidak ditemukan' } }
 		return { success: true }
 	}, { params: t.Object({ taskId: t.String() }) })
+	.get('/unread-count', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session || !channel?.inbox_id) return { count: 0 }
+		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
+		if (!confirmedPhones.length) return { count: 0 }
+		// Number of the sales' own conversations that have unread messages.
+		const count = await prisma.conversations.count({
+			where: {
+				app_id: resolvedAppId,
+				inbox_id: channel.inbox_id,
+				deleted_at: null,
+				unread_count: { gt: 0 },
+				contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
+			},
+		})
+		return { count }
+	})
 	.get('/conversations', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) {
 			set.status = 401

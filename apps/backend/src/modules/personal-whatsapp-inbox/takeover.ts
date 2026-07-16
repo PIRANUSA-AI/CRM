@@ -251,40 +251,82 @@ export abstract class PersonalTakeoverService {
 			...new Set(registrations.map((row) => row.takeover_by).filter((id): id is string => Boolean(id))),
 		]
 
-		const [conversations, users, aiContext] = await Promise.all([
-			conversationIds.length
-				? prisma.conversations.findMany({
-						where: { id: { in: conversationIds }, deleted_at: null },
-						select: {
-							id: true,
-							contacts: { select: { name: true, phone_number: true, whatsapp_id: true } },
-							messages: {
-								where: { deleted_at: null },
-								orderBy: { created_at: 'desc' },
-								take: 1,
-								select: { content: true, created_at: true },
+		const [conversations, users, aiContext, lastInboundRows, lastAgentRows] =
+			await Promise.all([
+				conversationIds.length
+					? prisma.conversations.findMany({
+							where: { id: { in: conversationIds }, deleted_at: null },
+							select: {
+								id: true,
+								contacts: { select: { name: true, phone_number: true, whatsapp_id: true } },
+								messages: {
+									where: { deleted_at: null },
+									orderBy: { created_at: 'desc' },
+									take: 1,
+									select: { content: true, created_at: true },
+								},
 							},
-						},
-					})
-				: Promise.resolve([]),
-			prisma.users.findMany({
-				where: { id: { in: [...new Set([...ownerIds, ...takenByIds])] } },
-				select: { id: true, name: true, email: true },
-			}),
-			aiContextByConversation(conversationIds),
-		])
+						})
+					: Promise.resolve([]),
+				prisma.users.findMany({
+					where: { id: { in: [...new Set([...ownerIds, ...takenByIds])] } },
+					select: { id: true, name: true, email: true },
+				}),
+				aiContextByConversation(conversationIds),
+				// Last customer (incoming) message per conversation.
+				conversationIds.length
+					? prisma.messages.groupBy({
+							by: ['conversation_id'],
+							where: {
+								conversation_id: { in: conversationIds },
+								message_type: 'incoming',
+								deleted_at: null,
+							},
+							_max: { created_at: true },
+						})
+					: Promise.resolve([]),
+				// Last human (sales) reply per conversation — bot replies do not count.
+				conversationIds.length
+					? prisma.messages.groupBy({
+							by: ['conversation_id'],
+							where: {
+								conversation_id: { in: conversationIds },
+								message_type: 'outgoing',
+								sender_type: 'user',
+								deleted_at: null,
+							},
+							_max: { created_at: true },
+						})
+					: Promise.resolve([]),
+			])
 		const conversationsById = new Map(conversations.map((row) => [row.id, row]))
 		const userName = new Map(users.map((row) => [row.id, row.name || row.email]))
+		const lastInboundAt = new Map(
+			lastInboundRows.map((row) => [row.conversation_id, row._max.created_at?.getTime() || 0]),
+		)
+		const lastAgentAt = new Map(
+			lastAgentRows.map((row) => [row.conversation_id, row._max.created_at?.getTime() || 0]),
+		)
 		const now = Date.now()
 
 		return registrations
 			.filter((row) => row.conversation_id)
 			.map((row) => {
-				const conversation = conversationsById.get(row.conversation_id as string)
-				const ai = aiContext.get(row.conversation_id as string)
-				const waitingMinutes = row.takeover_at
-					? Math.max(0, Math.floor((now - new Date(row.takeover_at).getTime()) / 60_000))
+				const convId = row.conversation_id as string
+				const conversation = conversationsById.get(convId)
+				const ai = aiContext.get(convId)
+				const takenAtMs = row.takeover_at ? new Date(row.takeover_at).getTime() : 0
+				const customerAt = lastInboundAt.get(convId) || 0
+				const agentAt = lastAgentAt.get(convId) || 0
+				// Waiting = the customer's latest message is newer than the last human
+				// reply (customer is still awaiting a response). Once the sales replies
+				// after that message, it becomes "sudah dibalas" and the clock stops.
+				const awaitingResponse = customerAt > 0 && customerAt > agentAt
+				const waitingMinutes = awaitingResponse
+					? Math.max(0, Math.floor((now - customerAt) / 60_000))
 					: 0
+				// A reply made after takeover marks the lead as responded.
+				const respondedAt = agentAt > 0 && agentAt >= takenAtMs ? new Date(agentAt) : null
 				return {
 					conversationId: row.conversation_id,
 					contactName:
@@ -309,9 +351,11 @@ export abstract class PersonalTakeoverService {
 					aiReason: ai?.reason || row.takeover_reason || null,
 					aiSuggestedReply: ai?.draft || null,
 					takenAt: row.takeover_at,
+					awaitingResponse,
+					respondedAt,
 					waitingMinutes,
 					slaMinutes: TAKEOVER_SLA_MINUTES,
-					overdue: waitingMinutes > TAKEOVER_SLA_MINUTES,
+					overdue: awaitingResponse && waitingMinutes > TAKEOVER_SLA_MINUTES,
 				}
 			})
 	}

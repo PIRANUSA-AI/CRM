@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	Bot,
+	CheckCircle2,
 	Clock3,
 	History,
 	MessageCircle,
@@ -73,13 +74,22 @@ function AlihTugasPage() {
 		void load()
 	}, [load])
 
-	// Live-refresh when a takeover changes anywhere in the app.
+	// Live-refresh on takeover changes and on new messages (so "sudah dibalas" /
+	// waktu tunggu ikut ter-update begitu sales membalas atau customer mengirim lagi).
 	useEffect(() => {
 		const socket = connectSocket()
+		let debounce: ReturnType<typeof setTimeout> | null = null
 		const handler = () => void load()
+		const debounced = () => {
+			if (debounce) clearTimeout(debounce)
+			debounce = setTimeout(() => void load(), 1500)
+		}
 		socket.on('personal-takeover:updated', handler)
+		socket.on('message:created', debounced)
 		return () => {
+			if (debounce) clearTimeout(debounce)
 			socket.off('personal-takeover:updated', handler)
+			socket.off('message:created', debounced)
 		}
 	}, [load])
 
@@ -188,16 +198,23 @@ function AlihTugasPage() {
 													{isAi ? <Bot size={12} /> : <UserCheck size={12} />}
 													{isAi ? 'Dialihkan AI' : 'Diambil sales'}
 												</span>
-												<span
-													className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-														item.overdue
-															? 'bg-red-500/15 text-red-700 dark:text-red-300'
-															: 'bg-muted text-muted-foreground'
-													}`}
-												>
-													<Clock3 size={11} /> menunggu {formatWaiting(item.waitingMinutes)}
-													{item.overdue ? ' · lewat SLA' : ''}
-												</span>
+												{item.awaitingResponse ? (
+													<span
+														className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+															item.overdue
+																? 'bg-red-500/15 text-red-700 dark:text-red-300'
+																: 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+														}`}
+													>
+														<Clock3 size={11} /> Menunggu dibalas {formatWaiting(item.waitingMinutes)}
+														{item.overdue ? ' · lewat SLA' : ''}
+													</span>
+												) : (
+													<span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+														<CheckCircle2 size={11} /> Sudah dibalas
+														{item.respondedAt ? ` · ${formatDateTime(item.respondedAt)}` : ''}
+													</span>
+												)}
 												{item.takenByName ? (
 													<span className="text-xs text-muted-foreground">oleh {item.takenByName}</span>
 												) : item.ownerName ? (
@@ -251,7 +268,9 @@ function AlihTugasPage() {
 											<button
 												type="button"
 												className="ocm-btn"
-												onClick={() => navigate({ to: '/chat' })}
+												onClick={() =>
+													navigate({ to: '/chat', search: { c: item.conversationId } })
+												}
 											>
 												<MessageCircle size={15} />
 												Buka Chat

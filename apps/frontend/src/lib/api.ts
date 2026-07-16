@@ -1150,6 +1150,8 @@ export type PersonalTakeoverItem = {
 	aiReason: string | null
 	aiSuggestedReply: string | null
 	takenAt: string | null
+	awaitingResponse: boolean
+	respondedAt: string | null
 	waitingMinutes: number
 	slaMinutes: number
 	overdue: boolean
@@ -1222,6 +1224,9 @@ export const personalAi = {
 		}),
 	dismissDraft: (taskId: string) =>
 		apiRequest<{ success: boolean }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/dismiss`, { method: 'POST' }),
+	// Number of the sales' own inbox conversations with unread messages.
+	inboxUnreadCount: () =>
+		apiRequest<{ count: number }>('/personal-whatsapp-inbox/unread-count'),
 	// Per-conversation takeover (AI -> human) for personal WhatsApp leads.
 	listTakeovers: () =>
 		apiRequest<{ data: PersonalTakeoverItem[] }>('/personal-whatsapp-inbox/takeovers'),

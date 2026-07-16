@@ -315,7 +315,9 @@ function TaskDetailPage() {
 								<button
 									type="button"
 									className="ocm-btn"
-									onClick={() => navigate({ to: '/chat' })}
+									onClick={() =>
+										navigate({ to: '/chat', search: { c: task.conversationId as string } })
+									}
 								>
 									<MessageCircle size={14} /> Buka chat
 								</button>

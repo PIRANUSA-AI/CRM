@@ -61,6 +61,11 @@ import {
 
 export const Route = createFileRoute('/_app/chat')({
 	component: PersonalWhatsappInbox,
+	// `?c=<conversationId>` lets other pages (Alih Tugas, Tugas) deep-link to a
+	// specific personal WhatsApp conversation instead of just opening the inbox.
+	validateSearch: (search: Record<string, unknown>) => ({
+		c: typeof search.c === 'string' ? search.c : undefined,
+	}),
 })
 
 type Conversation = {
@@ -171,6 +176,7 @@ function storedUserName() {
 
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
+	const { c: deepLinkConversationId } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
 	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
@@ -179,6 +185,14 @@ function PersonalWhatsappInbox() {
 	const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
 	const [query, setQuery] = useState('')
 	const [filter, setFilter] = useState<InboxFilter>('all')
+
+	// Deep-link: open the conversation passed via ?c= (from Alih Tugas / Tugas).
+	useEffect(() => {
+		if (deepLinkConversationId) {
+			setFilter('all')
+			setSelectedId(deepLinkConversationId)
+		}
+	}, [deepLinkConversationId])
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [newChatOpen, setNewChatOpen] = useState(false)
 	const [newContactName, setNewContactName] = useState('')

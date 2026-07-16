@@ -54,6 +54,7 @@ export default function Sidebar({
 		agentProp || null,
 	)
 	const [alihTugasCount, setAlihTugasCount] = useState(0)
+	const [inboxUnread, setInboxUnread] = useState(0)
 
 	useEffect(() => {
 		if (!agentProp) {
@@ -95,7 +96,8 @@ export default function Sidebar({
 		return () => window.removeEventListener('crm:user-updated', handleUserUpdated)
 	}, [])
 
-	// Live count of leads waiting on a human, shown as a badge on "Alih Tugas".
+	// Live badges: leads waiting on a human ("Alih Tugas") + unread inbox chats
+	// ("Kotak Masuk"). Best-effort; refreshed via socket + a slow poll.
 	useEffect(() => {
 		let active = true
 		const refresh = () => {
@@ -105,16 +107,32 @@ export default function Sidebar({
 					if (active) setAlihTugasCount(response.count || 0)
 				})
 				.catch(() => {
-					/* non-blocking: badge is best-effort */
+					/* non-blocking */
+				})
+			personalAi
+				.inboxUnreadCount()
+				.then((response) => {
+					if (active) setInboxUnread(response.count || 0)
+				})
+				.catch(() => {
+					/* non-blocking */
 				})
 		}
 		refresh()
 		const socket = connectSocket()
+		let debounce: ReturnType<typeof setTimeout> | null = null
+		const debounced = () => {
+			if (debounce) clearTimeout(debounce)
+			debounce = setTimeout(refresh, 1500)
+		}
 		socket.on('personal-takeover:updated', refresh)
+		socket.on('message:created', debounced)
 		const interval = setInterval(refresh, 60_000)
 		return () => {
 			active = false
+			if (debounce) clearTimeout(debounce)
 			socket.off('personal-takeover:updated', refresh)
+			socket.off('message:created', debounced)
 			clearInterval(interval)
 		}
 	}, [])
@@ -229,17 +247,26 @@ export default function Sidebar({
 										>
 											<Icon className={`shrink-0 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} size={17} strokeWidth={isActive ? 2.5 : 2} />
 											<span className={isCollapsed ? 'sr-only' : ''}>{item.label}</span>
-											{item.id === 'alih-tugas' && alihTugasCount > 0 ? (
-												<span
-													className={
-														isCollapsed
-															? 'absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white'
-															: 'ml-auto grid min-w-5 place-items-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-white'
-													}
-												>
-													{Math.min(alihTugasCount, 99)}
-												</span>
-											) : item.badge ? (
+											{(() => {
+												const liveCount =
+													item.id === 'alih-tugas'
+														? alihTugasCount
+														: item.id === 'inbox'
+															? inboxUnread
+															: 0
+												return liveCount > 0 ? (
+													<span
+														className={
+															isCollapsed
+																? 'absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white'
+																: 'ml-auto grid min-w-5 place-items-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-white'
+														}
+													>
+														{Math.min(liveCount, 99)}
+													</span>
+												) : null
+											})()}
+											{item.badge ? (
 												<span className={isCollapsed ? 'sr-only' : 'ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]'}>
 													{item.badge}
 												</span>
