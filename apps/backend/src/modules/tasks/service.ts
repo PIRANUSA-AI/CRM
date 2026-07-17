@@ -3,12 +3,24 @@ import { getRealtimeIO } from '../../lib/realtime'
 import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 import { NotificationService } from '../notifications/service'
 import type { TaskAnalysisDecision } from './analyzer'
+import { generateLeadBrief } from './lead-brief'
+import { confirmPersonalLead } from '../personal-whatsapp-inbox/lead-access'
+import { PersonalTakeoverService } from '../personal-whatsapp-inbox/takeover'
+import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
 import {
 	assertAssignableTask,
 	dueAtFromRecommendation,
 	taskVisibilityScope,
 	type TaskActor,
 } from './policy'
+
+// Mirror of the phone normalization used by the personal WhatsApp inbox.
+function normalizeInboxPhone(value: string | null | undefined) {
+	let digits = String(value || '').replace(/\D/g, '')
+	if (digits.startsWith('0')) digits = `62${digits.slice(1)}`
+	else if (digits.startsWith('8')) digits = `62${digits}`
+	return /^\d{8,15}$/.test(digits) ? digits : null
+}
 
 const ACTIVE_STATUSES = ['open', 'in_progress']
 
@@ -299,8 +311,40 @@ export abstract class TaskService {
 		])
 		const actorName = new Map(actors.map((u) => [u.id, u.name || u.email]))
 
+		// Lazily generate an AI "lead brief" (ringkasan + saran pembuka) for
+		// leads that came from CSV import / manual entry and have no WhatsApp
+		// conversation yet — so the sales instantly understands who the lead is
+		// and how to open the follow-up. Cached into ai_snapshot after the first
+		// open; falls back to a deterministic brief if the AI is unavailable.
+		let taskOut = task
+		const snap =
+			task.aiSnapshot && typeof task.aiSnapshot === 'object' && !Array.isArray(task.aiSnapshot)
+				? (task.aiSnapshot as Record<string, unknown>)
+				: {}
+		const alreadyHasSummary = String(snap.summary || '').trim().length > 0
+		const eligibleForBrief =
+			!task.conversationId &&
+			contact &&
+			!alreadyHasSummary &&
+			(task.source === 'import' || task.source === 'manual' || task.actionKind === 'follow_up')
+		if (eligibleForBrief && contact) {
+			try {
+				const brief = await generateLeadBrief(contact)
+				const merged = {
+					...snap,
+					summary: brief.summary,
+					suggestedReply: brief.suggestedReply,
+					generatedBy: 'lead_brief',
+				}
+				await prisma.tasks.update({ where: { id: taskId }, data: { ai_snapshot: merged } })
+				taskOut = { ...task, aiSnapshot: merged }
+			} catch {
+				/* non-blocking: detail still loads without a brief */
+			}
+		}
+
 		return {
-			task,
+			task: taskOut,
 			contact,
 			messages: messageRows.map((m) => ({
 				id: m.id,
@@ -321,6 +365,204 @@ export abstract class TaskService {
 				createdAt: e.created_at,
 			})),
 		}
+	}
+
+	// Open (or create) the in-CRM WhatsApp conversation for this lead in the
+	// acting sales' personal inbox, hand it over to the human (AI stops), and
+	// link it back to the task. Used by the "Ambil Alih & Chat" button on the
+	// task detail page for imported/manual leads that have no conversation yet.
+	// Mirrors POST /personal-whatsapp-inbox/start + /:id/takeover so the
+	// production inbox routes stay untouched.
+	static async openChat(actor: TaskActor, taskId: string) {
+		const task = await TaskService.get(actor, taskId)
+		if (task.conversationId) {
+			// Already linked — just make sure the human owns it and return it.
+			await PersonalTakeoverService.takeover({
+				appId: actor.appId,
+				ownerUserId: actor.userId,
+				conversationId: task.conversationId,
+				source: 'manual',
+				byUserId: actor.userId,
+				reason: 'Diambil alih dari daftar tugas',
+			}).catch(() => null)
+			await PersonalAiReplyService.cancelConversationTasks(
+				actor.appId,
+				actor.userId,
+				task.conversationId,
+			).catch(() => null)
+			return { conversationId: task.conversationId }
+		}
+
+		if (!task.contactId) throw new TaskConflictError('Tugas ini tidak punya kontak')
+		const contact = await prisma.contacts.findFirst({
+			where: { id: task.contactId, app_id: actor.appId, deleted_at: null },
+			select: { id: true, name: true, phone_number: true, whatsapp_id: true },
+		})
+		const phoneNumber = normalizeInboxPhone(contact?.phone_number || contact?.whatsapp_id)
+		if (!phoneNumber)
+			throw new TaskConflictError('Lead ini belum punya nomor WhatsApp yang valid')
+
+		// The acting user must have a connected personal WhatsApp (baileys) so the
+		// conversation lands in their inbox.
+		const session = await prisma.baileys_sessions.findFirst({
+			where: { app_id: actor.appId, owner_user_id: actor.userId },
+			select: { channel_id: true },
+		})
+		const channel = session
+			? await prisma.whatsapp_channels.findFirst({
+					where: { id: session.channel_id, app_id: actor.appId, provider: 'baileys', deleted_at: null },
+					select: { id: true, inbox_id: true },
+				})
+			: null
+		if (!channel?.inbox_id)
+			throw new TaskConflictError(
+				'WhatsApp kamu belum terhubung. Hubungkan WhatsApp dulu untuk chat lead di dalam CRM.',
+			)
+		const inboxId = channel.inbox_id
+
+		const identifier = `wa:${actor.appId}:${phoneNumber}`
+		const now = new Date()
+		const conversation = await prisma.$transaction(async (tx) => {
+			const existingContact = await tx.contacts.findFirst({
+				where: {
+					app_id: actor.appId,
+					deleted_at: null,
+					OR: [{ identifier }, { whatsapp_id: phoneNumber }, { phone_number: phoneNumber }],
+				},
+			})
+			const owned = existingContact
+				? await tx.contacts.update({
+						where: { id: existingContact.id },
+						data: {
+							identifier: existingContact.identifier || identifier,
+							name: existingContact.name || contact?.name || phoneNumber,
+							phone_number: phoneNumber,
+							whatsapp_id: phoneNumber,
+							channel_type: 'whatsapp',
+							deleted_at: null,
+							updated_at: now,
+						},
+					})
+				: await tx.contacts.create({
+						data: {
+							app_id: actor.appId,
+							identifier,
+							name: contact?.name || phoneNumber,
+							phone_number: phoneNumber,
+							whatsapp_id: phoneNumber,
+							channel_type: 'whatsapp',
+							source: 'manual_whatsapp',
+							first_contact_at: now,
+							created_at: now,
+							updated_at: now,
+						},
+					})
+			const existingConversation = await tx.conversations.findFirst({
+				where: {
+					app_id: actor.appId,
+					inbox_id: inboxId,
+					contact_id: owned.id,
+					channel_type: 'whatsapp',
+					deleted_at: null,
+					status: { not: 'resolved' },
+				},
+				orderBy: { updated_at: 'desc' },
+			})
+			return (
+				existingConversation ||
+				(await tx.conversations.create({
+					data: {
+						app_id: actor.appId,
+						inbox_id: inboxId,
+						contact_id: owned.id,
+						channel_type: 'whatsapp',
+						status: 'open',
+						unread_count: 0,
+						last_message_at: now,
+						last_activity_at: now,
+						created_at: now,
+						updated_at: now,
+					},
+				}))
+			)
+		})
+
+		// Register lead ownership + stamp personal-whatsapp state so it shows in
+		// the sales' inbox and takeover pages.
+		const registration = await confirmPersonalLead({
+			appId: actor.appId,
+			ownerUserId: actor.userId,
+			phoneNumber,
+			contactId: conversation.contact_id,
+			conversationId: conversation.id,
+			displayName: contact?.name || null,
+			source: 'manual',
+		})
+		if (registration?.conversation_id) {
+			const existing = await prisma.conversations.findFirst({
+				where: { id: registration.conversation_id, app_id: actor.appId },
+				select: { additional_attributes: true },
+			})
+			if (existing) {
+				const attrs =
+					existing.additional_attributes && typeof existing.additional_attributes === 'object'
+						? (existing.additional_attributes as Record<string, unknown>)
+						: {}
+				await prisma.conversations.update({
+					where: { id: registration.conversation_id },
+					data: {
+						additional_attributes: {
+							...attrs,
+							personal_whatsapp: {
+								owner_user_id: actor.userId,
+								lead_registration_id: registration.id,
+								lead_status: registration.status,
+							},
+						} as object,
+						updated_at: new Date(),
+					},
+				})
+			}
+		}
+
+		// Human takes over — the AI stops auto-replying to this lead.
+		await PersonalTakeoverService.takeover({
+			appId: actor.appId,
+			ownerUserId: actor.userId,
+			conversationId: conversation.id,
+			source: 'manual',
+			byUserId: actor.userId,
+			reason: 'Follow-up lead diambil alih dari daftar tugas',
+		})
+		await PersonalAiReplyService.cancelConversationTasks(
+			actor.appId,
+			actor.userId,
+			conversation.id,
+		).catch(() => null)
+
+		// Link the task to the conversation and move it to in_progress so the
+		// detail page now shows the live chat + reply box.
+		const updated = await prisma.tasks.update({
+			where: { id: taskId },
+			data: {
+				conversation_id: conversation.id,
+				status: task.status === 'open' ? 'in_progress' : task.status,
+				updated_at: new Date(),
+			},
+		})
+		await prisma.task_events.create({
+			data: {
+				task_id: taskId,
+				event_type: 'updated',
+				actor_id: actor.userId,
+				actor_type: 'user',
+				reason: 'Lead diambil alih & chat dibuka di CRM',
+				metadata: { conversation_id: conversation.id },
+			},
+		})
+		emitTask('task:updated', updated as unknown as TaskRecord)
+
+		return { conversationId: conversation.id }
 	}
 
 	static async summary(actor: TaskActor) {

@@ -2619,6 +2619,12 @@ export const tasks = {
 
 	detail: (id: string) =>
 		apiRequest<{ data: TaskDetail }>(`/tasks/${encodeURIComponent(id)}/detail`),
+
+	openChat: (id: string) =>
+		apiRequest<{ data: { conversationId: string } }>(
+			`/tasks/${encodeURIComponent(id)}/open-chat`,
+			{ method: 'POST' },
+		),
 }
 
 export interface TaskMessage {
@@ -2728,4 +2734,29 @@ export const leadImport = {
 		),
 
 	history: () => apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
+
+	assignables: () =>
+		apiRequest<{ data: Array<{ userId: string; name: string | null; email: string }> }>(
+			'/import/assignables',
+		),
+
+	createManualLead: (input: {
+		name: string
+		phone?: string
+		email?: string
+		company?: string
+		city?: string
+		productInterest?: string
+		pipelineStage?: string
+		notes?: string
+		assignedTo: string
+	}) =>
+		apiRequest<{
+			data: {
+				contactId: string
+				taskId: string | null
+				updated: boolean
+				assigneeName: string | null
+			}
+		}>('/import/manual-lead', { method: 'POST', body: JSON.stringify(input) }),
 }

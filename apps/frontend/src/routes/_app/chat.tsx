@@ -65,6 +65,7 @@ export const Route = createFileRoute('/_app/chat')({
 	// specific personal WhatsApp conversation instead of just opening the inbox.
 	validateSearch: (search: Record<string, unknown>) => ({
 		c: typeof search.c === 'string' ? search.c : undefined,
+		draft: typeof search.draft === 'string' ? search.draft : undefined,
 	}),
 })
 
@@ -176,7 +177,7 @@ function storedUserName() {
 
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
-	const { c: deepLinkConversationId } = Route.useSearch()
+	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
 	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
@@ -204,6 +205,15 @@ function PersonalWhatsappInbox() {
 	const [creatingChat, setCreatingChat] = useState(false)
 	const [newChatError, setNewChatError] = useState<string | null>(null)
 	const [draft, setDraft] = useState('')
+	// Prefill the composer when arriving from the Tugas page with a suggested
+	// opener (?draft=). Only applied once so it never clobbers manual typing.
+	const draftPrefilledRef = useRef(false)
+	useEffect(() => {
+		if (deepLinkDraft && !draftPrefilledRef.current) {
+			draftPrefilledRef.current = true
+			setDraft(deepLinkDraft)
+		}
+	}, [deepLinkDraft])
 	const [sendingMessage, setSendingMessage] = useState(false)
 	const [composerError, setComposerError] = useState<string | null>(null)
 	const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null)

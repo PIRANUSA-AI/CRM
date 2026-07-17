@@ -191,3 +191,12 @@ export const tasks = new Elysia({ prefix: '/tasks', tags: ['Tasks'] })
 			return toErrorResponse(error, set)
 		}
 	}, { params: t.Object({ id: t.String() }), body: TaskRequestModel.replyWhatsapp })
+	.post('/:id/open-chat', async ({ resolvedAppId, userId, params, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId, set)
+		if (!actor) return { error: 'Sesi CRM tidak valid' }
+		try {
+			return { data: await TaskService.openChat(actor, params.id) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, { params: t.Object({ id: t.String() }) })

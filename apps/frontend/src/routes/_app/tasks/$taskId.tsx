@@ -87,6 +87,24 @@ function formatTime(value: string | null) {
 	}).format(date)
 }
 
+// Normalize an Indonesian phone to wa.me format (digits, with 62 country code).
+function normalizeWaPhone(raw?: string | null) {
+	let d = String(raw || '').replace(/\D/g, '')
+	if (!d) return ''
+	if (d.startsWith('0')) d = `62${d.slice(1)}`
+	else if (d.startsWith('8')) d = `62${d}`
+	return d
+}
+
+// wa.me link that opens WhatsApp directly to the lead's number, optionally
+// prefilled with an opener message.
+function waLink(phone?: string | null, text?: string | null) {
+	const digits = normalizeWaPhone(phone)
+	if (!digits) return null
+	const q = text?.trim() ? `?text=${encodeURIComponent(text.trim())}` : ''
+	return `https://wa.me/${digits}${q}`
+}
+
 function snoozePresets(): Array<{ label: string; iso: string }> {
 	const now = new Date()
 	const inHours = (h: number) => new Date(now.getTime() + h * 3600_000).toISOString()
@@ -107,7 +125,7 @@ function TaskDetailPage() {
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [replyDraft, setReplyDraft] = useState('')
-	const [busy, setBusy] = useState<null | 'reply' | 'complete' | 'snooze'>(null)
+	const [busy, setBusy] = useState<null | 'reply' | 'complete' | 'snooze' | 'openChat'>(null)
 	const [actionError, setActionError] = useState<string | null>(null)
 	const [draftDirty, setDraftDirty] = useState(false)
 	const [autoStarted, setAutoStarted] = useState(false)
@@ -158,6 +176,26 @@ function TaskDetailPage() {
 		[detail, replyDraft, load],
 	)
 
+	// Take the lead over in-CRM: create/find its WhatsApp conversation in the
+	// sales' personal inbox, stop the AI, link it to this task, and jump into the
+	// chat with the AI opener pre-typed.
+	const openChatInCrm = useCallback(async () => {
+		if (!detail) return
+		setBusy('openChat')
+		setActionError(null)
+		try {
+			const response = await tasks.openChat(detail.task.id)
+			const search: { c: string; draft?: string } = { c: response.data.conversationId }
+			if (replyDraft.trim()) search.draft = replyDraft.trim()
+			navigate({ to: '/chat', search })
+		} catch (reason) {
+			setActionError(
+				reason instanceof Error ? reason.message : 'Gagal membuka chat di CRM.',
+			)
+			setBusy(null)
+		}
+	}, [detail, replyDraft, navigate])
+
 	// Opening a task is the "start" signal: silently move it to in_progress the
 	// first time it is viewed while still open. No manual "Mulai" button needed.
 	useEffect(() => {
@@ -207,6 +245,9 @@ function TaskDetailPage() {
 	const isActive = task.status === 'open' || task.status === 'in_progress'
 	const canReply = Boolean(task.conversationId) && isActive
 	const customAttrs = (contact?.custom_attributes || {}) as Record<string, unknown>
+	const contactPhone = contact?.phone_number || task.contactPhone || null
+	const contactEmail = contact?.email || null
+	const waHref = waLink(contactPhone, replyDraft)
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -244,7 +285,7 @@ function TaskDetailPage() {
 					{/* AI summary + reply */}
 					<section className="ocm-card p-4">
 						<h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-							<Sparkles size={16} className="text-primary" /> Ringkasan & Draf Balasan AI
+							<Sparkles size={16} className="text-primary" /> Ringkasan & Tindak Lanjut
 						</h2>
 						{snapshot.summary ? (
 							<p className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
@@ -299,29 +340,95 @@ function TaskDetailPage() {
 								) : null}
 							</>
 						) : (
-							<p className="text-sm text-muted-foreground">
-								Tugas ini tidak terhubung ke percakapan WhatsApp.
-							</p>
+							<div className="space-y-3">
+								<p className="text-sm text-muted-foreground">
+									Lead ini belum punya percakapan WhatsApp. Mulai follow-up dengan
+									pesan pembuka di bawah.
+								</p>
+								{contactPhone || contactEmail ? (
+									<>
+										<textarea
+											value={replyDraft}
+											onChange={(event) => {
+												setReplyDraft(event.target.value)
+												setDraftDirty(true)
+											}}
+											rows={4}
+											placeholder="Tulis pesan pembuka follow-up..."
+											className="w-full resize-y rounded-lg border border-border bg-background p-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+										/>
+										{contactPhone ? (
+											<button
+												type="button"
+												onClick={() => void openChatInCrm()}
+												disabled={busy !== null}
+												className="ocm-btn w-full justify-center bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+											>
+												<MessageCircle size={16} />
+												{busy === 'openChat'
+													? 'Menyiapkan chat...'
+													: 'Ambil Alih & Chat di CRM'}
+											</button>
+										) : null}
+										<div className="flex flex-wrap gap-2">
+											{waHref ? (
+												<a
+													href={waHref}
+													target="_blank"
+													rel="noreferrer"
+													className="ocm-btn justify-center"
+												>
+													<SendHorizontal size={16} /> Buka WhatsApp langsung
+												</a>
+											) : null}
+											{contactEmail ? (
+												<a
+													href={`mailto:${contactEmail}${
+														replyDraft.trim()
+															? `?subject=${encodeURIComponent(
+																	task.title,
+																)}&body=${encodeURIComponent(replyDraft.trim())}`
+															: ''
+													}`}
+													className="ocm-btn justify-center"
+												>
+													<SendHorizontal size={16} /> Kirim Email
+												</a>
+											) : null}
+										</div>
+										<p className="text-xs text-muted-foreground">
+											<b>Ambil Alih & Chat di CRM</b> membuka percakapan lead di inbox
+											WhatsApp-mu, menghentikan balasan otomatis AI, dan kamu yang
+											menangani — pesan pembuka sudah terisi otomatis. Alternatif: buka
+											WhatsApp langsung di HP/desktop.
+										</p>
+									</>
+								) : (
+									<p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+										Kontak belum punya nomor WhatsApp maupun email. Lengkapi data kontak
+										dulu untuk bisa follow-up.
+									</p>
+								)}
+							</div>
 						)}
 					</section>
 
-					{/* Chat history */}
+					{/* Chat history — only relevant when a WhatsApp conversation exists */}
+					{task.conversationId ? (
 					<section className="ocm-card overflow-hidden">
 						<div className="flex items-center justify-between border-b border-border p-4">
 							<h2 className="flex items-center gap-2 text-sm font-semibold">
 								<MessagesSquare size={16} className="text-primary" /> Riwayat Chat WhatsApp
 							</h2>
-							{task.conversationId ? (
-								<button
-									type="button"
-									className="ocm-btn"
-									onClick={() =>
-										navigate({ to: '/chat', search: { c: task.conversationId as string } })
-									}
-								>
-									<MessageCircle size={14} /> Buka chat
-								</button>
-							) : null}
+							<button
+								type="button"
+								className="ocm-btn"
+								onClick={() =>
+									navigate({ to: '/chat', search: { c: task.conversationId as string } })
+								}
+							>
+								<MessageCircle size={14} /> Buka chat
+							</button>
 						</div>
 						{messages.length === 0 ? (
 							<div className="p-6 text-center text-sm text-muted-foreground">
@@ -359,6 +466,7 @@ function TaskDetailPage() {
 							</div>
 						)}
 					</section>
+					) : null}
 				</div>
 
 				{/* Sidebar */}
@@ -410,7 +518,7 @@ function TaskDetailPage() {
 						{isActive ? (
 							<div className="mt-3 flex flex-wrap items-center gap-2">
 								<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-									<TimerReset size={14} /> Tunda:
+									<TimerReset size={14} /> Ingatkan lagi:
 								</span>
 								{snoozePresets().map((preset) => (
 									<button
