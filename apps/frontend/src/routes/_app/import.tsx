@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { CheckCircle2, FileSpreadsheet, TriangleAlert, Upload } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { CheckCircle2, FileSpreadsheet, TriangleAlert, Upload, UserPlus } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { CrmSectionHeader } from '@/components/crm/shared'
 import {
 	leadImport,
@@ -45,6 +45,61 @@ function ImportPage() {
 	const [error, setError] = useState<string | null>(null)
 	const [result, setResult] = useState<ImportCommitResult | null>(null)
 	const [rowBusy, setRowBusy] = useState<string | null>(null)
+
+	// Manual single-lead entry
+	const emptyLead = {
+		name: '', phone: '', email: '', company: '', city: '',
+		productInterest: '', pipelineStage: '', notes: '', assignedTo: '',
+	}
+	const [salesOptions, setSalesOptions] = useState<Array<{ userId: string; name: string | null; email: string }>>([])
+	const [manualOpen, setManualOpen] = useState(false)
+	const [savingLead, setSavingLead] = useState(false)
+	const [leadMsg, setLeadMsg] = useState<{ ok: boolean; text: string } | null>(null)
+	const [lead, setLead] = useState(emptyLead)
+
+	useEffect(() => {
+		leadImport
+			.assignables()
+			.then((r) => setSalesOptions(r.data))
+			.catch(() => undefined)
+	}, [])
+
+	const submitManualLead = useCallback(async () => {
+		if (!lead.name.trim() || !lead.assignedTo) {
+			setLeadMsg({ ok: false, text: 'Nama lead dan sales tujuan wajib diisi.' })
+			return
+		}
+		if (!lead.phone.trim() && !lead.email.trim()) {
+			setLeadMsg({ ok: false, text: 'Isi minimal nomor WhatsApp atau email.' })
+			return
+		}
+		setSavingLead(true)
+		setLeadMsg(null)
+		try {
+			const res = await leadImport.createManualLead({
+				name: lead.name.trim(),
+				phone: lead.phone.trim() || undefined,
+				email: lead.email.trim() || undefined,
+				company: lead.company.trim() || undefined,
+				city: lead.city.trim() || undefined,
+				productInterest: lead.productInterest.trim() || undefined,
+				pipelineStage: lead.pipelineStage.trim() || undefined,
+				notes: lead.notes.trim() || undefined,
+				assignedTo: lead.assignedTo,
+			})
+			const d = res.data
+			setLeadMsg({
+				ok: true,
+				text: `Lead "${lead.name.trim()}" ${d.updated ? 'diperbarui' : 'ditambahkan'}${d.taskId ? ' + task follow-up dibuat' : ''} untuk ${d.assigneeName || 'sales'}.`,
+			})
+			setLead({ ...emptyLead, assignedTo: lead.assignedTo })
+		} catch (reason) {
+			setLeadMsg({ ok: false, text: reason instanceof Error ? reason.message : 'Gagal menambahkan lead' })
+		} finally {
+			setSavingLead(false)
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [lead])
 
 	const handleFile = useCallback(async (file: File) => {
 		setLoading(true)
@@ -200,6 +255,129 @@ function ImportPage() {
 				</section>
 			) : null}
 
+			{/* Tambah lead manual (tanpa CSV) */}
+			{!job && !result ? (
+				<section className="ocm-card p-5">
+					<div className="flex items-center justify-between gap-3">
+						<div>
+							<h2 className="text-base font-semibold">Tambah Lead Manual</h2>
+							<p className="text-sm text-muted-foreground">
+								Input satu lead dan assign ke sales — otomatis membuat task follow-up.
+							</p>
+						</div>
+						<button type="button" className="ocm-btn" onClick={() => setManualOpen((o) => !o)}>
+							<UserPlus size={14} /> {manualOpen ? 'Tutup' : 'Tambah lead'}
+						</button>
+					</div>
+
+					{manualOpen ? (
+						<div className="mt-4 space-y-3">
+							{leadMsg ? (
+								<div
+									className={`rounded-md px-3 py-2 text-sm ${
+										leadMsg.ok
+											? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+											: 'bg-red-500/10 text-red-600 dark:text-red-300'
+									}`}
+								>
+									{leadMsg.text}
+								</div>
+							) : null}
+							<div className="grid gap-3 sm:grid-cols-2">
+								<LeadField label="Nama *">
+									<input
+										value={lead.name}
+										onChange={(e) => setLead((l) => ({ ...l, name: e.target.value }))}
+										placeholder="Nama kontak"
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Sales tujuan *">
+									<select
+										value={lead.assignedTo}
+										onChange={(e) => setLead((l) => ({ ...l, assignedTo: e.target.value }))}
+										className="ocm-input"
+									>
+										<option value="">— pilih sales —</option>
+										{salesOptions.map((opt) => (
+											<option key={opt.userId} value={opt.userId}>
+												{opt.name || opt.email}
+											</option>
+										))}
+									</select>
+								</LeadField>
+								<LeadField label="No. WhatsApp">
+									<input
+										value={lead.phone}
+										onChange={(e) => setLead((l) => ({ ...l, phone: e.target.value }))}
+										placeholder="08xx / 62xx"
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Email">
+									<input
+										value={lead.email}
+										onChange={(e) => setLead((l) => ({ ...l, email: e.target.value }))}
+										placeholder="email@perusahaan.com"
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Perusahaan">
+									<input
+										value={lead.company}
+										onChange={(e) => setLead((l) => ({ ...l, company: e.target.value }))}
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Kota">
+									<input
+										value={lead.city}
+										onChange={(e) => setLead((l) => ({ ...l, city: e.target.value }))}
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Produk diminati">
+									<input
+										value={lead.productInterest}
+										onChange={(e) => setLead((l) => ({ ...l, productInterest: e.target.value }))}
+										placeholder="mis. ZWCAD 2025 Professional"
+										className="ocm-input"
+									/>
+								</LeadField>
+								<LeadField label="Tahap pipeline">
+									<input
+										value={lead.pipelineStage}
+										onChange={(e) => setLead((l) => ({ ...l, pipelineStage: e.target.value }))}
+										placeholder="mis. Kualifikasi / Penawaran"
+										className="ocm-input"
+									/>
+								</LeadField>
+							</div>
+							<LeadField label="Catatan">
+								<textarea
+									value={lead.notes}
+									onChange={(e) => setLead((l) => ({ ...l, notes: e.target.value }))}
+									rows={2}
+									placeholder="Konteks singkat lead"
+									className="ocm-input resize-y"
+								/>
+							</LeadField>
+							<div className="flex justify-end">
+								<button
+									type="button"
+									className="ocm-btn bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+									onClick={() => void submitManualLead()}
+									disabled={savingLead}
+								>
+									<CheckCircle2 size={15} />
+									{savingLead ? 'Menyimpan...' : 'Simpan Lead & Assign'}
+								</button>
+							</div>
+						</div>
+					) : null}
+				</section>
+			) : null}
+
 			{/* Preview */}
 			{job ? (
 				<section className="ocm-card overflow-hidden">
@@ -288,6 +466,15 @@ function ImportPage() {
 				</section>
 			) : null}
 		</main>
+	)
+}
+
+function LeadField({ label, children }: { label: string; children: ReactNode }) {
+	return (
+		<label className="block">
+			<span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+			{children}
+		</label>
 	)
 }
 

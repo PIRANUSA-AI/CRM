@@ -57,6 +57,36 @@ export const importLeads = new Elysia({ prefix: '/import', tags: ['Import'] })
 			return toErrorResponse(error, set)
 		}
 	})
+	.get('/assignables', async ({ resolvedAppId, userId, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId, set)
+		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+		try {
+			return { data: await ImportService.listAssignables(actor) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	})
+	.post('/manual-lead', async ({ resolvedAppId, userId, body, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId, set)
+		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+		try {
+			return { data: await ImportService.createManualLead(actor, body) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, {
+		body: t.Object({
+			name: t.String({ minLength: 1, maxLength: 255 }),
+			phone: t.Optional(t.String({ maxLength: 40 })),
+			email: t.Optional(t.String({ maxLength: 255 })),
+			company: t.Optional(t.String({ maxLength: 255 })),
+			city: t.Optional(t.String({ maxLength: 120 })),
+			productInterest: t.Optional(t.String({ maxLength: 255 })),
+			pipelineStage: t.Optional(t.String({ maxLength: 80 })),
+			notes: t.Optional(t.String({ maxLength: 2000 })),
+			assignedTo: t.String({ minLength: 1 }),
+		}),
+	})
 	.post('/csv/preview', async ({ resolvedAppId, userId, body, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
 		if (!actor) return { error: 'Akses import hanya untuk leader/ceo/superadmin' }

@@ -548,6 +548,143 @@ export abstract class ImportService {
 		}
 	}
 
+	// Sales the actor may assign a lead to (for the manual add-lead dropdown).
+	static async listAssignables(actor: ImportActor) {
+		const assignables = await resolveAssignables(actor)
+		return [...assignables.values()]
+			.map((a) => ({ userId: a.userId, name: a.name, email: a.email }))
+			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+	}
+
+	// Manual single-lead entry by a leader — mirrors the CSV commit path:
+	// create/update the contact and (unless the stage is closed) a follow-up task
+	// assigned to the chosen sales.
+	static async createManualLead(
+		actor: ImportActor,
+		input: {
+			name: string
+			phone?: string | null
+			email?: string | null
+			company?: string | null
+			city?: string | null
+			productInterest?: string | null
+			pipelineStage?: string | null
+			notes?: string | null
+			assignedTo: string
+		},
+	) {
+		const name = String(input.name || '').trim()
+		if (!name) throw new ImportError('Nama lead wajib diisi')
+
+		const phone = input.phone ? normalizePhone(String(input.phone)) : null
+		const rawEmail = input.email ? String(input.email).trim().toLowerCase() : ''
+		if (rawEmail && !isValidEmail(rawEmail)) throw new ImportError('Format email tidak valid')
+		const email = rawEmail || null
+		if (!phone && !email) throw new ImportError('Isi minimal nomor WhatsApp atau email')
+
+		const assignables = await resolveAssignables(actor)
+		const assignee = [...assignables.values()].find((a) => a.userId === input.assignedTo)
+		if (!assignee) throw new ImportError('Sales tujuan tidak valid atau di luar tim Anda')
+
+		const now = new Date()
+		const pipelineStage = input.pipelineStage?.trim() || null
+		const productInterest = input.productInterest?.trim() || null
+		const notes = input.notes?.trim() || null
+
+		const result = await prisma.$transaction(async (tx) => {
+			const orConds: Array<Record<string, unknown>> = []
+			if (phone) {
+				orConds.push({ phone_number: phone })
+				orConds.push({ whatsapp_id: phone })
+			}
+			if (email) orConds.push({ email })
+			const existing = orConds.length
+				? await tx.contacts.findFirst({
+						where: { app_id: actor.appId, deleted_at: null, OR: orConds },
+					})
+				: null
+
+			const customAttributes = {
+				...((existing?.custom_attributes as Record<string, unknown>) || {}),
+				assigned_user_id: assignee.userId,
+				product_interest: productInterest,
+				pipeline_stage: pipelineStage,
+				import_notes: notes,
+			}
+			const contactData = {
+				name: name || existing?.name || phone || 'Lead',
+				email: email || existing?.email || null,
+				phone_number: phone || existing?.phone_number || null,
+				whatsapp_id: phone || existing?.whatsapp_id || null,
+				company: input.company?.trim() || existing?.company || null,
+				city: input.city?.trim() || existing?.city || null,
+				source: existing?.source || 'manual',
+				custom_attributes: customAttributes as object,
+				channel_type: existing?.channel_type || 'whatsapp',
+				updated_at: now,
+			}
+
+			let contactId: string
+			let wasUpdate = false
+			if (existing) {
+				await tx.contacts.update({ where: { id: existing.id }, data: contactData })
+				contactId = existing.id
+				wasUpdate = true
+			} else {
+				const created = await tx.contacts.create({
+					data: {
+						app_id: actor.appId,
+						identifier: phone ? `wa:${actor.appId}:${phone}` : null,
+						first_contact_at: now,
+						created_at: now,
+						...contactData,
+					},
+				})
+				contactId = created.id
+			}
+
+			let taskId: string | null = null
+			if (!isClosedStage(pipelineStage)) {
+				const dueAt = new Date(now.getTime() + 3 * 24 * 3600_000)
+				const title = `Follow-up ${productInterest || 'lead'} — ${name}`.slice(0, 255)
+				const task = await tx.tasks.create({
+					data: {
+						app_id: actor.appId,
+						assignee_id: assignee.userId,
+						team_id: assignee.teamId || null,
+						created_by: actor.userId,
+						contact_id: contactId,
+						action_kind: 'follow_up',
+						title,
+						description: notes,
+						priority: priorityForStage(pipelineStage),
+						status: 'open',
+						due_at: dueAt,
+						source: 'manual',
+						ai_snapshot: {},
+					},
+				})
+				await tx.task_events.create({
+					data: {
+						task_id: task.id,
+						event_type: 'created',
+						actor_id: actor.userId,
+						metadata: { source: 'manual_lead' },
+					},
+				})
+				taskId = task.id
+			}
+			return { contactId, taskId, wasUpdate }
+		})
+
+		return {
+			contactId: result.contactId,
+			taskId: result.taskId,
+			updated: result.wasUpdate,
+			assigneeName: assignee.name,
+		}
+	}
+
 	static async history(actor: ImportActor) {
 		const jobs = await prisma.import_jobs.findMany({
 			where: {
