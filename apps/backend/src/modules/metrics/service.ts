@@ -719,20 +719,12 @@ export abstract class MetricsService {
 
 		const conversationAggregate = {
 			...conversationAggregateBase,
-			avg_first_response_current:
-				toNumber(conversationAggregateBase.avg_first_response_current) ||
-				(await this.getDerivedAverageResponseSeconds(
-					target,
-					range.currentStart,
-					range.currentEnd,
-				)),
-			avg_first_response_previous:
-				toNumber(conversationAggregateBase.avg_first_response_previous) ||
-				(await this.getDerivedAverageResponseSeconds(
-					target,
-					range.previousStart,
-					range.previousEnd,
-				)),
+			avg_first_response_current: toNumber(
+				conversationAggregateBase.avg_first_response_current,
+			),
+			avg_first_response_previous: toNumber(
+				conversationAggregateBase.avg_first_response_previous,
+			),
 		}
 		const volume = buildVolume(range, rawVolume)
 		const agents = mapAgents(rawAgents)
@@ -1221,52 +1213,6 @@ export abstract class MetricsService {
 		)
 	}
 
-	private static async getDerivedAverageResponseSeconds(
-		appId: string,
-		startDate: Date,
-		endDate: Date,
-	) {
-		const row = await queryFirst<{ avg_response_seconds?: unknown }>(
-			`/* metrics:derived-response-time */
-			WITH first_incoming AS (
-				SELECT
-					m.conversation_id,
-					MIN(m.created_at) AS first_incoming_at
-				FROM messages m
-				LEFT JOIN conversations c ON c.id = m.conversation_id
-				WHERE COALESCE(m.app_id, c.app_id) = $1::uuid
-				  AND m.conversation_id IS NOT NULL
-				  AND m.created_at >= $2
-				  AND m.created_at < $3
-				  AND m.deleted_at IS NULL
-				  AND COALESCE(m.is_deleted, false) = false
-				  AND (LOWER(m.message_type) = 'incoming' OR LOWER(COALESCE(m.sender_type, '')) = 'contact')
-				GROUP BY m.conversation_id
-			),
-			first_response AS (
-				SELECT
-					fi.conversation_id,
-					MIN(m.created_at) AS first_response_at
-				FROM first_incoming fi
-				JOIN messages m
-					ON m.conversation_id = fi.conversation_id
-				   AND m.created_at > fi.first_incoming_at
-				WHERE m.deleted_at IS NULL
-				  AND COALESCE(m.is_deleted, false) = false
-				  AND LOWER(m.message_type) = 'outgoing'
-				  AND LOWER(COALESCE(m.sender_type, '')) IN ('${[...AI_SENDER_TYPES, ...CS_SENDER_TYPES].join("','")}')
-				GROUP BY fi.conversation_id
-			)
-			SELECT
-				AVG(EXTRACT(EPOCH FROM (fr.first_response_at - fi.first_incoming_at)))::double precision AS avg_response_seconds
-			FROM first_incoming fi
-			JOIN first_response fr ON fr.conversation_id = fi.conversation_id`,
-			appId,
-			startDate,
-			endDate,
-		)
-		return round(toNumber(row.avg_response_seconds), 1)
-	}
 }
 
 export const __test__ = {
