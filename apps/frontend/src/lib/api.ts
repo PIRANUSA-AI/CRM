@@ -1658,10 +1658,10 @@ export const whatsappChannels = {
 			'/whatsapp-channels/me/connection',
 		),
 
-	startMyConnection: () =>
+	startMyConnection: (phoneNumber?: string) =>
 		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
 			'/whatsapp-channels/me/connection/start',
-			{ method: 'POST' },
+			{ method: 'POST', body: phoneNumber ? JSON.stringify({ phoneNumber }) : undefined },
 		),
 
 	stopMyConnection: () =>

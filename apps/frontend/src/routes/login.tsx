@@ -14,6 +14,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { syncOrganizationContextFromSession } from '@/lib/organization'
+import {
+	extractNormalizedRole,
+	getAllowedPrimaryPathsForRole,
+} from '@/lib/role-access'
 
 export const Route = createFileRoute('/login')({ component: LoginPage })
 
@@ -130,13 +134,29 @@ function LoginPage() {
 			localStorage.setItem('crm_user', JSON.stringify(data.user))
 
 			try {
+				const role = extractNormalizedRole(data.user)
+				const allowedPaths = getAllowedPrimaryPathsForRole(role)
+				const defaultPath = allowedPaths?.[0] || '/dashboard'
+				const needsWhatsApp = ['sales', 'agent'].includes(role)
+
 				const context = await syncOrganizationContextFromSession()
 				await navigate({
-					to: context.onboardingRequired || !context.organization ? '/onboarding' : '/whatsapp/connect',
+					to: context.onboardingRequired || !context.organization
+						? '/onboarding'
+						: needsWhatsApp
+							? '/whatsapp/connect'
+							: defaultPath,
 					replace: true,
 				})
 			} catch {
-				await navigate({ to: '/whatsapp/connect', replace: true })
+				const role = extractNormalizedRole(data.user)
+				const allowedPaths = getAllowedPrimaryPathsForRole(role)
+				const defaultPath = allowedPaths?.[0] || '/dashboard'
+				const needsWhatsApp = ['sales', 'agent'].includes(role)
+				await navigate({
+					to: needsWhatsApp ? '/whatsapp/connect' : defaultPath,
+					replace: true,
+				})
 			}
 		} catch (loginError) {
 			const isNetworkError =

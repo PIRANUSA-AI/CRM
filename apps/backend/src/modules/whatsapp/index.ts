@@ -71,14 +71,31 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			},
 		}
 	})
-	.post('/me/connection/start', async ({ resolvedAppId, userId, request, headers, set }) => {
+	.post('/me/connection/start', async ({ resolvedAppId, userId, body, request, headers, set }) => {
 		if (!resolvedAppId || !userId) {
 			set.status = 401
 			return { error: 'Unauthorized' }
 		}
 		try {
-			const user = await (await import('../../lib/prisma')).default.users.findUnique({
-				where: { id: userId }, select: { name: true },
+			const prisma = (await import('../../lib/prisma')).default
+
+			// Kalo ada phoneNumber di body, simpan ke profil user
+			let rawPhone = String(
+				(body as { phoneNumber?: string } | null | undefined)?.phoneNumber || '',
+			).trim().replace(/\D/g, '')
+			if (rawPhone) {
+				// Convert local (08xx) to international (628xx) so requestPairingCode gets the right format
+				if (rawPhone.startsWith('0') && rawPhone.length > 1) {
+					rawPhone = '62' + rawPhone.slice(1)
+				}
+				await prisma.users.update({
+					where: { id: userId },
+					data: { phone_number: rawPhone },
+				})
+			}
+
+			const user = await prisma.users.findUnique({
+				where: { id: userId }, select: { name: true, phone_number: true },
 			})
 			const connection = await WhatsAppService.ensurePersonalBaileysConnection({
 				appId: resolvedAppId,
@@ -511,4 +528,19 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	.post('/init-signup', async ({ set }) => {
 		set.status = 410
 		return { error: 'Embedded signup is no longer available. Please use manual token connection.' }
+	})
+	.post('/flush-sessions', async ({ userId, set }) => {
+		const guard = await requireRole(userId, ['ceo', 'superadmin'])
+		if (!guard.ok) {
+			set.status = guard.status
+			return { error: guard.error }
+		}
+		try {
+			const prisma = (await import('../../lib/prisma')).default
+			await prisma.baileys_sessions.deleteMany()
+			return { success: true }
+		} catch (error: any) {
+			set.status = 500
+			return { error: error?.message || 'Failed to flush sessions' }
+		}
 	})

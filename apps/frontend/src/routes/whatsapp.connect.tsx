@@ -1,9 +1,13 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Check, LoaderCircle, LogOut, ShieldCheck } from 'lucide-react'
-import QRCode from 'qrcode'
+import { Check, LoaderCircle, LogOut, ShieldCheck, Smartphone } from 'lucide-react'
+import QRCodeStyling from 'qr-code-styling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { whatsappChannels, type PersonalWhatsAppConnection } from '@/lib/api'
+import {
+	extractNormalizedRole,
+	getAllowedPrimaryPathsForRole,
+} from '@/lib/role-access'
 
 export const Route = createFileRoute('/whatsapp/connect')({ component: WhatsAppConnectPage })
 
@@ -16,16 +20,42 @@ function storedFirstName() {
 	} catch { return '' }
 }
 
+function isMobile() {
+	if (typeof window === 'undefined' || !navigator) return false
+	try {
+		const ua = navigator.userAgent || ''
+		return /Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini|iPad/i.test(ua)
+			|| (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))
+	} catch { return false }
+}
+
 function WhatsAppConnectPage() {
 	const navigate = useNavigate()
 	const [connection, setConnection] = useState<PersonalWhatsAppConnection | null>(null)
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem('crm_user')
+			if (!raw) return
+			const role = extractNormalizedRole(JSON.parse(raw))
+			if (!['sales', 'agent'].includes(role)) {
+				const allowedPaths = getAllowedPrimaryPathsForRole(role)
+				void navigate({ to: allowedPaths?.[0] || '/dashboard', replace: true })
+			}
+		} catch {}
+	}, [navigate])
 	const [qrImage, setQrImage] = useState<string | null>(null)
 	const [error, setError] = useState('')
 	const [countdown, setCountdown] = useState(10)
 	const previouslyConnected = useRef<boolean | null>(null)
-	const [pairingRemaining, setPairingRemaining] = useState(300)
-	const [waitingForPresence, setWaitingForPresence] = useState(false)
 	const firstName = useMemo(storedFirstName, [])
+	const [mobile, setMobile] = useState(false)
+	useEffect(() => {
+		const check = () => { try { setMobile(isMobile()) } catch {} }
+		check()
+		window.addEventListener('resize', check)
+		return () => window.removeEventListener('resize', check)
+	}, [])
+	const [forceQr, setForceQr] = useState(false)
 
 	const refresh = useCallback(async (start = false) => {
 		try {
@@ -42,35 +72,55 @@ function WhatsAppConnectPage() {
 		}
 	}, [])
 
-	useEffect(() => { void refresh().then((value) => { if (value?.requiresPairing && value.status === 'not_paired') void refresh(true) }) }, [refresh])
+	useEffect(() => { void refresh().then((value) => { if (!value?.channelId) void refresh(true) }) }, [refresh])
 
 	useEffect(() => {
-		if (!connection || connection.isConnected || waitingForPresence) return
-		const timer = window.setInterval(() => void refresh(), 2500)
+		if (!connection || connection.isConnected) return
+		const timer = window.setInterval(() => {
+			void refresh().then((value) => {
+				if (!value?.channelId) {
+					void refresh(true)
+				}
+			})
+		}, 15_000)
 		return () => window.clearInterval(timer)
-	}, [connection?.isConnected, connection?.status, refresh, waitingForPresence])
+	}, [connection?.isConnected, connection?.status, refresh])
 
 	useEffect(() => {
 		if (!connection?.qrCode) { setQrImage(null); return }
 		let active = true
-		void QRCode.toDataURL(connection.qrCode, { width: 288, margin: 2, color: { dark: '#102a4c', light: '#ffffff' } })
-			.then((url: string) => { if (active) setQrImage(url) })
+		const qr = new QRCodeStyling({
+			width: 340,
+			height: 340,
+			data: connection.qrCode,
+			margin: 8,
+			image: '/favicon.svg',
+			dotsOptions: {
+				type: 'rounded',
+				color: '#102a4c',
+				roundSize: true,
+			},
+			cornersSquareOptions: {
+				type: 'extra-rounded',
+				color: '#17365f',
+			},
+			cornersDotOptions: {
+				type: 'dot',
+				color: '#315d91',
+			},
+			backgroundOptions: {
+				color: 'transparent',
+			},
+		})
+		void qr.getRawData('png').then((blob) => {
+			if (!active || !blob) return
+			const url = URL.createObjectURL(blob)
+			setQrImage(url)
+		})
 		return () => { active = false }
 	}, [connection?.qrCode])
 
-	useEffect(() => {
-		if (connection?.isConnected || waitingForPresence) return
-		const timer = window.setInterval(() => {
-			setPairingRemaining((current) => {
-				if (current > 1) return current - 1
-				window.clearInterval(timer)
-				setWaitingForPresence(true)
-				setQrImage(null)
-				return 0
-			})
-		}, 1000)
-		return () => window.clearInterval(timer)
-	}, [connection?.isConnected, waitingForPresence])
+
 
 	useEffect(() => {
 		if (!connection?.isConnected) { setCountdown(10); return }
@@ -87,44 +137,55 @@ function WhatsAppConnectPage() {
 		void navigate({ to: '/login', replace: true })
 	}
 
-	const confirmPresence = () => {
-		setWaitingForPresence(false)
-		setPairingRemaining(300)
-		void refresh(true)
-	}
+	const confirmPresence = () => void refresh(true)
 
 	return (
-		<main className="flex min-h-svh items-center justify-center bg-[#f7f3e9] px-5 py-10 text-[#142942]">
-			<button type="button" onClick={() => void logout()} className="absolute right-5 top-5 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[#52657b] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315d91]">
+		<main className="flex min-h-dvh items-center justify-center bg-[#f7f3e9] px-4 py-8 text-[#142942] md:px-5 md:py-10">
+			<button type="button" onClick={() => void logout()} className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-[#52657b] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315d91] md:right-5 md:top-5">
 				<LogOut className="h-4 w-4" /> Keluar
 			</button>
-			<section className="w-full max-w-[460px] text-center" aria-live="polite">
+			<section className="w-full max-w-[420px] px-0 text-center md:px-4" aria-live="polite">
 				{connection?.isConnected ? (
 					<>
-						<div className="mx-auto mb-6 grid h-28 w-28 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check className="h-12 w-12" strokeWidth={2.4} /></div>
-						<h1 className="text-balance font-[family-name:var(--font-display)] text-4xl font-medium tracking-[-0.03em] text-[#102a4c]">
+						<div className="mx-auto mb-5 grid h-24 w-24 place-items-center rounded-full bg-emerald-100 text-emerald-700 md:h-28 md:w-28"><Check className="h-10 w-10 md:h-12 md:w-12" strokeWidth={2.4} /></div>
+						<h1 className="text-balance font-[family-name:var(--font-display)] text-2xl font-medium tracking-[-0.02em] text-[#102a4c] md:text-4xl md:tracking-[-0.03em]">
 							{previouslyConnected.current ? `Hai lagi${firstName ? `, ${firstName}` : ''}!` : `Halo${firstName ? `, ${firstName}` : ''}! Selamat bekerja.`}
 						</h1>
-						<p className="mt-3 text-[15px] leading-6 text-[#5b6b7d]">WhatsApp kamu sudah siap. Kita ke kotak masuk dalam {countdown} detik.</p>
-						<Button onClick={() => void navigate({ to: '/chat', replace: true })} className="mt-7 h-11 rounded-xl bg-[#17365f] px-6 hover:bg-[#102a4c]">Buka kotak masuk</Button>
+						<p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#5b6b7d] md:mt-3 md:text-[15px]">WhatsApp kamu sudah siap. Kita ke kotak masuk dalam {countdown} detik.</p>
+						<Button onClick={() => void navigate({ to: '/chat', replace: true })} className="mt-6 h-11 rounded-xl bg-[#17365f] px-6 hover:bg-[#102a4c] md:mt-7">Buka kotak masuk</Button>
 					</>
 				) : (
 					<>
-						<h1 className="text-balance font-[family-name:var(--font-display)] text-[40px] font-medium leading-tight tracking-[-0.03em] text-[#102a4c]">Hubungkan WhatsApp kamu</h1>
-						<p className="mx-auto mt-3 max-w-sm text-[15px] leading-6 text-[#5b6b7d]">Scan sekali, lalu percakapan pelangganmu akan siap di CRM.</p>
-						<div className="mx-auto mt-8 flex min-h-[320px] w-full max-w-[340px] items-center justify-center rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(16,42,76,0.10)]">
-							{waitingForPresence ? (
-								<div className="max-w-[250px]">
-									<p className="text-xl font-semibold text-[#102a4c]">Hei, masih di sana?</p>
-									<p className="mt-2 text-sm leading-6 text-[#5b6b7d]">Kami berhenti membuat QR baru supaya halaman ini tidak terus bekerja saat kamu sedang pergi.</p>
-									<Button onClick={confirmPresence} className="mt-5 h-10 rounded-xl bg-[#17365f] px-5 hover:bg-[#102a4c]">Ya, buat QR baru</Button>
+						<h1 className="text-balance px-2 font-[family-name:var(--font-display)] text-[28px] font-medium leading-tight tracking-[-0.02em] text-[#102a4c] md:px-0 md:text-[40px] md:tracking-[-0.03em]">Hubungkan WhatsApp kamu</h1>
+						<p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#5b6b7d] md:mt-3 md:max-w-sm md:text-[15px]">
+							Scan QR ini dengan WhatsApp kamu.
+						</p>
+
+						<div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-white px-5 py-8 shadow-[0_4px_16px_rgba(16,42,76,0.08)] md:mt-8 md:min-h-[320px] md:px-6 md:py-10">
+							{qrImage ? (
+								<img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="mx-auto h-auto w-full max-w-[300px] md:max-w-[340px]" />
+							) : mobile && !forceQr ? (
+								<div className="w-full text-center">
+									<div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#eef2f7] text-[#315d91] md:h-14 md:w-14">
+										<Smartphone className="h-6 w-6 md:h-7 md:w-7" />
+									</div>
+									<p className="mt-4 text-sm font-medium text-[#102a4c] md:text-base">Gunakan laptop untuk scan QR</p>
+									<p className="mt-2 text-xs leading-5 text-[#657487]">Scan QR ini hanya bisa dilakukan dari laptop atau komputer desktop.</p>
+									<Button onClick={() => setForceQr(true)} className="mt-5 h-10 rounded-xl bg-[#17365f] px-5 hover:bg-[#102a4c]">Paksa Login (Tampilkan QR)</Button>
 								</div>
-							) : qrImage ? <img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="h-auto w-full max-w-[288px]" /> : <LoaderCircle className="h-8 w-8 animate-spin text-[#315d91] motion-reduce:animate-none" aria-label="Menyiapkan QR WhatsApp" />}
+							) : (
+								<div className="flex flex-col items-center gap-3">
+									<LoaderCircle className="h-7 w-7 animate-spin text-[#315d91] motion-reduce:animate-none md:h-8 md:w-8" />
+									<p className="text-xs text-[#657487]">Menyiapkan koneksi...</p>
+								</div>
+							)}
 						</div>
-						<p className="mt-5 text-sm text-[#52657b]">WhatsApp → Perangkat tertaut → Tautkan perangkat</p>
-						{error ? <p className="mx-auto mt-4 max-w-sm rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
-						{!waitingForPresence ? <p className="mt-5 text-xs text-[#657487]">Sesi pairing aktif selama {Math.floor(pairingRemaining / 60)}:{String(pairingRemaining % 60).padStart(2, '0')}. QR akan mengikuti pembaruan aman dari WhatsApp.</p> : null}
-						<p className="mt-8 inline-flex items-center gap-2 text-xs text-[#657487]"><ShieldCheck className="h-4 w-4" /> Session ini hanya untuk akun CRM kamu.</p>
+
+						{!mobile || forceQr ? (
+							<p className="mt-4 text-xs text-[#52657b] md:mt-5 md:text-sm">WhatsApp - Perangkat tertaut - Tautkan perangkat</p>
+						) : null}
+						{error ? <p className="mx-auto mt-4 max-w-xs rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700 md:max-w-sm md:text-sm">{error}</p> : null}
+						<p className="mt-6 inline-flex items-center gap-1.5 text-xs text-[#657487] md:mt-8"><ShieldCheck className="h-3.5 w-3.5" /> Hanya untuk akun CRM kamu</p>
 					</>
 				)}
 			</section>

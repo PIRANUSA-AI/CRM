@@ -736,24 +736,68 @@ export abstract class WhatsAppService {
 		userName: string
 		providerWebhookUrl: string
 	}) {
-		const existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
+		const prisma = (await import('../../lib/prisma')).default
+		const user = await prisma.users.findUnique({
+			where: { id: params.userId },
+			select: { phone_number: true },
+		})
+		const phoneNumber = user?.phone_number && user.phone_number !== '0000000000' ? user.phone_number : ''
+
+		let existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
+
+		// Update phone number & pairing mode kalo user punya nomor valid
+		if (phoneNumber && existing?.channelId) {
+			const channelRow = await prisma.whatsapp_channels.findUnique({
+				where: { id: existing.channelId },
+				select: { extended_metadata: true },
+			})
+			await prisma.whatsapp_channels.update({
+				where: { id: existing.channelId },
+				data: {
+					phone_number: phoneNumber,
+					extended_metadata: {
+						...((channelRow?.extended_metadata || {}) as Record<string, unknown>),
+						baileys_link_mode: 'pairing_code',
+					},
+				},
+			})
+			await prisma.baileys_sessions.update({
+				where: { channel_id: existing.channelId },
+				data: { phone_number: phoneNumber, owner_user_id: params.userId },
+			})
+		}
+
 		if (existing) return existing
 
 		const providerChannelKey = `personal-${params.appId}-${params.userId}`
 		const created = await this.createBaileysChannel(
 			{
 				name: `${params.userName || 'Sales'} WhatsApp`,
-				phoneNumber: '0000000000',
+				phoneNumber: phoneNumber || '0000000000',
 				providerChannelKey,
 				providerWebhookUrl: params.providerWebhookUrl,
 			},
 			params.appId,
 		)
-		await prisma.$executeRawUnsafe(
-			`UPDATE baileys_sessions SET owner_user_id = $1::uuid, updated_at = now() WHERE channel_id = $2::uuid`,
-			params.userId,
-			created.channel.id,
-		)
+
+		// Set owner_user_id so getPersonalBaileysConnection can find this session
+		await prisma.baileys_sessions.update({
+			where: { channel_id: created.channel.id },
+			data: { owner_user_id: params.userId },
+		})
+
+		if (phoneNumber) {
+			await prisma.whatsapp_channels.update({
+				where: { id: created.channel.id },
+				data: {
+					phone_number: phoneNumber,
+					extended_metadata: {
+						...(created.channel as any).extended_metadata || {},
+						baileys_link_mode: 'pairing_code',
+					},
+				},
+			})
+		}
 		return this.getPersonalBaileysConnection(params.appId, params.userId)
 	}
 

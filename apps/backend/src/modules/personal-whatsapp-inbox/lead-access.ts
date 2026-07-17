@@ -1,6 +1,6 @@
 import prisma from '../../lib/prisma'
 
-export type PersonalLeadStatus = 'pending' | 'confirmed' | 'blocked'
+export type PersonalLeadStatus = 'pending' | 'confirmed' | 'blocked' | 'ignored'
 
 export type PersonalLeadRegistration = {
 	id: string
@@ -49,7 +49,7 @@ export async function ensurePersonalLeadStorage() {
 					"created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 					"updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 					CONSTRAINT "whatsapp_lead_registrations_status_check"
-						CHECK ("status" IN ('pending', 'confirmed', 'blocked'))
+						CHECK ("status" IN ('pending', 'confirmed', 'blocked', 'ignored'))
 				)
 			`)
 			await prisma.$executeRawUnsafe(`
@@ -105,7 +105,7 @@ export async function registerInboundPersonalLead(params: {
 		ON CONFLICT ("app_id", "owner_user_id", "phone_number") DO UPDATE SET
 			"contact_id" = EXCLUDED."contact_id",
 			"conversation_id" = EXCLUDED."conversation_id",
-			"display_name" = COALESCE(EXCLUDED."display_name", "whatsapp_lead_registrations"."display_name"),
+			"display_name" = EXCLUDED."display_name",
 			"updated_at" = NOW()
 		RETURNING *
 	`

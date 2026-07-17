@@ -93,9 +93,19 @@ async function enqueueDueContacts(job: ProfileJob) {
 		where: { id: job.channelId, app_id: job.appId, provider: 'baileys', deleted_at: null }, select: { inbox_id: true },
 	})
 	if (!channel?.inbox_id) return { queued: 0 }
+	const ignoredPhones = new Set(
+		(await prisma.$queryRaw<Array<{ phone_number: string }>>`
+			SELECT "phone_number" FROM "whatsapp_lead_registrations"
+			WHERE "app_id" = ${job.appId}::uuid AND "status" = 'ignored'
+		`).map((r) => r.phone_number)
+	)
 	const contacts = await prisma.contacts.findMany({
-		where: { app_id: job.appId, deleted_at: null, conversations: { some: { inbox_id: channel.inbox_id, deleted_at: null } } },
-		select: { id: true, avatar_url: true, additional_attributes: true }, take: 10_000,
+		where: {
+			app_id: job.appId, deleted_at: null,
+			phone_number: ignoredPhones.size ? { notIn: Array.from(ignoredPhones) } : undefined,
+			conversations: { some: { inbox_id: channel.inbox_id, deleted_at: null } },
+		},
+		select: { id: true, phone_number: true, avatar_url: true, additional_attributes: true }, take: 10_000,
 	})
 	let queued = 0
 	for (const contact of contacts) {

@@ -17,9 +17,13 @@ import makeWASocket, {
 	type WAMessageUpdate,
 	type WASocket,
 } from '@whiskeysockets/baileys'
+
+
+import { SocksProxyAgent } from 'socks-proxy-agent'
 import {
 	BAILEYS_CHANNEL_SYNC_INTERVAL_MS,
 	BAILEYS_LINK_MODE,
+	BAILEYS_SOCKS_PROXY,
 	CRM_BAILEYS_WEBHOOK_URL,
 } from './config'
 import {
@@ -120,6 +124,7 @@ type RuntimeEntry = {
 	pairingCodeRequested: boolean
 	restartTimer: ReturnType<typeof setTimeout> | null
 	lastHistoryProgress: number
+	restartAttempts: number
 }
 
 export type BaileysSessionSnapshot = {
@@ -142,6 +147,9 @@ const HISTORY_PROGRESS_STEP = Math.max(
 	1,
 	Math.min(100, Number(process.env.WHATSAPP_SYNC_PROGRESS_STEP || 10)),
 )
+const BASE_RESTART_DELAY_MS = 30_000
+const MAX_RESTART_DELAY_MS = 60_000
+const MAX_RESTART_ATTEMPTS = 10
 
 function reportHistoryProgress(
 	entry: RuntimeEntry,
@@ -180,7 +188,7 @@ function rememberMessage(message: WAMessage) {
 }
 
 const baileysLogger = {
-	level: 'silent',
+	level: 'warn',
 	child() {
 		return baileysLogger
 	},
@@ -207,6 +215,10 @@ function asString(value: unknown): string | null {
 	if (typeof value !== 'string') return null
 	const normalized = value.trim()
 	return normalized.length > 0 ? normalized : null
+}
+
+function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function normalizeDigits(value: string | null | undefined) {
@@ -400,6 +412,7 @@ function createEntry(params: {
 		pairingCodeRequested: false,
 		restartTimer: null,
 		lastHistoryProgress: -1,
+		restartAttempts: 0,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -777,13 +790,22 @@ export abstract class BaileysServiceRuntime {
 			phoneNumber: channel.phone_number,
 			apiKey: channel.api_key,
 		})
-		entry.desiredRunning = true
+
+		if (!entry.desiredRunning && !options?.forceRestart) {
+			return this.getSessionSnapshot(channel.id)
+		}
+
+		if (!entry.desiredRunning) {
+			entry.desiredRunning = true
+			entry.restartAttempts = 0
+		}
 
 		if (options?.forceRestart) {
 			this.clearRestartTimer(entry)
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
+			entry.restartAttempts = 0
 			if (currentSocket) currentSocket.end(undefined)
 		}
 
@@ -814,6 +836,7 @@ export abstract class BaileysServiceRuntime {
 
 		entry.desiredRunning = false
 		entry.pairingCodeRequested = false
+		entry.restartAttempts = 0
 		this.clearRestartTimer(entry)
 
 		const currentSocket = entry.socket
@@ -1129,21 +1152,27 @@ export abstract class BaileysServiceRuntime {
 			updated_at: new Date(),
 		})
 
+		const agent = BAILEYS_SOCKS_PROXY ? new SocksProxyAgent(BAILEYS_SOCKS_PROXY) : undefined
 		const socket = makeWASocket({
 			auth: {
 				creds: auth.state.creds,
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.macOS('Google Chrome'),
+			browser: Browsers.windows('Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
-			getMessage: async (key) => messageContentCache.get(String(key.id || '').trim()),
+			agent,
+			getMessage: async () => undefined,
 		})
 
 		entry.socket = socket
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
+
+		void auth.saveCreds().catch((error) => {
+			console.error('[BaileysService] Failed to persist initial auth creds', error)
+		})
 
 		socket.ev.on('creds.update', () => {
 			void auth.saveCreds().catch((error) => {
@@ -1240,55 +1269,15 @@ export abstract class BaileysServiceRuntime {
 			await updateSessionById(sessionRow.id, {
 				status: 'qr_ready',
 				qr_code: update.qr,
-				pairing_code: null,
 				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
 		}
 
-		const normalizedPhoneNumber = normalizeDigits(channel.phone_number)
-		if (
-			shouldUsePairingCode(channel) &&
-			normalizedPhoneNumber &&
-			!socket.authState.creds.registered &&
-			!entry.pairingCodeRequested &&
-			Boolean(update.qr)
-		) {
-			entry.pairingCodeRequested = true
-			void (async () => {
-				try {
-					const pairingCode = await socket.requestPairingCode(
-						normalizedPhoneNumber,
-					)
-					await updateSessionById(sessionRow.id, {
-						status: 'pairing_code_ready',
-						pairing_code: pairingCode,
-						qr_code: null,
-						last_error: null,
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-				} catch (error) {
-					entry.pairingCodeRequested = false
-					const latestSession = await getSessionByChannelId(channel.id)
-					await updateSessionById(sessionRow.id, {
-						status: latestSession?.qr_code ? 'qr_ready' : 'connecting',
-						pairing_code: latestSession?.pairing_code || null,
-						qr_code: latestSession?.qr_code || null,
-						last_error:
-							error instanceof Error
-								? error.message
-								: 'Failed to request Baileys pairing code',
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-				}
-			})()
-		}
-
 		if (update.connection === 'open') {
 			entry.pairingCodeRequested = false
+			entry.restartAttempts = 0
 			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
@@ -1349,38 +1338,42 @@ export abstract class BaileysServiceRuntime {
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 250)
+			this.scheduleRestart(entry.channelId)
 			return
 		}
 
 		if (disconnectCode === DisconnectReason.loggedOut) {
+			// Rate-limited / blocked by WhatsApp — stop auto-retry
 			await updateSessionById(sessionRow.id, {
-				status: 'logged_out',
+				status: 'rate_limited',
 				auth_state: null,
 				first_connected_at: null,
 				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: formattedDisconnectMessage,
+				last_error: 'WhatsApp menolak koneksi, coba lagi nanti atau pakai proxy',
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 1_000)
+			entry.desiredRunning = false
+			entry.socket = null
 			return
 		}
 
 		if (disconnectCode === DisconnectReason.badSession) {
-			// A bad-session signal can be transient during process restarts or
-			// concurrent socket replacement. Never destroy account-owned credentials
-			// automatically; only an explicit WhatsApp logout may clear auth_state.
+			// Bad session means stored auth_state is stale/invalid (e.g. phone
+			// number changed, WhatsApp Web session expired, creds corrupted).
+			// Clear auth_state so buildAuthState() generates fresh credentials
+			// on next start, which will show a QR code for re-pairing.
 			await updateSessionById(sessionRow.id, {
-				status: 'recovery_required',
+				status: 'not_paired',
+				auth_state: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: formattedDisconnectMessage,
+				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId, 5_000)
+			entry.desiredRunning = false
 			return
 		}
 
@@ -1396,7 +1389,7 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		if (shouldReconnect) {
-			this.scheduleRestart(entry.channelId, 2_500)
+			this.scheduleRestart(entry.channelId)
 		}
 	}
 
@@ -1676,15 +1669,46 @@ export abstract class BaileysServiceRuntime {
 			) {
 				return snapshot
 			}
-			await Bun.sleep(300)
+			await sleep(300)
 		}
 		return this.getSessionSnapshot(channelId)
 	}
 
-	private static scheduleRestart(channelId: string, delayMs: number) {
+	private static scheduleRestart(channelId: string, _fallbackDelayMs?: number) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
 		this.clearRestartTimer(entry)
+
+		entry.restartAttempts += 1
+
+		if (entry.restartAttempts > MAX_RESTART_ATTEMPTS) {
+			console.error('[BaileysService] Max restart attempts reached, giving up', {
+				channelId,
+				attempts: entry.restartAttempts,
+			})
+			entry.desiredRunning = false
+			entry.socket = null
+			void updateSessionByChannelId(channelId, {
+				status: 'error',
+				last_error: `Max restart attempts (${MAX_RESTART_ATTEMPTS}) reached`,
+				pairing_code: null,
+				qr_code: null,
+				updated_at: new Date(),
+			})
+			return
+		}
+
+		const delayMs = Math.min(
+			BASE_RESTART_DELAY_MS * Math.pow(2, entry.restartAttempts - 1),
+			MAX_RESTART_DELAY_MS,
+		)
+
+		console.warn('[BaileysService] Scheduling restart', {
+			channelId,
+			attempt: entry.restartAttempts,
+			delayMs,
+		})
+
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
 			void this.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
