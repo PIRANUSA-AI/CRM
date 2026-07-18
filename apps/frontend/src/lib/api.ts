@@ -326,7 +326,7 @@ export const auth = {
 
 	logout: () => apiRequest('/auth/logout', { method: 'POST' }),
 
-	me: () => apiRequest('/auth/me'),
+	me: (signal?: AbortSignal) => apiRequest('/auth/me', { signal }),
 
 	getProfile: () => apiRequest<{
 		success: boolean
@@ -2834,7 +2834,15 @@ export type RoutingAssignResult = {
 	reasons: string[]
 }
 
+export type RoutingAccess = {
+	canRoute: boolean
+	role: string | null
+}
+
 export const leadRouting = {
+	access: () =>
+		apiRequest<{ data: RoutingAccess }>('/lead-routing/access'),
+
 	suggest: (conversationId: string) =>
 		apiRequest<{ data: RoutingSuggestion }>(
 			`/lead-routing/${encodeURIComponent(conversationId)}/suggest`,

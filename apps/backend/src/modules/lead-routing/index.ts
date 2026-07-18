@@ -47,6 +47,19 @@ function toErrorResponse(error: unknown, set: { status?: number | string }) {
 
 export const leadRouting = new Elysia({ prefix: '/lead-routing', tags: ['LeadRouting'] })
 	.use(appContext)
+	.get('/access', async ({ resolvedAppId, userId }) => {
+		if (!resolvedAppId || !userId) {
+			return { data: { canRoute: false, role: null } }
+		}
+
+		const authorization = await requireRole(userId, ALLOWED_ROLES)
+		return {
+			data: {
+				canRoute: authorization.ok,
+				role: authorization.ok ? authorization.role : null,
+			},
+		}
+	})
 	.get('/:conversationId/suggest', async ({ resolvedAppId, userId, params, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
 		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }

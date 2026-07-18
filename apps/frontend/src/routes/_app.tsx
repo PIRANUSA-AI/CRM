@@ -74,6 +74,10 @@ function parseStoredAgent(raw: string): Agent | null {
 interface AppContextType {
 	appId: string
 	agent: Agent | null
+	// True once the authoritative CRM role has been resolved from /auth/me. Until
+	// then `agent.role` may be the stale/empty value stored at login, so role-gated
+	// UI should treat `roleResolved === false` as "unknown", not "unauthorized".
+	roleResolved: boolean
 	toggleSidebar: () => void
 }
 
@@ -85,6 +89,7 @@ export const useAppContext = () => {
 		return {
 			appId: '',
 			agent: null,
+			roleResolved: false,
 			toggleSidebar: () => {},
 		}
 	}
@@ -108,6 +113,7 @@ function AppLayout() {
 	const [loading, setLoading] = useState(true)
 	const [resolvingAppContext, setResolvingAppContext] = useState(false)
 	const [connectionGateResolved, setConnectionGateResolved] = useState(false)
+	const [roleResolved, setRoleResolved] = useState(false)
 	const [appId, setAppId] = useState(() => {
 		if (typeof localStorage === 'undefined') return ''
 		return (
@@ -144,47 +150,8 @@ function AppLayout() {
 			if (parsedAgent) setAgent(parsedAgent)
 		}
 
-		// The role stored at login can be stale/empty (Better Auth's sign-in
-		// response may omit the custom role field). Hydrate the authoritative CRM
-		// role from the server so role-gated UI (Kelola Tim, Profil Sales, the
-		// "Bagikan" action, etc.) works reliably.
-		void auth
-			.me()
-			.then((res) => {
-				const user = (res as { data?: { user?: Record<string, unknown> } })?.data?.user
-				const role = extractNormalizedRole(user)
-				if (!role) return
-				setAgent((prev) =>
-					prev
-						? prev.role === role
-							? prev
-							: { ...prev, role }
-						: {
-								id: String(user?.id || user?.email || ''),
-								email: String(user?.email || ''),
-								name: String(
-									user?.name || (user?.email ? String(user.email).split('@')[0] : 'User'),
-								),
-								role,
-								avatar_url: typeof user?.avatar_url === 'string' ? user.avatar_url : null,
-							},
-				)
-				try {
-					const raw = localStorage.getItem('crm_user')
-					if (raw) {
-						const parsed = JSON.parse(raw)
-						const target =
-							parsed?.user && typeof parsed.user === 'object' ? parsed.user : parsed
-						if (target && typeof target === 'object') {
-							target.role = role
-							localStorage.setItem('crm_user', JSON.stringify(parsed))
-						}
-					}
-				} catch {
-					/* ignore persistence errors */
-				}
-			})
-			.catch(() => undefined)
+		// Authoritative CRM role is hydrated (with retry) in a dedicated effect
+		// below so a transient failure never silently downgrades a leader.
 
 		const token = localStorage.getItem('crm_token')
 		if (token) {
@@ -220,6 +187,130 @@ function AppLayout() {
 			mounted = false
 		}
 	}, [navigate])
+
+	// Authoritative role hydration with bounded retry. Better Auth's sign-in
+	// response can omit the custom `role`, so the value stored at login may be
+	// stale or empty. Bound both each request and the total retry window so a
+	// hanging /auth/me never blocks the whole CRM indefinitely.
+	useEffect(() => {
+		if (typeof localStorage === 'undefined') {
+			setRoleResolved(true)
+			return
+		}
+		let cancelled = false
+		let retryTimer: ReturnType<typeof setTimeout> | undefined
+		let requestTimer: ReturnType<typeof setTimeout> | undefined
+		let requestController: AbortController | undefined
+		const MAX_ATTEMPTS = 5
+		const REQUEST_TIMEOUT_MS = 4_000
+		const HYDRATION_DEADLINE_MS = 12_000
+		const deadlineAt = Date.now() + HYDRATION_DEADLINE_MS
+
+		const applyRole = (
+			user: Record<string, unknown> | undefined,
+			role: string,
+		) => {
+			setAgent((prev) =>
+				prev
+					? prev.role === role
+						? prev
+						: { ...prev, role }
+					: {
+							id: String(user?.id || user?.email || ''),
+							email: String(user?.email || ''),
+							name: String(
+								user?.name ||
+									(user?.email ? String(user.email).split('@')[0] : 'User'),
+							),
+							role,
+							avatar_url:
+								typeof user?.avatar_url === 'string' ? user.avatar_url : null,
+						},
+			)
+			try {
+				const raw = localStorage.getItem('crm_user')
+				if (raw) {
+					const parsed = JSON.parse(raw)
+					const target =
+						parsed?.user && typeof parsed.user === 'object' ? parsed.user : parsed
+					if (target && typeof target === 'object') {
+						target.role = role
+						localStorage.setItem('crm_user', JSON.stringify(parsed))
+					}
+				}
+			} catch {
+				/* ignore persistence errors */
+			}
+		}
+
+		const settleWithStoredRole = () => {
+			if (!cancelled) setRoleResolved(true)
+		}
+
+		const scheduleRetry = (attempt: number) => {
+			const remainingMs = deadlineAt - Date.now()
+			if (attempt >= MAX_ATTEMPTS || remainingMs <= 0) {
+				// The role falls back to the stored value (fail-closed to sales).
+				settleWithStoredRole()
+				return
+			}
+			const delayMs = Math.min(
+				500 * 2 ** (attempt - 1),
+				remainingMs,
+			)
+			retryTimer = setTimeout(() => run(attempt + 1), delayMs)
+		}
+
+		const run = (attempt: number) => {
+			const remainingMs = deadlineAt - Date.now()
+			if (remainingMs <= 0) {
+				settleWithStoredRole()
+				return
+			}
+
+			const controller = new AbortController()
+			requestController = controller
+			requestTimer = setTimeout(
+				() => controller.abort(),
+				Math.min(REQUEST_TIMEOUT_MS, remainingMs),
+			)
+
+			void auth
+				.me(controller.signal)
+				.then((res) => {
+					if (cancelled) return
+					const user = (res as { data?: { user?: Record<string, unknown> } })
+						?.data?.user
+					const role = extractNormalizedRole(user)
+					if (role) {
+						applyRole(user, role)
+						setRoleResolved(true)
+						return
+					}
+					// Authenticated but no role surfaced — retry before giving up.
+					scheduleRetry(attempt)
+				})
+				.catch(() => {
+					if (cancelled) return
+					scheduleRetry(attempt)
+				})
+				.finally(() => {
+					if (requestController === controller) requestController = undefined
+					if (requestTimer) {
+						clearTimeout(requestTimer)
+						requestTimer = undefined
+					}
+				})
+		}
+
+		run(1)
+		return () => {
+			cancelled = true
+			requestController?.abort()
+			if (retryTimer) clearTimeout(retryTimer)
+			if (requestTimer) clearTimeout(requestTimer)
+		}
+	}, [])
 
 	useEffect(() => {
 		if (loading || appId) return
@@ -276,7 +367,7 @@ function AppLayout() {
 	}, [loading, crmAllowed, navigate])
 
 	useEffect(() => {
-		if (loading || !agent) return
+		if (loading || !roleResolved || !agent) return
 		if (!isCrmAllowedPath(location.pathname)) {
 			return
 		}
@@ -289,10 +380,10 @@ function AppLayout() {
 				replace: true,
 			})
 		}
-	}, [agent, loading, location.pathname, navigate])
+	}, [agent, loading, location.pathname, navigate, roleResolved])
 
 	useEffect(() => {
-		if (loading || !agent) return
+		if (loading || !roleResolved || !agent) return
 		if (!['sales', 'agent'].includes(agent.role)) {
 			setConnectionGateResolved(true)
 			return
@@ -314,9 +405,9 @@ function AppLayout() {
 				void navigate({ to: '/whatsapp/connect', replace: true })
 			})
 		return () => { active = false }
-	}, [agent, loading, navigate])
+	}, [agent, loading, navigate, roleResolved])
 
-	if (loading || resolvingAppContext || !connectionGateResolved) {
+	if (loading || resolvingAppContext || !roleResolved || !connectionGateResolved) {
 		return (
 			<div className="flex h-screen items-center justify-center bg-background">
 				<LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground motion-reduce:animate-none" />
@@ -329,6 +420,7 @@ function AppLayout() {
 	const contextValue: AppContextType = {
 		appId,
 		agent,
+		roleResolved,
 		toggleSidebar: () => setIsMobileSidebarOpen((prev) => !prev),
 	}
 	const isChatWorkspace = location.pathname === '/chat'

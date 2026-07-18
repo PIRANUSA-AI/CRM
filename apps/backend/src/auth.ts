@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
+import { bearer } from 'better-auth/plugins'
 import { Elysia } from 'elysia'
 import prisma from './lib/prisma'
 
@@ -98,7 +99,7 @@ export const auth = betterAuth({
 		'http://localhost:3005',
 		'http://localhost:3006',
 	],
-	plugins: [],
+	plugins: [bearer()],
 })
 
 const betterAuthView = async (request: Request) => {

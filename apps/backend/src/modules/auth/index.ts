@@ -727,8 +727,8 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 		// can gate leader/ceo/superadmin UI reliably. Build a new object rather
 		// than mutating Better Auth's response.
 		let role: string | null = null
+		const sessionUser = (session as { user?: { id?: string; role?: unknown } }).user
 		try {
-			const sessionUser = (session as { user?: { id?: string } }).user
 			if (sessionUser?.id) {
 				const dbUser = await prisma.users.findUnique({
 					where: { id: sessionUser.id },
@@ -738,6 +738,11 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 			}
 		} catch (error) {
 			console.warn('[auth/me] Failed enriching role from users table:', error)
+		}
+		// Fall back to any role Better Auth already carries on the session user, so
+		// a transient DB hiccup never blanks the role the frontend gates on.
+		if (!role && typeof sessionUser?.role === 'string' && sessionUser.role.trim()) {
+			role = sessionUser.role
 		}
 		const sessionRecord = session as Record<string, unknown>
 		const data = role

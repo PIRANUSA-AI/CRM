@@ -40,7 +40,7 @@ import {
 	X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { API_BASE, readApiResponse } from '@/lib/api'
+import { API_BASE, leadRouting, readApiResponse } from '@/lib/api'
 import { connectSocket, joinApp } from '@/lib/socket'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -182,7 +182,11 @@ function storedUserName() {
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
 	const { agent } = useAppContext()
-	const canRoute = ['leader', 'ceo', 'superadmin'].includes(normalizeAppRole(agent?.role))
+	const localCanRoute = ['leader', 'ceo', 'superadmin'].includes(
+		normalizeAppRole(agent?.role),
+	)
+	const [serverCanRoute, setServerCanRoute] = useState<boolean | null>(null)
+	const canRoute = serverCanRoute ?? localCanRoute
 	const [routingOpen, setRoutingOpen] = useState(false)
 	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
@@ -194,6 +198,36 @@ function PersonalWhatsappInbox() {
 	const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null)
 	const [query, setQuery] = useState('')
 	const [filter, setFilter] = useState<InboxFilter>('all')
+
+	// Resolve this permission from the same backend guard used by suggest/assign.
+	// The local role is only a temporary fallback while access is being checked.
+	useEffect(() => {
+		let active = true
+		let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+		const resolveRoutingAccess = async () => {
+			if (retryTimer) {
+				clearTimeout(retryTimer)
+				retryTimer = undefined
+			}
+			try {
+				const response = await leadRouting.access()
+				if (active) setServerCanRoute(response.data.canRoute)
+			} catch {
+				if (!active) return
+				setServerCanRoute(null)
+				retryTimer = setTimeout(() => void resolveRoutingAccess(), 2_000)
+			}
+		}
+
+		void resolveRoutingAccess()
+		window.addEventListener('focus', resolveRoutingAccess)
+		return () => {
+			active = false
+			if (retryTimer) clearTimeout(retryTimer)
+			window.removeEventListener('focus', resolveRoutingAccess)
+		}
+	}, [agent?.id, localCanRoute])
 
 	// Deep-link: open the conversation passed via ?c= (from Alih Tugas / Tugas).
 	useEffect(() => {
