@@ -2760,3 +2760,48 @@ export const leadImport = {
 			}
 		}>('/import/manual-lead', { method: 'POST', body: JSON.stringify(input) }),
 }
+
+export type SalesProfileData = {
+	productSkills: string[]
+	segments: string[]
+	level: string | null
+	maxActive: number
+	workHours: unknown
+	regions: string[]
+	languages: string[]
+	tags: string[]
+	notes: string | null
+	updatedAt: string | null
+}
+
+export type SalesProfileRow = {
+	userId: string
+	name: string | null
+	email: string
+	role: string | null
+	teamId: string | null
+	activeLoad: number
+	profile: SalesProfileData
+}
+
+export type SalesProfileUpdate = {
+	productSkills?: string[]
+	segments?: string[]
+	level?: string | null
+	maxActive?: number | null
+	workHours?: unknown
+	regions?: string[]
+	languages?: string[]
+	tags?: string[]
+	notes?: string | null
+}
+
+export const salesProfiles = {
+	list: () => apiRequest<{ data: SalesProfileRow[] }>('/sales-profiles'),
+
+	update: (userId: string, input: SalesProfileUpdate) =>
+		apiRequest<{ data: SalesProfileRow }>(
+			`/sales-profiles/${encodeURIComponent(userId)}`,
+			{ method: 'PUT', body: JSON.stringify(input) },
+		),
+}

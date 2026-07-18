@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhatsappConnectRouteImport } from './routes/whatsapp.connect'
 import { Route as AppTemplatesRouteImport } from './routes/_app/templates'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppSalesProfilesRouteImport } from './routes/_app/sales-profiles'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
@@ -105,6 +106,11 @@ const AppTemplatesRoute = AppTemplatesRouteImport.update({
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSalesProfilesRoute = AppSalesProfilesRouteImport.update({
+  id: '/sales-profiles',
+  path: '/sales-profiles',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPipelineRoute = AppPipelineRouteImport.update({
@@ -326,6 +332,7 @@ export interface FileRoutesByFullPath {
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
+  '/sales-profiles': typeof AppSalesProfilesRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -375,6 +382,7 @@ export interface FileRoutesByTo {
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/pipeline': typeof AppPipelineRoute
+  '/sales-profiles': typeof AppSalesProfilesRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -426,6 +434,7 @@ export interface FileRoutesById {
   '/_app/knowledge': typeof AppKnowledgeRoute
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/pipeline': typeof AppPipelineRoute
+  '/_app/sales-profiles': typeof AppSalesProfilesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -477,6 +486,7 @@ export interface FileRouteTypes {
     | '/knowledge'
     | '/metrics'
     | '/pipeline'
+    | '/sales-profiles'
     | '/settings'
     | '/templates'
     | '/whatsapp/connect'
@@ -526,6 +536,7 @@ export interface FileRouteTypes {
     | '/knowledge'
     | '/metrics'
     | '/pipeline'
+    | '/sales-profiles'
     | '/settings'
     | '/templates'
     | '/whatsapp/connect'
@@ -576,6 +587,7 @@ export interface FileRouteTypes {
     | '/_app/knowledge'
     | '/_app/metrics'
     | '/_app/pipeline'
+    | '/_app/sales-profiles'
     | '/_app/settings'
     | '/_app/templates'
     | '/whatsapp/connect'
@@ -684,6 +696,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sales-profiles': {
+      id: '/_app/sales-profiles'
+      path: '/sales-profiles'
+      fullPath: '/sales-profiles'
+      preLoaderRoute: typeof AppSalesProfilesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/pipeline': {
@@ -1022,6 +1041,7 @@ interface AppRouteChildren {
   AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppMetricsRoute: typeof AppMetricsRoute
   AppPipelineRoute: typeof AppPipelineRoute
+  AppSalesProfilesRoute: typeof AppSalesProfilesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
   AppAppsMetaAdsTrackerRoute: typeof AppAppsMetaAdsTrackerRoute
@@ -1060,6 +1080,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppKnowledgeRoute: AppKnowledgeRoute,
   AppMetricsRoute: AppMetricsRoute,
   AppPipelineRoute: AppPipelineRoute,
+  AppSalesProfilesRoute: AppSalesProfilesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTemplatesRoute: AppTemplatesRoute,
   AppAppsMetaAdsTrackerRoute: AppAppsMetaAdsTrackerRoute,

@@ -50,6 +50,7 @@ export const LEADER_PATHS = [
 	'/tasks',
 	'/alih-tugas',
 	'/kelola-tim',
+	'/sales-profiles',
 	'/customers',
 	'/pipeline',
 	'/broadcast',

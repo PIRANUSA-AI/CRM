@@ -2482,3 +2482,27 @@ model import_job_rows {
 
   @@index([job_id, row_number], map: "idx_import_job_rows_job")
 }
+
+// Sales routing profile — leader-managed characteristics + capacity used by the
+// lead auto-assign routing engine (see docs/lead-auto-assign.md, milestone M1).
+// No relations declared (plain uuid columns) to avoid touching the users model;
+// joins are done in the service layer.
+model sales_profiles {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id         String    @db.Uuid
+  user_id        String    @db.Uuid
+  product_skills Json      @default("[]")
+  segments       Json      @default("[]")
+  level          String?   @db.VarChar(20)
+  max_active     Int       @default(20)
+  work_hours     Json?
+  regions        Json      @default("[]")
+  languages      Json      @default("[]")
+  tags           Json      @default("[]")
+  notes          String?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, user_id], map: "sales_profiles_app_user_key")
+  @@index([app_id], map: "idx_sales_profiles_app")
+}

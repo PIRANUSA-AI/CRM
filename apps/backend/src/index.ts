@@ -33,6 +33,7 @@ import {
 	notifications,
 	orchestration,
 	personalWhatsappInbox,
+	salesProfiles,
 	tasks,
 	teamModule,
 	templateVariables,
@@ -146,6 +147,7 @@ export const app = new Elysia()
 			.use(orchestration)
 			.use(personalWhatsappInbox)
 			.use(tasks)
+			.use(salesProfiles)
 			.use(notifications)
 			.use(importLeads)
 			.use(crm)
@@ -309,6 +311,7 @@ export const app = new Elysia()
 			.use(flow)
 			.use(orchestration)
 			.use(tasks)
+			.use(salesProfiles)
 			.use(notifications)
 			.use(importLeads)
 			.use(crm)
