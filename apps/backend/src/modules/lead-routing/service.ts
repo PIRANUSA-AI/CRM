@@ -55,6 +55,8 @@ type ConversationContext = {
 	contactId: string | null
 	contactName: string
 	productInterest: string
+	// F1: structured lead-need profile (if the leader AI qualified this lead).
+	leadNeed: Record<string, unknown> | null
 }
 
 async function loadConversation(actor: RoutingActor, conversationId: string): Promise<ConversationContext> {
@@ -63,6 +65,7 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 		select: {
 			id: true,
 			contact_id: true,
+			additional_attributes: true,
 			contacts: {
 				select: { id: true, name: true, phone_number: true, custom_attributes: true },
 			},
@@ -70,13 +73,18 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 	})
 	if (!conversation) throw new RoutingNotFoundError('Percakapan tidak ditemukan')
 	const attrs = asRecord(conversation.contacts?.custom_attributes)
-	const productInterest = String(attrs.product_interest || '').trim()
+	const leadNeedRaw = asRecord(asRecord(conversation.additional_attributes).lead_need)
+	const leadNeed = Object.keys(leadNeedRaw).length ? leadNeedRaw : null
+	// Prefer the qualified product from lead_need; fall back to contact attribute.
+	const productInterest =
+		String(leadNeed?.product || attrs.product_interest || '').trim()
 	return {
 		id: conversation.id,
 		contactId: conversation.contact_id,
 		contactName:
 			conversation.contacts?.name || conversation.contacts?.phone_number || 'Lead',
 		productInterest,
+		leadNeed,
 	}
 }
 
@@ -255,15 +263,27 @@ export abstract class LeadRoutingService {
 						source: 'routing',
 						status: { in: ACTIVE_TASK_STATUSES },
 					},
-					select: { id: true },
+					select: { id: true, ai_snapshot: true },
 				})
 			: null
+
+		// F1: carry the qualified lead-need profile into the task so the sales sees
+		// the customer's needs (product, seats, budget, urgency, ...) at pickup.
+		const leadNeedSnapshot = context.leadNeed ? { lead_need: context.leadNeed } : {}
 
 		let taskId: string
 		if (existing) {
 			await prisma.tasks.update({
 				where: { id: existing.id },
-				data: { assignee_id: target.userId, team_id: target.teamId, title, updated_at: now },
+				data: {
+					assignee_id: target.userId,
+					team_id: target.teamId,
+					title,
+					...(context.leadNeed
+						? { ai_snapshot: { ...asRecord(existing.ai_snapshot), ...leadNeedSnapshot } as any }
+						: {}),
+					updated_at: now,
+				},
 			})
 			taskId = existing.id
 			await prisma.task_events.create({
@@ -290,7 +310,7 @@ export abstract class LeadRoutingService {
 					status: 'open',
 					due_at: dueAt,
 					source: 'routing',
-					ai_snapshot: {},
+					ai_snapshot: leadNeedSnapshot as any,
 				},
 			})
 			taskId = task.id

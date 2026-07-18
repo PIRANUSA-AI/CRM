@@ -578,6 +578,37 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		const data = await PersonalTakeoverService.history(resolvedAppId, params.conversationId)
 		return { data }
 	}, { params: t.Object({ conversationId: t.String() }) })
+	// F1: lead-need profile (leader intake qualification). GET is read-only for any
+	// signed-in CRM user; PATCH (manual override) is limited to supervisors.
+	.get('/:conversationId/lead-need', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const result = await PersonalAiReplyService.getLeadNeed(resolvedAppId, params.conversationId)
+		if (!result) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		return { data: result }
+	}, { params: t.Object({ conversationId: t.String() }) })
+	.patch('/:conversationId/lead-need', async ({ resolvedAppId, userId, params, body, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const guard = await requireRole(userId, ['leader', 'ceo', 'superadmin'])
+		if (!guard.ok) { set.status = guard.status; return { error: guard.error } }
+		const result = await PersonalAiReplyService.updateLeadNeed(resolvedAppId, params.conversationId, body)
+		if (!result) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		return { data: result }
+	}, {
+		params: t.Object({ conversationId: t.String() }),
+		body: t.Object({
+			name: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			company: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			product: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			segment: t.Optional(t.Nullable(t.String({ maxLength: 20 }))),
+			useCase: t.Optional(t.Nullable(t.String({ maxLength: 400 }))),
+			seats: t.Optional(t.Nullable(t.Union([t.Number(), t.String({ maxLength: 20 })]))),
+			budget: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			urgency: t.Optional(t.Nullable(t.String({ maxLength: 20 }))),
+			source: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			city: t.Optional(t.Nullable(t.String({ maxLength: 200 }))),
+			notes: t.Optional(t.Nullable(t.String({ maxLength: 400 }))),
+		}),
+	})
 	.post('/:conversationId/read', async ({ resolvedAppId, userId, params, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)

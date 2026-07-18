@@ -2858,6 +2858,44 @@ export const leadRouting = {
 		),
 }
 
+// F1 — structured lead-need profile qualified on the leader's intake number.
+export type LeadNeed = {
+	name: string | null
+	company: string | null
+	product: string | null
+	segment: 'AEC' | 'MFG' | 'other' | null
+	useCase: string | null
+	seats: number | null
+	budget: string | null
+	urgency: 'high' | 'medium' | 'low' | null
+	source: string | null
+	city: string | null
+	notes: string | null
+	missing: string[]
+	ready: boolean
+	updatedBy: 'ai' | 'leader'
+	updatedAt: string
+}
+
+export type LeadNeedResult = { leadNeed: LeadNeed; assigned: boolean }
+
+export type LeadNeedPatch = Partial<
+	Pick<
+		LeadNeed,
+		| 'name'
+		| 'company'
+		| 'product'
+		| 'segment'
+		| 'useCase'
+		| 'seats'
+		| 'budget'
+		| 'urgency'
+		| 'source'
+		| 'city'
+		| 'notes'
+	>
+>
+
 export const personalInbox = {
 	// Send a text message on a personal WhatsApp conversation (from the owner's
 	// number). Used for the handoff intro message.
@@ -2865,5 +2903,18 @@ export const personalInbox = {
 		apiRequest<{ error?: string }>(
 			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/messages`,
 			{ method: 'POST', body: JSON.stringify({ content }) },
+		),
+
+	// Read the lead-need profile + "siap di-assign" gate for a conversation.
+	getLeadNeed: (conversationId: string) =>
+		apiRequest<{ data: LeadNeedResult }>(
+			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/lead-need`,
+		),
+
+	// Leader manual override of the lead-need profile.
+	updateLeadNeed: (conversationId: string, patch: LeadNeedPatch) =>
+		apiRequest<{ data: LeadNeedResult }>(
+			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/lead-need`,
+			{ method: 'PATCH', body: JSON.stringify(patch) },
 		),
 }
