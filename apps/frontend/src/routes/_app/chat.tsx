@@ -549,11 +549,10 @@ function PersonalWhatsappInbox() {
 		else publishPresence('paused')
 	}, [publishPresence, voiceRecording])
 
-	useEffect(() => {
-		if (diagnostic && diagnostic.connection !== 'connected') {
-			void navigate({ to: '/whatsapp/connect', replace: true })
-		}
-	}, [diagnostic, navigate])
+	// Note: we intentionally do NOT force-redirect to /whatsapp/connect when the
+	// WhatsApp session isn't connected. Sales/agent are already gated at the app
+	// layout before reaching /chat; other roles (e.g. leader) can open the inbox
+	// and see the inline "Hubungkan WhatsApp" prompt instead of being bounced out.
 
 	useEffect(() => () => {
 		if (recorderTimeoutRef.current) window.clearTimeout(recorderTimeoutRef.current)
