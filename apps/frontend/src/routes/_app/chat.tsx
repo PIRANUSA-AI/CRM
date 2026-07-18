@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useAppContext } from '@/routes/_app'
+import { normalizeAppRole } from '@/lib/role-access'
 import {
 	AlertCircle,
 	ArrowLeft,
@@ -181,7 +182,7 @@ function storedUserName() {
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
 	const { agent } = useAppContext()
-	const canRoute = ['leader', 'ceo', 'superadmin'].includes(agent?.role || '')
+	const canRoute = ['leader', 'ceo', 'superadmin'].includes(normalizeAppRole(agent?.role))
 	const [routingOpen, setRoutingOpen] = useState(false)
 	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
