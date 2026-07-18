@@ -154,14 +154,41 @@ export async function listPersonalLeadRegistrations(
 	status: PersonalLeadStatus,
 ) {
 	await ensurePersonalLeadStorage()
+	// Order by the actual latest message time so the newest chats surface first.
+	// We use MAX(messages.created_at) rather than conversations.last_message_at:
+	// the latter is set from the (sometimes skewed/stale) WhatsApp message
+	// timestamp and can be wildly wrong, while messages.created_at reflects when we
+	// received the message. Falls back to the registration's updated_at.
 	return prisma.$queryRaw<PersonalLeadRegistration[]>`
-		SELECT * FROM "whatsapp_lead_registrations"
+		SELECT r.* FROM "whatsapp_lead_registrations" r
+		LEFT JOIN LATERAL (
+			SELECT MAX(m."created_at") AS last_at
+			FROM "messages" m
+			WHERE m."conversation_id" = r."conversation_id" AND m."deleted_at" IS NULL
+		) lm ON TRUE
+		WHERE r."app_id" = ${appId}::uuid
+		  AND r."owner_user_id" = ${ownerUserId}::uuid
+		  AND r."status" = ${status}
+		ORDER BY COALESCE(lm.last_at, r."updated_at") DESC
+		LIMIT 200
+	`
+}
+
+// Total number of registrations for an owner in a given status (uncapped, so the
+// UI badge can show the real count even when the list is capped at 200 rows).
+export async function countPersonalLeadRegistrations(
+	appId: string,
+	ownerUserId: string,
+	status: PersonalLeadStatus,
+) {
+	await ensurePersonalLeadStorage()
+	const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+		SELECT COUNT(*)::bigint AS count FROM "whatsapp_lead_registrations"
 		WHERE "app_id" = ${appId}::uuid
 		  AND "owner_user_id" = ${ownerUserId}::uuid
 		  AND "status" = ${status}
-		ORDER BY "updated_at" DESC
-		LIMIT 200
 	`
+	return Number(rows[0]?.count || 0)
 }
 
 export async function listConfirmedPersonalLeadPhones(appId: string, ownerUserId: string) {

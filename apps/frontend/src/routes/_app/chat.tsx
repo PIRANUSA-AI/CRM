@@ -191,6 +191,9 @@ function PersonalWhatsappInbox() {
 	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
+	// Real (uncapped) totals per lead status — the lists above are capped at 200
+	// rows, so the badge/count uses these instead of the array length.
+	const [leadTotals, setLeadTotals] = useState<{ pending: number; blocked: number; ignored: number }>({ pending: 0, blocked: 0, ignored: 0 })
 	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
 	const [ignoredLeads, setIgnoredLeads] = useState<LeadRegistration[]>([])
 	const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -354,15 +357,17 @@ function PersonalWhatsappInbox() {
 	const loadLeadLists = useCallback(async () => {
 		const loadStatus = async (status: 'pending' | 'blocked' | 'ignored') => {
 			const response = await fetch(`${API_BASE}/personal-whatsapp-inbox/leads?status=${status}`, { headers: authHeaders() })
-			const payload = (await readApiResponse(response)) as { data?: LeadRegistration[]; error?: string }
+			const payload = (await readApiResponse(response)) as { data?: LeadRegistration[]; total?: number; error?: string }
 			if (!response.ok) throw new Error(payload.error || 'Daftar keputusan lead belum dapat dimuat')
-			return payload.data || []
+			const rows = payload.data || []
+			return { rows, total: typeof payload.total === 'number' ? payload.total : rows.length }
 		}
 		try {
 			const [pending, blocked, ignored] = await Promise.all([loadStatus('pending'), loadStatus('blocked'), loadStatus('ignored')])
-			setPendingLeads(pending)
-			setBlockedLeads(blocked)
-			setIgnoredLeads(ignored)
+			setPendingLeads(pending.rows)
+			setBlockedLeads(blocked.rows)
+			setIgnoredLeads(ignored.rows)
+			setLeadTotals({ pending: pending.total, blocked: blocked.total, ignored: ignored.total })
 		} catch (reason) {
 			setLeadActionError(reason instanceof Error ? reason.message : 'Daftar keputusan lead belum dapat dimuat')
 		}
@@ -952,10 +957,10 @@ function PersonalWhatsappInbox() {
 		handover: conversations.filter((item) => item.workflow === 'handover').length,
 		human: conversations.filter((item) => item.workflow === 'human').length,
 		unread: conversations.filter((item) => item.unread > 0).length,
-		pending: pendingLeads.length,
-		blocked: blockedLeads.length,
-		ignored: ignoredLeads.length,
-	}), [blockedLeads.length, conversations, ignoredLeads.length, pendingLeads.length])
+		pending: leadTotals.pending,
+		blocked: leadTotals.blocked,
+		ignored: leadTotals.ignored,
+	}), [conversations, leadTotals])
 	const leadQueue = useMemo(() => {
 		const source = filter === 'pending' ? pendingLeads : filter === 'blocked' ? blockedLeads : filter === 'ignored' ? ignoredLeads : []
 		const needle = query.trim().toLowerCase()
@@ -1000,9 +1005,9 @@ function PersonalWhatsappInbox() {
 								aria-label="Buka navigasi dan filter percakapan"
 							>
 								<Menu className="size-5" />
-								{pendingLeads.length > 0 ? (
+								{filterCounts.pending > 0 ? (
 									<span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
-										{Math.min(pendingLeads.length, 99)}
+										{filterCounts.pending > 999 ? '999+' : filterCounts.pending}
 									</span>
 								) : filter !== 'all' ? <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /> : null}
 							</PopoverTrigger>

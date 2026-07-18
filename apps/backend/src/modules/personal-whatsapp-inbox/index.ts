@@ -12,6 +12,7 @@ import { normalizeS3PublicUrl } from '../../lib/s3'
 import { enqueueProfileContact, enqueueProfileSweep } from './profile-sync'
 import {
 	confirmPersonalLead,
+	countPersonalLeadRegistrations,
 	listConfirmedPersonalLeadPhones,
 	listPersonalLeadRegistrations,
 	setPersonalLeadStatus,
@@ -188,7 +189,10 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const { session } = await resolveOwnedChannel(resolvedAppId, userId)
 		if (!session) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
-		const rows = await listPersonalLeadRegistrations(resolvedAppId, userId, query.status)
+		const [rows, total] = await Promise.all([
+			listPersonalLeadRegistrations(resolvedAppId, userId, query.status),
+			countPersonalLeadRegistrations(resolvedAppId, userId, query.status),
+		])
 		const contactIds = rows.map((row) => row.contact_id).filter((id): id is string => Boolean(id))
 		const conversationIds = rows.map((row) => row.conversation_id).filter((id): id is string => Boolean(id))
 		const [contacts, conversations] = await Promise.all([
@@ -198,12 +202,13 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			}) : [],
 			conversationIds.length ? prisma.conversations.findMany({
 				where: { id: { in: conversationIds }, app_id: resolvedAppId },
-				select: { id: true, last_message_at: true, messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true } } },
+				select: { id: true, last_message_at: true, messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true, created_at: true } } },
 			}) : [],
 		])
 		const contactMap = new Map(contacts.map((contact) => [contact.id, contact]))
 		const conversationMap = new Map(conversations.map((conversation) => [conversation.id, conversation]))
 		return {
+			total,
 			data: rows.map((row) => {
 				const contact = row.contact_id ? contactMap.get(row.contact_id) : null
 				const conversation = row.conversation_id ? conversationMap.get(row.conversation_id) : null
@@ -215,7 +220,9 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 					avatarUrl: normalizeS3PublicUrl(contact?.avatar_url) || null,
 					conversationId: row.conversation_id,
 					preview: conversation?.messages[0]?.content || 'Pesan baru menunggu keputusan',
-					lastMessageAt: conversation?.last_message_at || row.updated_at,
+					// Prefer the real last message time (reliable) over the conversation's
+					// last_message_at, which can be stale/skewed from WhatsApp timestamps.
+					lastMessageAt: conversation?.messages[0]?.created_at || conversation?.last_message_at || row.updated_at,
 					source: row.source,
 				}
 			}),
