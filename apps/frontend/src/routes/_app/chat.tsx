@@ -1510,8 +1510,11 @@ function LeadDecisionRow({
 			<div className="mt-3 flex items-center justify-end gap-2 pl-[52px]">
 				{pending ? (
 					<>
-						<button type="button" onClick={onReject} disabled={busy} className="h-9 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
-							Tolak
+						<button type="button" onClick={onBlock} disabled={busy} title="Abaikan lead ini dan blokir nomornya di WhatsApp" className="h-9 rounded-lg px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							Blokir
+						</button>
+						<button type="button" onClick={onReject} disabled={busy} title="Sembunyikan lead ini tanpa memblokir nomornya" className="h-9 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+							Abaikan
 						</button>
 						<button type="button" onClick={onConfirm} disabled={busy} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
 							<UserCheck className="size-4" />
