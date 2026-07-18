@@ -803,6 +803,19 @@ export abstract class PersonalAiReplyService {
 			params.conversationId,
 		)
 		if (!aiHandling) return { skipped: true, reason: 'human_takeover' }
+		// Respect lead decisions: the AI never replies to leads a human has marked
+		// as ignored ("Abaikan") or blocked.
+		const registration = await prisma.whatsapp_lead_registrations.findFirst({
+			where: {
+				app_id: params.appId,
+				owner_user_id: params.ownerUserId,
+				conversation_id: params.conversationId,
+			},
+			select: { status: true },
+		})
+		if (registration?.status === 'ignored' || registration?.status === 'blocked') {
+			return { skipped: true, reason: `lead_${registration.status}` }
+		}
 		await PersonalAiReplyService.getSettings(params.appId, params.ownerUserId)
 		await prisma.$executeRaw`
 			UPDATE "personal_ai_reply_tasks" SET "status" = 'cancelled', "updated_at" = NOW()

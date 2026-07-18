@@ -528,6 +528,29 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			note: t.Optional(t.String({ maxLength: 2000 })),
 		})),
 	})
+	.post('/:conversationId/ignore', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, deleted_at: null },
+			select: { additional_attributes: true },
+		})
+		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		const personal = ((conversation.additional_attributes as Record<string, unknown>)?.personal_whatsapp || {}) as Record<string, unknown>
+		const ownerUserId = typeof personal.owner_user_id === 'string' && personal.owner_user_id ? personal.owner_user_id : userId
+		const existing = await prisma.whatsapp_lead_registrations.findFirst({
+			where: { app_id: resolvedAppId, owner_user_id: ownerUserId, conversation_id: params.conversationId },
+			select: { id: true },
+		})
+		if (!existing) { set.status = 404; return { error: 'Lead tidak ditemukan untuk diabaikan' } }
+		const registration = await setPersonalLeadStatus({ appId: resolvedAppId, ownerUserId, registrationId: existing.id, status: 'ignored' })
+		if (!registration) { set.status = 404; return { error: 'Lead tidak ditemukan' } }
+		await updateConversationPersonalLeadState(resolvedAppId, ownerUserId, registration)
+		// Cancel any queued AI reply; future inbound is skipped because scheduleInbound
+		// ignores 'ignored'/'blocked' leads.
+		await PersonalAiReplyService.cancelConversationTasks(resolvedAppId, ownerUserId, params.conversationId)
+		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'ignored', conversationId: params.conversationId })
+		return { success: true }
+	}, { params: t.Object({ conversationId: t.String() }) })
 	.post('/:conversationId/release', async ({ resolvedAppId, userId, params, body, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const conversation = await prisma.conversations.findFirst({

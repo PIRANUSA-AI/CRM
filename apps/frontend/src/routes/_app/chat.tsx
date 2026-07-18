@@ -10,6 +10,7 @@ import {
 	CheckSquare,
 	Copy,
 	Download,
+	EyeOff,
 	FileText,
 	Inbox,
 	ImageIcon,
@@ -232,6 +233,7 @@ function PersonalWhatsappInbox() {
 	const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
 	const [profileOpen, setProfileOpen] = useState(false)
 	const [takeoverBusy, setTakeoverBusy] = useState(false)
+	const [ignoreBusy, setIgnoreBusy] = useState(false)
 	const [voiceRecording, setVoiceRecording] = useState(false)
 	const [voiceRecordingTime, setVoiceRecordingTime] = useState(0)
 	const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
@@ -330,6 +332,34 @@ function PersonalWhatsappInbox() {
 			setLeadActionError(reason instanceof Error ? reason.message : 'Daftar keputusan lead belum dapat dimuat')
 		}
 	}, [])
+
+	// Ignore an active conversation's lead: hide it from the inbox and stop the
+	// AI from replying (server marks the lead 'ignored').
+	const ignoreConversation = useCallback(
+		async (conversationId: string) => {
+			setIgnoreBusy(true)
+			setError(null)
+			try {
+				const response = await fetch(
+					`${API_BASE}/personal-whatsapp-inbox/${conversationId}/ignore`,
+					{
+						method: 'POST',
+						headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+						body: JSON.stringify({}),
+					},
+				)
+				const payload = (await readApiResponse(response)) as { error?: string }
+				if (!response.ok) throw new Error(payload.error || 'Gagal mengabaikan lead')
+				setSelectedId(null)
+				await Promise.all([loadConversations(), loadLeadLists()])
+			} catch (reason) {
+				setError(reason instanceof Error ? reason.message : 'Gagal mengabaikan lead')
+			} finally {
+				setIgnoreBusy(false)
+			}
+		},
+		[loadConversations, loadLeadLists],
+	)
 
 	const loadMessages = useCallback(async (conversationId: string) => {
 		const response = await fetch(
@@ -1166,6 +1196,16 @@ function PersonalWhatsappInbox() {
 											<span className="hidden sm:inline">{takeoverBusy ? '...' : 'Kembalikan ke AI'}</span>
 										</button>
 									)}
+									<button
+										type="button"
+										onClick={() => void ignoreConversation(active.id)}
+										disabled={ignoreBusy}
+										className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+										title="Abaikan lead ini: sembunyikan dari inbox & hentikan balasan AI"
+									>
+										<EyeOff className="size-4" />
+										<span className="hidden sm:inline">{ignoreBusy ? '...' : 'Abaikan'}</span>
+									</button>
 								</>
 							)}
 						</header>
