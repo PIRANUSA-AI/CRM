@@ -15,7 +15,7 @@ export const Route = createFileRoute('/')({
 					const role = extractNormalizedRole(parsed)
 					const allowedPaths = getAllowedPrimaryPathsForRole(role)
 					const defaultPath = allowedPaths?.[0] || '/dashboard'
-					const needsWhatsApp = ['sales', 'agent'].includes(role)
+					const needsWhatsApp = ['sales', 'agent', 'leader'].includes(role)
 					throw redirect({
 						to: needsWhatsApp ? '/whatsapp/connect' : defaultPath,
 						replace: true,
