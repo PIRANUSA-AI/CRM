@@ -412,20 +412,42 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			return { data: [], diagnostic: { connection: session?.status || 'not_paired', storedMessages: 0 } }
 		}
 		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
-		const rows = confirmedPhones.length ? await prisma.conversations.findMany({
-				where: {
-					app_id: resolvedAppId,
-					inbox_id: channel.inbox_id,
-					deleted_at: null,
-					contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
-				},
-				orderBy: { last_message_at: 'desc' },
-				take: 100,
-				include: {
-					contacts: { select: { name: true, phone_number: true, whatsapp_id: true, avatar_url: true, source: true } },
-					messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true, created_at: true } },
-				},
-			}) : []
+		// Order by the real last message time (MAX(messages.created_at)) instead of
+		// conversations.last_message_at, which can be stale/skewed from WhatsApp
+		// timestamps and pushed newer chats down. Two steps so we keep Prisma's
+		// includes: rank the ids in SQL, then fetch details preserving that order.
+		const orderedIds = confirmedPhones.length
+			? await prisma.$queryRaw<Array<{ id: string }>>`
+				SELECT c."id"
+				FROM "conversations" c
+				JOIN "contacts" ct ON ct."id" = c."contact_id"
+				LEFT JOIN LATERAL (
+					SELECT MAX(m."created_at") AS last_at
+					FROM "messages" m
+					WHERE m."conversation_id" = c."id" AND m."deleted_at" IS NULL
+				) lm ON TRUE
+				WHERE c."app_id" = ${resolvedAppId}::uuid
+				  AND c."inbox_id" = ${channel.inbox_id}::uuid
+				  AND c."deleted_at" IS NULL
+				  AND (ct."phone_number" = ANY(${confirmedPhones}::text[]) OR ct."whatsapp_id" = ANY(${confirmedPhones}::text[]))
+				ORDER BY COALESCE(lm.last_at, c."last_message_at") DESC
+				LIMIT 100
+			`
+			: []
+		const orderedIdList = orderedIds.map((row) => row.id)
+		const fetchedRows = orderedIdList.length
+			? await prisma.conversations.findMany({
+					where: { id: { in: orderedIdList } },
+					include: {
+						contacts: { select: { name: true, phone_number: true, whatsapp_id: true, avatar_url: true, source: true } },
+						messages: { where: { deleted_at: null }, orderBy: { created_at: 'desc' }, take: 1, select: { content: true, created_at: true } },
+					},
+				})
+			: []
+		const fetchedById = new Map(fetchedRows.map((row) => [row.id, row]))
+		const rows = orderedIdList
+			.map((id) => fetchedById.get(id))
+			.filter((row): row is (typeof fetchedRows)[number] => Boolean(row))
 		const visibleRows = rows
 		const storedMessages = visibleRows.length ? await prisma.messages.count({ where: { conversation_id: { in: visibleRows.map((row) => row.id) }, deleted_at: null } }) : 0
 		// Real takeover state per conversation drives the workflow badge/filters:
