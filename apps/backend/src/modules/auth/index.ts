@@ -724,20 +724,29 @@ export const authModule = new Elysia({ prefix: '/auth', tags: ['Authority'] })
 		if (!session) return { error: 'Unauthorized' }
 		// Better Auth's session user may omit the custom `role` field. Always
 		// surface the authoritative CRM role from the users table so the frontend
-		// can gate leader/ceo/superadmin UI reliably.
+		// can gate leader/ceo/superadmin UI reliably. Build a new object rather
+		// than mutating Better Auth's response.
+		let role: string | null = null
 		try {
-			const sessionUser = (session as { user?: { id?: string; role?: string } }).user
+			const sessionUser = (session as { user?: { id?: string } }).user
 			if (sessionUser?.id) {
 				const dbUser = await prisma.users.findUnique({
 					where: { id: sessionUser.id },
 					select: { role: true },
 				})
-				if (dbUser?.role) sessionUser.role = dbUser.role
+				role = dbUser?.role ?? null
 			}
 		} catch (error) {
 			console.warn('[auth/me] Failed enriching role from users table:', error)
 		}
-		return { data: session }
+		const sessionRecord = session as Record<string, unknown>
+		const data = role
+			? {
+					...sessionRecord,
+					user: { ...((sessionRecord.user as Record<string, unknown>) || {}), role },
+				}
+			: session
+		return { data }
 	})
 
 	.post('/logout', async ({ request }) => {
