@@ -94,6 +94,46 @@ async function aiContextByConversation(conversationIds: string[]) {
 	return map
 }
 
+// Leads currently handled by a human (AI off), with handed-off leads removed.
+// A lead assigned to a different user (routed to a sales via "Bagikan") is no
+// longer a human-takeover for its original owner, so it must not linger in the
+// leader's "Alih Tugas" — the leader still sees it, but attributed to the sales
+// once that sales takes it over on their own number.
+async function loadActiveTakeoverRegistrations(actor: TakeoverActor) {
+	const registrations = await prisma.whatsapp_lead_registrations.findMany({
+		where: {
+			app_id: actor.appId,
+			ai_handling_enabled: false,
+			conversation_id: { not: null },
+			...(isSupervisor(actor.role) ? {} : { owner_user_id: actor.userId }),
+		},
+		orderBy: { takeover_at: 'desc' },
+		take: 200,
+	})
+	if (!registrations.length) return registrations
+	const conversationIds = registrations
+		.map((row) => row.conversation_id)
+		.filter((id): id is string => Boolean(id))
+	const assigneeByConversation = new Map<string, string | null>()
+	if (conversationIds.length) {
+		const conversations = await prisma.conversations.findMany({
+			where: { id: { in: conversationIds }, deleted_at: null },
+			select: { id: true, assignee_id: true },
+		})
+		for (const conversation of conversations) {
+			assigneeByConversation.set(conversation.id, conversation.assignee_id)
+		}
+	}
+	return registrations.filter((row) => {
+		const assignee = row.conversation_id
+			? assigneeByConversation.get(row.conversation_id)
+			: null
+		// Handed off when the conversation is assigned to someone other than the
+		// registration owner (i.e. the leader shared it to a sales).
+		return !(assignee && assignee !== row.owner_user_id)
+	})
+}
+
 export abstract class PersonalTakeoverService {
 	// True when the AI is still allowed to auto-reply to this conversation.
 	// Missing registration is treated as enabled (fail-open: never silently mute
@@ -216,31 +256,17 @@ export abstract class PersonalTakeoverService {
 	}
 
 	// Number of leads currently handled by a human (for badges / notifications).
+	// Excludes handed-off leads (see loadActiveTakeoverRegistrations).
 	static async count(actor: TakeoverActor) {
-		return prisma.whatsapp_lead_registrations.count({
-			where: {
-				app_id: actor.appId,
-				ai_handling_enabled: false,
-				conversation_id: { not: null },
-				...(isSupervisor(actor.role) ? {} : { owner_user_id: actor.userId }),
-			},
-		})
+		return (await loadActiveTakeoverRegistrations(actor)).length
 	}
 
 	// List leads currently handled by a human. Sales see their own; supervisors
-	// (leader/ceo/superadmin) see all leads in the app. Enriched with SLA waiting
-	// time, the AI reason/draft, and the handoff note.
+	// (leader/ceo/superadmin) see all leads in the app. Leads handed off to a sales
+	// are excluded for the original owner. Enriched with SLA waiting time, the AI
+	// reason/draft, and the handoff note.
 	static async list(actor: TakeoverActor) {
-		const registrations = await prisma.whatsapp_lead_registrations.findMany({
-			where: {
-				app_id: actor.appId,
-				ai_handling_enabled: false,
-				conversation_id: { not: null },
-				...(isSupervisor(actor.role) ? {} : { owner_user_id: actor.userId }),
-			},
-			orderBy: { takeover_at: 'desc' },
-			take: 200,
-		})
+		const registrations = await loadActiveTakeoverRegistrations(actor)
 		if (!registrations.length) return []
 
 		const conversationIds = registrations
