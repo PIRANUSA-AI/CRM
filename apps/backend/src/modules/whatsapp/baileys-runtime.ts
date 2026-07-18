@@ -967,11 +967,12 @@ export abstract class BaileysRuntimeService {
 			})
 			// WhatsApp is back online — clear any "disconnected" notification.
 			void resolveWhatsappReconnected(sessionRow.id)
-			// Refresh contact profile photos now that fetching works again. The sweep
-			// only re-fetches contacts whose picture is stale (>7 days), so it is cheap
-			// and deduped to once per day. Fire-and-forget.
+			// Refresh contact profile photos now that fetching works again. Force a
+			// re-fetch (bypass the 7-day freshness gate) so photos that were missing
+			// while offline — or failed earlier — get retried on reconnect.
+			// Fire-and-forget.
 			if (channel.app_id) {
-				void enqueueProfileSweep(channel.app_id, channel.id).catch((error) => {
+				void enqueueProfileSweep(channel.app_id, channel.id, true).catch((error) => {
 					console.warn(
 						'[BaileysRuntime] Failed to enqueue profile sweep on reconnect:',
 						error,
