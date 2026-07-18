@@ -2805,3 +2805,47 @@ export const salesProfiles = {
 			{ method: 'PUT', body: JSON.stringify(input) },
 		),
 }
+
+export type RoutingCandidate = {
+	userId: string
+	name: string | null
+	email: string
+	teamId: string | null
+	activeLoad: number
+	maxActive: number
+	overloaded: boolean
+	matchedSkills: string[]
+	score: number
+	reasons: string[]
+}
+
+export type RoutingSuggestion = {
+	conversationId: string
+	contactName: string
+	productInterest: string | null
+	candidates: RoutingCandidate[]
+}
+
+export type RoutingAssignResult = {
+	conversationId: string
+	assignedTo: { userId: string; name: string | null; email: string }
+	taskId: string
+	score: number
+	reasons: string[]
+}
+
+export const leadRouting = {
+	suggest: (conversationId: string) =>
+		apiRequest<{ data: RoutingSuggestion }>(
+			`/lead-routing/${encodeURIComponent(conversationId)}/suggest`,
+		),
+
+	assign: (conversationId: string, salesUserId?: string) =>
+		apiRequest<{ data: RoutingAssignResult }>(
+			`/lead-routing/${encodeURIComponent(conversationId)}/assign`,
+			{
+				method: 'POST',
+				body: JSON.stringify(salesUserId ? { salesUserId } : {}),
+			},
+		),
+}

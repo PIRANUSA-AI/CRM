@@ -27,6 +27,7 @@ import {
 	inbox,
 	knowledge,
 	label,
+	leadRouting,
 	media,
 	message,
 	metrics,
@@ -148,6 +149,7 @@ export const app = new Elysia()
 			.use(personalWhatsappInbox)
 			.use(tasks)
 			.use(salesProfiles)
+			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)
 			.use(crm)
@@ -312,6 +314,7 @@ export const app = new Elysia()
 			.use(orchestration)
 			.use(tasks)
 			.use(salesProfiles)
+			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)
 			.use(crm)

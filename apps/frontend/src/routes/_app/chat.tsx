@@ -25,6 +25,7 @@ import {
 	Reply,
 	Search,
 	SendHorizontal,
+	Share2,
 	Smile,
 	Square,
 	Sticker,
@@ -58,6 +59,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { LeadRoutingDialog } from '@/components/LeadRoutingDialog'
 
 export const Route = createFileRoute('/_app/chat')({
 	component: PersonalWhatsappInbox,
@@ -177,6 +179,9 @@ function storedUserName() {
 
 function PersonalWhatsappInbox() {
 	const navigate = useNavigate()
+	const { agent } = useAppContext()
+	const canRoute = ['leader', 'ceo', 'superadmin'].includes(agent?.role || '')
+	const [routingOpen, setRoutingOpen] = useState(false)
 	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
@@ -1127,6 +1132,17 @@ function PersonalWhatsappInbox() {
 										</div>
 										<Info className="mr-1 size-4 shrink-0 text-muted-foreground" />
 									</button>
+									{canRoute ? (
+										<button
+											type="button"
+											onClick={() => setRoutingOpen(true)}
+											className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+											title="Bagikan lead ini ke sales"
+										>
+											<Share2 className="size-4" />
+											<span className="hidden sm:inline">Bagikan</span>
+										</button>
+									) : null}
 									{active.aiHandling ? (
 										<button
 											type="button"
@@ -1312,6 +1328,15 @@ function PersonalWhatsappInbox() {
 					onCopyPhone={() => void navigator.clipboard.writeText(active.phone)}
 				/>
 			)}
+
+			{canRoute ? (
+				<LeadRoutingDialog
+					conversationId={active?.id ?? null}
+					open={routingOpen}
+					onOpenChange={setRoutingOpen}
+					onAssigned={() => void loadConversations()}
+				/>
+			) : null}
 
 			{contextMenu && (
 				<div
