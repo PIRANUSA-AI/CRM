@@ -2849,3 +2849,13 @@ export const leadRouting = {
 			},
 		),
 }
+
+export const personalInbox = {
+	// Send a text message on a personal WhatsApp conversation (from the owner's
+	// number). Used for the handoff intro message.
+	sendMessage: (conversationId: string, content: string) =>
+		apiRequest<{ error?: string }>(
+			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/messages`,
+			{ method: 'POST', body: JSON.stringify({ content }) },
+		),
+}

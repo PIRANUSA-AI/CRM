@@ -2,6 +2,8 @@ import prisma from '../../lib/prisma'
 import type { CanonicalRole } from '../../lib/require-role'
 import { getRealtimeIO } from '../../lib/realtime'
 import { NotificationService } from '../notifications/service'
+import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
+import { PersonalTakeoverService } from '../personal-whatsapp-inbox/takeover'
 import { SalesProfileService } from '../sales-profiles/service'
 
 export type RoutingActor = {
@@ -216,17 +218,46 @@ export abstract class LeadRoutingService {
 			data: { assignee_id: target.userId, team_id: target.teamId, updated_at: now },
 		})
 
-		// Reuse an existing open routing task for this conversation instead of
-		// stacking duplicates on re-assign.
-		const existing = await prisma.tasks.findFirst({
-			where: {
-				app_id: actor.appId,
-				conversation_id: context.id,
-				source: 'routing',
-				status: { in: ACTIVE_TASK_STATUSES },
-			},
-			select: { id: true },
+		// Stop the leader-number AI for this lead. In Model B the assigned sales
+		// continues from their OWN WhatsApp number (via "Mulai Chat"), so the AI on
+		// the leader's intake number must not keep replying.
+		const convRow = await prisma.conversations.findFirst({
+			where: { id: context.id, app_id: actor.appId },
+			select: { additional_attributes: true },
 		})
+		const personal = asRecord(asRecord(convRow?.additional_attributes).personal_whatsapp)
+		const leaderOwnerId =
+			typeof personal.owner_user_id === 'string' && personal.owner_user_id
+				? personal.owner_user_id
+				: actor.userId
+		await PersonalTakeoverService.takeover({
+			appId: actor.appId,
+			ownerUserId: leaderOwnerId,
+			conversationId: context.id,
+			source: 'manual',
+			byUserId: actor.userId,
+			reason: `Dibagikan ke ${target.name || target.email}`,
+		}).catch(() => null)
+		await PersonalAiReplyService.cancelConversationTasks(
+			actor.appId,
+			leaderOwnerId,
+			context.id,
+		).catch(() => null)
+
+		// The follow-up task is NOT linked to the leader's conversation: the sales
+		// picks it up and chats the contact from their own number ("Mulai Chat" ->
+		// openChat). Dedupe by contact so re-assign doesn't stack tasks.
+		const existing = context.contactId
+			? await prisma.tasks.findFirst({
+					where: {
+						app_id: actor.appId,
+						contact_id: context.contactId,
+						source: 'routing',
+						status: { in: ACTIVE_TASK_STATUSES },
+					},
+					select: { id: true },
+				})
+			: null
 
 		let taskId: string
 		if (existing) {
@@ -253,7 +284,6 @@ export abstract class LeadRoutingService {
 					team_id: target.teamId,
 					created_by: actor.userId,
 					contact_id: context.contactId,
-					conversation_id: context.id,
 					action_kind: 'follow_up',
 					title,
 					priority: 'medium',
@@ -281,9 +311,9 @@ export abstract class LeadRoutingService {
 			type: 'lead_pending',
 			title: 'Lead baru di-assign ke kamu',
 			body: `${context.contactName}${context.productInterest ? ` — ${context.productInterest}` : ''}`,
-			conversationId: context.id,
+			conversationId: null,
 			taskId,
-			dedupKey: `lead_assign:${context.id}`,
+			dedupKey: `lead_assign:${taskId}`,
 			metadata: { source: 'routing', by: actor.userId },
 		})
 

@@ -8,7 +8,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog'
-import { leadRouting, type RoutingSuggestion } from '@/lib/api'
+import { leadRouting, personalInbox, type RoutingSuggestion } from '@/lib/api'
 
 type Props = {
 	conversationId: string | null
@@ -23,6 +23,22 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 	const [loading, setLoading] = useState(false)
 	const [assigning, setAssigning] = useState(false)
 	const [error, setError] = useState<string | null>(null)
+	const [sendIntro, setSendIntro] = useState(true)
+	const [introText, setIntroText] = useState('')
+	const [introEdited, setIntroEdited] = useState(false)
+
+	const selectedName =
+		suggestion?.candidates.find((candidate) => candidate.userId === selected)?.name || null
+
+	// Keep the intro template in sync with the selected sales until the leader
+	// edits it manually.
+	useEffect(() => {
+		if (introEdited) return
+		const name = selectedName || 'tim sales kami'
+		setIntroText(
+			`Halo kak 🙏 Kebutuhan Kakak akan dibantu oleh ${name} dari tim kami. Beliau akan menghubungi Kakak sebentar lagi ya. Terima kasih 🙏`,
+		)
+	}, [selectedName, introEdited])
 
 	useEffect(() => {
 		if (!open || !conversationId) return
@@ -31,6 +47,8 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 		setError(null)
 		setSuggestion(null)
 		setSelected(null)
+		setSendIntro(true)
+		setIntroEdited(false)
 		leadRouting
 			.suggest(conversationId)
 			.then((response) => {
@@ -56,6 +74,14 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 		setError(null)
 		try {
 			const response = await leadRouting.assign(conversationId, selected)
+			// Optional handoff intro from the leader's number to the customer.
+			if (sendIntro && introText.trim()) {
+				try {
+					await personalInbox.sendMessage(conversationId, introText.trim())
+				} catch {
+					/* assignment succeeded; intro delivery is best-effort */
+				}
+			}
 			onAssigned?.(response.data.assignedTo.name)
 			onOpenChange(false)
 		} catch (reason) {
@@ -63,7 +89,7 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 		} finally {
 			setAssigning(false)
 		}
-	}, [conversationId, selected, onAssigned, onOpenChange])
+	}, [conversationId, selected, sendIntro, introText, onAssigned, onOpenChange])
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,6 +173,36 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 							<p className="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
 								{error}
 							</p>
+						) : null}
+					</div>
+				) : null}
+
+				{suggestion && suggestion.candidates.length > 0 ? (
+					<div className="space-y-2 border-t border-border pt-3">
+						<label className="flex items-center gap-2 text-sm font-medium">
+							<input
+								type="checkbox"
+								checked={sendIntro}
+								onChange={(event) => setSendIntro(event.target.checked)}
+								className="size-4 rounded border-border"
+							/>
+							Kirim pesan pengantar ke customer
+						</label>
+						{sendIntro ? (
+							<>
+								<textarea
+									value={introText}
+									onChange={(event) => {
+										setIntroText(event.target.value)
+										setIntroEdited(true)
+									}}
+									rows={3}
+									className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+								/>
+								<p className="text-[11px] text-muted-foreground">
+									Dikirim dari nomor kamu (leader) agar customer tahu akan dihubungi sales.
+								</p>
+							</>
 						) : null}
 					</div>
 				) : null}
