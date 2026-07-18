@@ -234,6 +234,14 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!registration) { set.status = 404; return { error: 'Permintaan lead tidak ditemukan' } }
 		await updateConversationPersonalLeadState(resolvedAppId, userId, registration)
 		getRealtimeIO()?.to(`app:${resolvedAppId}`).emit('personal-lead:updated', { registrationId: registration.id, status: 'confirmed', conversationId: registration.conversation_id })
+		// Fetch the WhatsApp profile photo now that it's a confirmed lead so it shows
+		// in the chat (best-effort; needs WhatsApp connected).
+		if (registration.contact_id) {
+			const { session } = await resolveOwnedChannel(resolvedAppId, userId)
+			if (session?.channel_id) {
+				void enqueueProfileContact(resolvedAppId, session.channel_id, registration.contact_id, true).catch(() => undefined)
+			}
+		}
 		if (registration.conversation_id) {
 			await NotificationService.resolve(resolvedAppId, userId, `lead_pending:${registration.conversation_id}`)
 			const latestInbound = await prisma.messages.findFirst({

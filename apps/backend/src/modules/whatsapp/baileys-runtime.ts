@@ -27,6 +27,7 @@ import {
 } from '../../lib/s3'
 import { WebhookService } from '../webhook/service'
 import { NotificationService } from '../notifications/service'
+import { enqueueProfileSweep } from '../personal-whatsapp-inbox/profile-sync'
 import { ensureBaileysSessionStorage } from './baileys-storage'
 
 // Notify the owning sales when their WhatsApp session drops for good (logged out
@@ -903,6 +904,17 @@ export abstract class BaileysRuntimeService {
 			})
 			// WhatsApp is back online — clear any "disconnected" notification.
 			void resolveWhatsappReconnected(sessionRow.id)
+			// Refresh contact profile photos now that fetching works again. The sweep
+			// only re-fetches contacts whose picture is stale (>7 days), so it is cheap
+			// and deduped to once per day. Fire-and-forget.
+			if (channel.app_id) {
+				void enqueueProfileSweep(channel.app_id, channel.id).catch((error) => {
+					console.warn(
+						'[BaileysRuntime] Failed to enqueue profile sweep on reconnect:',
+						error,
+					)
+				})
+			}
 			return
 		}
 
