@@ -28,6 +28,7 @@ import {
 import { WebhookService } from '../webhook/service'
 import { NotificationService } from '../notifications/service'
 import { enqueueProfileSweep } from '../personal-whatsapp-inbox/profile-sync'
+import { emitRealtimeToRoom } from '../../lib/realtime-emitter'
 import { ensureBaileysSessionStorage } from './baileys-storage'
 
 // Notify the owning sales when their WhatsApp session drops for good (logged out
@@ -802,6 +803,68 @@ export abstract class BaileysRuntimeService {
 		socket.ev.on('messages.update', (updates) => {
 			void this.handleMessageStatusUpdates(entry, updates)
 		})
+
+		// Address-book / business names the WhatsApp account knows (synced via
+		// app-state). Lets saved contacts show a name instead of a bare number.
+		socket.ev.on('contacts.upsert', (contacts) => {
+			void this.handleContactsSync(channel, contacts)
+		})
+		socket.ev.on('contacts.update', (contacts) => {
+			void this.handleContactsSync(channel, contacts)
+		})
+	}
+
+	// Apply WhatsApp-known names (address-book "name", business "verifiedName", or
+	// "notify"/pushName) to existing CRM contacts. Only fills contacts whose name
+	// is still empty or a bare number so we never clobber a good name. Skips groups
+	// and never creates new contacts (we only care about people already in the CRM).
+	private static async handleContactsSync(
+		channel: BaileysChannelRecord,
+		contacts: Array<Partial<{ id: string; name: string; verifiedName: string; notify: string }>>,
+	) {
+		if (!channel.app_id || !Array.isArray(contacts) || !contacts.length) return
+		const nameByPhone = new Map<string, string>()
+		for (const contact of contacts) {
+			const jid = String(contact?.id || '')
+			if (!jid.endsWith('@s.whatsapp.net')) continue
+			const phone = (getWaIdFromJid(jid) || '').replace(/\D/g, '')
+			if (!phone) continue
+			const name = String(
+				contact?.name || contact?.verifiedName || contact?.notify || '',
+			).trim()
+			if (name) nameByPhone.set(phone, name.slice(0, 255))
+		}
+		if (!nameByPhone.size) return
+		const phones = [...nameByPhone.keys()]
+		// Process in chunks — an initial contacts.upsert can carry the whole address
+		// book, but we only touch numbers that already exist as CRM contacts.
+		for (let index = 0; index < phones.length; index += 500) {
+			const chunk = phones.slice(index, index + 500)
+			const existing = await prisma.contacts.findMany({
+				where: {
+					app_id: channel.app_id,
+					deleted_at: null,
+					OR: [{ phone_number: { in: chunk } }, { whatsapp_id: { in: chunk } }],
+				},
+				select: { id: true, name: true, phone_number: true, whatsapp_id: true },
+			})
+			for (const row of existing) {
+				const phone = String(row.phone_number || row.whatsapp_id || '').replace(/\D/g, '')
+				const savedName = nameByPhone.get(phone)
+				if (!savedName) continue
+				// Keep a good existing name; only fill bare-number/empty names.
+				const current = String(row.name || '').trim()
+				const isBare = !current || /^[+\d\s()-]+$/.test(current)
+				if (!isBare || current === savedName) continue
+				await prisma.contacts.update({
+					where: { id: row.id },
+					data: { name: savedName, updated_at: new Date() },
+				})
+				emitRealtimeToRoom(`app:${channel.app_id}`, 'contact:profile_updated', {
+					contactId: row.id,
+				})
+			}
+		}
 	}
 
 	private static async handleConnectionUpdate(params: {
