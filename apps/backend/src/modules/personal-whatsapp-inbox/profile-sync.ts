@@ -150,8 +150,16 @@ export async function enqueueProfileContact(appId: string, channelId: string, co
 	})
 }
 
-export const whatsappProfileSyncWorker = new Worker<ProfileJob>(
-	'whatsapp-profile-sync',
-	async (job: Job<ProfileJob>) => job.name === 'sweep' ? enqueueDueContacts(job.data) : syncContact(job.data),
-	{ connection: redis, concurrency: 4 },
-)
+// Start the profile-sync consumer. Called explicitly from the worker entry
+// (src/workers) so it runs ONCE in the worker process only. Importing this module
+// from an API route (for the enqueue helpers below) must not spin up a duplicate
+// consumer in every process — that side effect left multiple half-dead workers
+// that stopped draining the queue after hot-reloads.
+export function startWhatsappProfileSyncWorker() {
+	return new Worker<ProfileJob>(
+		'whatsapp-profile-sync',
+		async (job: Job<ProfileJob>) =>
+			job.name === 'sweep' ? enqueueDueContacts(job.data) : syncContact(job.data),
+		{ connection: redis, concurrency: 4 },
+	)
+}

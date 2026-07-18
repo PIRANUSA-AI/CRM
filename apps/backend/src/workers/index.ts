@@ -19,6 +19,7 @@ import { BusinessWebhookDispatchService } from '../modules/business-webhooks/dis
 import { KnowledgeIndexService } from '../modules/knowledge/indexing-service'
 import { WebhookService } from '../modules/webhook/service'
 import { PersonalAiReplyService } from '../modules/personal-whatsapp-inbox/ai-reply'
+import { startWhatsappProfileSyncWorker } from '../modules/personal-whatsapp-inbox/profile-sync'
 import {
 	processTaskAnalysisJob,
 	TASK_ANALYSIS_CONCURRENCY,
@@ -2458,6 +2459,11 @@ const dispatchDueChatbotFollowups = async () => {
 		)
 	}
 }
+
+// Profile-photo sync consumer — owned by the worker process (see profile-sync.ts).
+export const whatsappProfileSyncWorker = WORKER_MODE_ENABLED
+	? startWhatsappProfileSyncWorker()
+	: null
 
 export const incomingWorker = new Worker(
 			'incoming-messages',
