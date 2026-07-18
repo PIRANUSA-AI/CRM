@@ -251,7 +251,7 @@ function AppLayout() {
 
 	useEffect(() => {
 		if (loading || !agent) return
-		if (!['sales', 'agent'].includes(agent.role)) {
+		if (!['sales', 'agent', 'leader'].includes(agent.role)) {
 			setConnectionGateResolved(true)
 			return
 		}

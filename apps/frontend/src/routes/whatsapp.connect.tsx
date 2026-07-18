@@ -50,7 +50,7 @@ function WhatsAppConnectPage() {
 			const raw = localStorage.getItem('crm_user')
 			if (!raw) return
 			const role = extractNormalizedRole(JSON.parse(raw))
-			if (!['sales', 'agent'].includes(role)) {
+			if (!['sales', 'agent', 'leader'].includes(role)) {
 				const allowedPaths = getAllowedPrimaryPathsForRole(role)
 				void navigate({ to: allowedPaths?.[0] || '/dashboard', replace: true })
 			}
