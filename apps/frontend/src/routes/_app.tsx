@@ -28,7 +28,7 @@ import {
 	isPathAllowedForRole,
 } from '@/lib/role-access'
 import { syncOrganizationContextFromSession } from '@/lib/organization'
-import { whatsappChannels } from '@/lib/api'
+import { auth, whatsappChannels } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface Agent {
@@ -143,6 +143,48 @@ function AppLayout() {
 			const parsedAgent = parseStoredAgent(storedAgent)
 			if (parsedAgent) setAgent(parsedAgent)
 		}
+
+		// The role stored at login can be stale/empty (Better Auth's sign-in
+		// response may omit the custom role field). Hydrate the authoritative CRM
+		// role from the server so role-gated UI (Kelola Tim, Profil Sales, the
+		// "Bagikan" action, etc.) works reliably.
+		void auth
+			.me()
+			.then((res) => {
+				const user = (res as { data?: { user?: Record<string, unknown> } })?.data?.user
+				const role = extractNormalizedRole(user)
+				if (!role) return
+				setAgent((prev) =>
+					prev
+						? prev.role === role
+							? prev
+							: { ...prev, role }
+						: {
+								id: String(user?.id || user?.email || ''),
+								email: String(user?.email || ''),
+								name: String(
+									user?.name || (user?.email ? String(user.email).split('@')[0] : 'User'),
+								),
+								role,
+								avatar_url: typeof user?.avatar_url === 'string' ? user.avatar_url : null,
+							},
+				)
+				try {
+					const raw = localStorage.getItem('crm_user')
+					if (raw) {
+						const parsed = JSON.parse(raw)
+						const target =
+							parsed?.user && typeof parsed.user === 'object' ? parsed.user : parsed
+						if (target && typeof target === 'object') {
+							target.role = role
+							localStorage.setItem('crm_user', JSON.stringify(parsed))
+						}
+					}
+				} catch {
+					/* ignore persistence errors */
+				}
+			})
+			.catch(() => undefined)
 
 		const token = localStorage.getItem('crm_token')
 		if (token) {
