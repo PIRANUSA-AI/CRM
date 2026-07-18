@@ -5,6 +5,7 @@ import { NotificationService } from '../notifications/service'
 import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
 import { PersonalTakeoverService } from '../personal-whatsapp-inbox/takeover'
 import { SalesProfileService } from '../sales-profiles/service'
+import { generateHandoffBrief, type LeadContact } from '../tasks/lead-brief'
 
 export type RoutingActor = {
 	appId: string
@@ -57,6 +58,8 @@ type ConversationContext = {
 	productInterest: string
 	// F1: structured lead-need profile (if the leader AI qualified this lead).
 	leadNeed: Record<string, unknown> | null
+	// F4: full contact for the handoff briefing.
+	contact: LeadContact | null
 }
 
 async function loadConversation(actor: RoutingActor, conversationId: string): Promise<ConversationContext> {
@@ -67,7 +70,16 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 			contact_id: true,
 			additional_attributes: true,
 			contacts: {
-				select: { id: true, name: true, phone_number: true, custom_attributes: true },
+				select: {
+					id: true,
+					name: true,
+					email: true,
+					phone_number: true,
+					company: true,
+					city: true,
+					source: true,
+					custom_attributes: true,
+				},
 			},
 		},
 	})
@@ -78,6 +90,17 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 	// Prefer the qualified product from lead_need; fall back to contact attribute.
 	const productInterest =
 		String(leadNeed?.product || attrs.product_interest || '').trim()
+	const contact = conversation.contacts
+		? {
+				name: conversation.contacts.name,
+				email: conversation.contacts.email,
+				phone_number: conversation.contacts.phone_number,
+				company: conversation.contacts.company,
+				city: conversation.contacts.city,
+				source: conversation.contacts.source,
+				custom_attributes: conversation.contacts.custom_attributes,
+			}
+		: null
 	return {
 		id: conversation.id,
 		contactId: conversation.contact_id,
@@ -85,6 +108,32 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 			conversation.contacts?.name || conversation.contacts?.phone_number || 'Lead',
 		productInterest,
 		leadNeed,
+		contact,
+	}
+}
+
+// Last messages of the leader conversation, oldest-first, as a compact
+// transcript for the handoff briefing. Best-effort: never blocks the assign.
+async function loadLeaderTranscript(appId: string, conversationId: string): Promise<string> {
+	try {
+		const rows = await prisma.messages.findMany({
+			where: { conversation_id: conversationId, app_id: appId, deleted_at: null },
+			orderBy: { created_at: 'desc' },
+			take: 16,
+			select: { content: true, content_type: true, message_type: true },
+		})
+		return rows
+			.reverse()
+			.map(
+				(m) =>
+					`${m.message_type === 'incoming' ? 'Customer' : 'Tim'}: ${
+						String(m.content || '').trim() || `[${m.content_type || 'media'}]`
+					}`,
+			)
+			.join('\n')
+			.slice(0, 4000)
+	} catch {
+		return ''
 	}
 }
 
@@ -219,7 +268,9 @@ export abstract class LeadRoutingService {
 
 		const now = new Date()
 		const dueAt = new Date(now.getTime() + 24 * 3600_000)
-		const title = `Follow-up ${context.productInterest || 'lead'} — ${context.contactName}`.slice(0, 255)
+		const title = `Balas lead baru: ${context.contactName}${
+			context.productInterest ? ` — ${context.productInterest}` : ''
+		}`.slice(0, 255)
 
 		await prisma.conversations.update({
 			where: { id: context.id },
@@ -267,9 +318,24 @@ export abstract class LeadRoutingService {
 				})
 			: null
 
-		// F1: carry the qualified lead-need profile into the task so the sales sees
-		// the customer's needs (product, seats, budget, urgency, ...) at pickup.
-		const leadNeedSnapshot = context.leadNeed ? { lead_need: context.leadNeed } : {}
+		// F4: build the handoff briefing so the sales opens the task already knowing
+		// what the lead wants and what was discussed with the leader. The AI has a
+		// deterministic fallback, so a failure here never blocks the assignment.
+		const transcript = await loadLeaderTranscript(actor.appId, context.id)
+		const brief = context.contact
+			? await generateHandoffBrief({
+					contact: context.contact,
+					leadNeed: context.leadNeed,
+					transcript,
+				}).catch(() => null)
+			: null
+		// F1 + F4: lead-need profile + briefing (summary + ready opener) carried into
+		// the task's ai_snapshot for the sales pickup.
+		const leadNeedSnapshot = {
+			...(context.leadNeed ? { lead_need: context.leadNeed } : {}),
+			...(brief ? { summary: brief.summary, suggestedReply: brief.suggestedReply } : {}),
+		}
+		const hasSnapshot = Object.keys(leadNeedSnapshot).length > 0
 
 		let taskId: string
 		if (existing) {
@@ -279,7 +345,7 @@ export abstract class LeadRoutingService {
 					assignee_id: target.userId,
 					team_id: target.teamId,
 					title,
-					...(context.leadNeed
+					...(hasSnapshot
 						? { ai_snapshot: { ...asRecord(existing.ai_snapshot), ...leadNeedSnapshot } as any }
 						: {}),
 					updated_at: now,

@@ -56,7 +56,37 @@ const EVENT_LABEL: Record<string, string> = {
 	replied_whatsapp: 'Dibalas via WhatsApp',
 }
 
-type Snapshot = { suggestedReply?: string | null; summary?: string | null; evidence?: string[] }
+type LeadNeedSnapshot = {
+	product?: string | null
+	segment?: string | null
+	useCase?: string | null
+	seats?: number | null
+	budget?: string | null
+	urgency?: string | null
+	source?: string | null
+	city?: string | null
+	notes?: string | null
+}
+
+type Snapshot = {
+	suggestedReply?: string | null
+	summary?: string | null
+	evidence?: string[]
+	lead_need?: LeadNeedSnapshot | null
+}
+
+// F4: which lead-need fields to surface in the handoff briefing, in order.
+const LEAD_NEED_ROWS: Array<{ key: keyof LeadNeedSnapshot; label: string }> = [
+	{ key: 'product', label: 'Produk' },
+	{ key: 'segment', label: 'Segmen' },
+	{ key: 'seats', label: 'Seat' },
+	{ key: 'useCase', label: 'Kebutuhan' },
+	{ key: 'budget', label: 'Anggaran' },
+	{ key: 'urgency', label: 'Urgensi' },
+	{ key: 'source', label: 'Sumber' },
+	{ key: 'city', label: 'Kota' },
+	{ key: 'notes', label: 'Catatan' },
+]
 
 function readSnapshot(value: unknown): Snapshot {
 	if (!value || typeof value !== 'object') return {}
@@ -295,6 +325,30 @@ function TaskDetailPage() {
 							<p className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
 								{task.description}
 							</p>
+						) : null}
+
+						{snapshot.lead_need &&
+						LEAD_NEED_ROWS.some((row) => {
+							const value = snapshot.lead_need?.[row.key]
+							return value !== null && value !== undefined && value !== ''
+						}) ? (
+							<div className="mb-3 rounded-lg border border-border bg-background p-3">
+								<p className="mb-1.5 text-[11px] font-semibold uppercase text-muted-foreground">
+									Kebutuhan lead (dikumpulkan leader)
+								</p>
+								<div className="grid grid-cols-2 gap-x-3 gap-y-1">
+									{LEAD_NEED_ROWS.map((row) => {
+										const value = snapshot.lead_need?.[row.key]
+										if (value === null || value === undefined || value === '') return null
+										return (
+											<div key={row.key} className="min-w-0 text-xs">
+												<span className="text-muted-foreground">{row.label}: </span>
+												<span className="font-medium text-foreground">{String(value)}</span>
+											</div>
+										)
+									})}
+								</div>
+							</div>
 						) : null}
 
 						{Array.isArray(snapshot.evidence) && snapshot.evidence.length > 0 ? (
