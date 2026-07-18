@@ -20,6 +20,19 @@ function storedFirstName() {
 	} catch { return '' }
 }
 
+// When should we (re)trigger a session start to (re)generate a QR? After the
+// device is unlinked from the phone the channel still exists (channelId is set),
+// so "no channel" is not enough — we also start when the session is not
+// connected and has no QR yet, except while a start/restart is already in
+// flight or the session is genuinely blocked (avoid hammering).
+function needsFreshQr(connection: PersonalWhatsAppConnection | null): boolean {
+	if (!connection) return true
+	if (connection.isConnected || connection.qrCode) return false
+	if (!connection.channelId) return true
+	const inFlightOrBlocked = ['connecting', 'qr_ready', 'restarting', 'reconnecting', 'rate_limited', 'error']
+	return !inFlightOrBlocked.includes(connection.status)
+}
+
 function isMobile() {
 	if (typeof window === 'undefined' || !navigator) return false
 	try {
@@ -72,13 +85,13 @@ function WhatsAppConnectPage() {
 		}
 	}, [])
 
-	useEffect(() => { void refresh().then((value) => { if (!value?.channelId) void refresh(true) }) }, [refresh])
+	useEffect(() => { void refresh().then((value) => { if (needsFreshQr(value)) void refresh(true) }) }, [refresh])
 
 	useEffect(() => {
 		if (!connection || connection.isConnected) return
 		const timer = window.setInterval(() => {
 			void refresh().then((value) => {
-				if (!value?.channelId) {
+				if (needsFreshQr(value)) {
 					void refresh(true)
 				}
 			})
@@ -158,7 +171,10 @@ function WhatsAppConnectPage() {
 					<>
 						<h1 className="text-balance px-2 font-[family-name:var(--font-display)] text-[28px] font-medium leading-tight tracking-[-0.02em] text-[#102a4c] md:px-0 md:text-[40px] md:tracking-[-0.03em]">Hubungkan WhatsApp kamu</h1>
 						<p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#5b6b7d] md:mt-3 md:max-w-sm md:text-[15px]">
-							Scan QR ini dengan WhatsApp kamu.
+							{connection?.status === 'logged_out' ||
+							(connection?.hasConnectedBefore && !connection?.isConnected)
+								? 'Perangkat kamu keluar dari WhatsApp. Scan QR ini untuk masuk lagi.'
+								: 'Scan QR ini dengan WhatsApp kamu.'}
 						</p>
 
 						<div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-white px-5 py-8 shadow-[0_4px_16px_rgba(16,42,76,0.08)] md:mt-8 md:min-h-[320px] md:px-6 md:py-10">
@@ -183,6 +199,15 @@ function WhatsAppConnectPage() {
 
 						{!mobile || forceQr ? (
 							<p className="mt-4 text-xs text-[#52657b] md:mt-5 md:text-sm">WhatsApp - Perangkat tertaut - Tautkan perangkat</p>
+						) : null}
+						{!mobile || forceQr ? (
+							<button
+								type="button"
+								onClick={() => void refresh(true)}
+								className="mx-auto mt-3 block rounded-lg px-3 py-1.5 text-xs font-medium text-[#315d91] transition-colors hover:bg-white md:text-sm"
+							>
+								QR tidak muncul? Hubungkan ulang
+							</button>
 						) : null}
 						{error ? <p className="mx-auto mt-4 max-w-xs rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700 md:max-w-sm md:text-sm">{error}</p> : null}
 						<p className="mt-6 inline-flex items-center gap-1.5 text-xs text-[#657487] md:mt-8"><ShieldCheck className="h-3.5 w-3.5" /> Hanya untuk akun CRM kamu</p>
