@@ -57,6 +57,24 @@ function WhatsAppConnectPage() {
 		} catch {}
 	}, [navigate])
 	const [qrImage, setQrImage] = useState<string | null>(null)
+	const qrImageRef = useRef<string | null>(null)
+
+	// The QR is re-rendered on every poll, so each render leaks an object URL
+	// unless the previous one is released. Revoke only once the replacement is
+	// in hand — dropping it any earlier would blank the <img> still using it.
+	const swapQrImage = useCallback((next: string | null) => {
+		const previous = qrImageRef.current
+		if (previous && previous !== next) URL.revokeObjectURL(previous)
+		qrImageRef.current = next
+		setQrImage(next)
+	}, [])
+
+	useEffect(
+		() => () => {
+			if (qrImageRef.current) URL.revokeObjectURL(qrImageRef.current)
+		},
+		[],
+	)
 	const [error, setError] = useState('')
 	const [countdown, setCountdown] = useState(10)
 	const previouslyConnected = useRef<boolean | null>(null)
@@ -100,7 +118,7 @@ function WhatsAppConnectPage() {
 	}, [connection?.isConnected, connection?.status, refresh])
 
 	useEffect(() => {
-		if (!connection?.qrCode) { setQrImage(null); return }
+		if (!connection?.qrCode) { swapQrImage(null); return }
 		let active = true
 		const qr = new QRCodeStyling({
 			width: 340,
@@ -129,11 +147,10 @@ function WhatsAppConnectPage() {
 		// this effect only ever runs client-side, so narrow to the Blob case.
 		void qr.getRawData('png').then((raw) => {
 			if (!active || !(raw instanceof Blob)) return
-			const url = URL.createObjectURL(raw)
-			setQrImage(url)
+			swapQrImage(URL.createObjectURL(raw))
 		})
 		return () => { active = false }
-	}, [connection?.qrCode])
+	}, [connection?.qrCode, swapQrImage])
 
 
 
