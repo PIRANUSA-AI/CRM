@@ -654,6 +654,11 @@ function CustomerDetail() {
 														<span className="ocm-tag">
 															{TASK_ACTION_LABEL[task.actionKind] || task.actionKind}
 														</span>
+														{task.teamName ? (
+															<span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+																{task.teamName}
+															</span>
+														) : null}
 														<span className="text-[11px] text-muted-foreground">
 															{TASK_STATUS_LABEL[task.status] || task.status}
 														</span>

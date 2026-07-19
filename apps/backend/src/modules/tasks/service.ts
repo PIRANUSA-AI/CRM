@@ -129,7 +129,8 @@ async function ensureContext(
 async function enrichTasks(rows: TaskRecord[]) {
 	const contactIds = [...new Set(rows.map((row) => row.contact_id).filter(Boolean))] as string[]
 	const conversationIds = [...new Set(rows.map((row) => row.conversation_id).filter(Boolean))] as string[]
-	const [contacts, conversations] = await Promise.all([
+	const teamIds = [...new Set(rows.map((row) => row.team_id).filter(Boolean))] as string[]
+	const [contacts, conversations, teams] = await Promise.all([
 		contactIds.length
 			? prisma.contacts.findMany({
 					where: { id: { in: contactIds }, deleted_at: null },
@@ -142,9 +143,16 @@ async function enrichTasks(rows: TaskRecord[]) {
 					select: { id: true, status: true },
 				})
 			: [],
+		teamIds.length
+			? prisma.teams.findMany({
+					where: { id: { in: teamIds } },
+					select: { id: true, name: true },
+				})
+			: [],
 	])
 	const contactsById = new Map(contacts.map((contact) => [contact.id, contact]))
 	const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
+	const teamsById = new Map(teams.map((team) => [team.id, team.name]))
 	return rows.map((row) => {
 		const contact = row.contact_id ? contactsById.get(row.contact_id) : null
 		const conversation = row.conversation_id
@@ -155,6 +163,7 @@ async function enrichTasks(rows: TaskRecord[]) {
 			appId: row.app_id,
 			assigneeId: row.assignee_id,
 			teamId: row.team_id,
+			teamName: row.team_id ? teamsById.get(row.team_id) || null : null,
 			conversationId: row.conversation_id,
 			contactId: row.contact_id,
 			sourceMessageId: row.source_message_id,

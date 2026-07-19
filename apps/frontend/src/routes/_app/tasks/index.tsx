@@ -299,6 +299,11 @@ function TasksPage() {
 										{badge.label}
 									</span>
 								) : null}
+								{task.teamName ? (
+									<span className="rounded bg-primary/15 px-1.5 py-0.5 font-semibold text-primary">
+										{task.teamName}
+									</span>
+								) : null}
 								<span className="inline-flex items-center gap-1">
 									<UserRound size={13} />
 									{task.contactName || task.contactPhone || 'Kontak belum tersedia'}

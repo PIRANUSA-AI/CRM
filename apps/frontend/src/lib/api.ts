@@ -2578,6 +2578,7 @@ export interface Task {
 	appId: string
 	assigneeId: string | null
 	teamId: string | null
+	teamName: string | null
 	conversationId: string | null
 	contactId: string | null
 	sourceMessageId: string | null

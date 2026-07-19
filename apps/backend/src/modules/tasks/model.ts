@@ -32,6 +32,7 @@ export const TaskModel = {
 		appId: t.String(),
 		assigneeId: t.Nullable(t.String()),
 		teamId: t.Nullable(t.String()),
+		teamName: t.Nullable(t.String()),
 		conversationId: t.Nullable(t.String()),
 		contactId: t.Nullable(t.String()),
 		sourceMessageId: t.Nullable(t.String()),
