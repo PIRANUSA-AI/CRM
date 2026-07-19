@@ -8,13 +8,17 @@ export const notifications = new Elysia({ prefix: '/notifications', tags: ['Noti
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const data = await NotificationService.list(resolvedAppId, userId, {
 			limit: query.limit ? Number(query.limit) : undefined,
+			offset: query.offset ? Number(query.offset) : undefined,
 			unreadOnly: query.unreadOnly === 'true',
+			type: query.type || undefined,
 		})
 		return { data }
 	}, {
 		query: t.Object({
 			limit: t.Optional(t.String()),
+			offset: t.Optional(t.String()),
 			unreadOnly: t.Optional(t.String()),
+			type: t.Optional(t.String()),
 		}),
 	})
 	.get('/count', async ({ resolvedAppId, userId, set }) => {

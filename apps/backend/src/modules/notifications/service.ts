@@ -7,6 +7,7 @@ export type NotificationType =
 	| 'takeover'
 	| 'lead_pending'
 	| 'task_urgent'
+	| 'task_due'
 	| 'ai_draft'
 	| 'wa_disconnected'
 
@@ -77,15 +78,22 @@ export abstract class NotificationService {
 	static async list(
 		appId: string,
 		userId: string,
-		options?: { limit?: number; unreadOnly?: boolean },
+		options?: {
+			limit?: number
+			offset?: number
+			unreadOnly?: boolean
+			type?: string
+		},
 	) {
 		const rows = await prisma.notifications.findMany({
 			where: {
 				app_id: appId,
 				user_id: userId,
 				...(options?.unreadOnly ? { read_at: null } : {}),
+				...(options?.type ? { type: options.type } : {}),
 			},
 			orderBy: { created_at: 'desc' },
+			skip: Math.max(0, options?.offset || 0),
 			take: Math.max(1, Math.min(100, options?.limit || 30)),
 		})
 		return rows.map((row) => ({
@@ -149,5 +157,54 @@ export abstract class NotificationService {
 			data: { read_at: now, updated_at: now },
 		})
 		return updated.count
+	}
+
+	/**
+	 * Scheduler hook: remind assignees about tasks that have just come due.
+	 *
+	 * Runs on the maintenance queue. Fires once per task as it crosses `due_at`
+	 * (windowed to the run interval so it is not re-sent every tick), deduped by
+	 * `task-due:<id>` so an accidental repeat refreshes rather than stacks.
+	 * Snoozed tasks are skipped until their snooze passes. Fail-open — a reminder
+	 * failure must never break the maintenance cycle.
+	 */
+	static async remindDueTasks(windowMs = 5 * 60 * 1000) {
+		const now = new Date()
+		const windowStart = new Date(now.getTime() - windowMs)
+		try {
+			const due = await prisma.tasks.findMany({
+				where: {
+					status: { in: ['open', 'in_progress'] },
+					assignee_id: { not: null },
+					due_at: { lte: now, gt: windowStart },
+					OR: [{ snoozed_until: null }, { snoozed_until: { lte: now } }],
+				},
+				select: {
+					id: true,
+					app_id: true,
+					assignee_id: true,
+					title: true,
+					conversation_id: true,
+				},
+				take: 500,
+			})
+			for (const task of due) {
+				if (!task.assignee_id) continue
+				await NotificationService.notify({
+					appId: task.app_id,
+					userId: task.assignee_id,
+					type: 'task_due',
+					title: 'Tugas jatuh tempo',
+					body: task.title,
+					conversationId: task.conversation_id,
+					taskId: task.id,
+					dedupKey: `task-due:${task.id}`,
+				})
+			}
+			return due.length
+		} catch (error) {
+			console.error('[NotificationService] remindDueTasks failed:', error)
+			return 0
+		}
 	}
 }

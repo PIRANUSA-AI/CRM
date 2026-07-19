@@ -41,6 +41,7 @@ export const SALES_PATHS = [
 	'/prospek',
 	'/alih-tugas',
 	'/customers',
+	'/notifikasi',
 	'/settings',
 	'/help',
 ]
@@ -51,6 +52,7 @@ export const LEADER_PATHS = [
 	'/tasks',
 	'/prospek',
 	'/alih-tugas',
+	'/notifikasi',
 	'/kelola-tim',
 	'/sales-profiles',
 	'/customers',
@@ -77,7 +79,7 @@ export const LEADER_PATHS = [
 	'/help',
 ]
 
-export const CEO_PATHS = ['/dashboard', '/kelola-tim', '/analytics', '/metrics', '/settings', '/help']
+export const CEO_PATHS = ['/dashboard', '/kelola-tim', '/notifikasi', '/analytics', '/metrics', '/settings', '/help']
 
 export const SUPERADMIN_PATHS = ['/kelola-tim', '/developers', '/import', '/channels/whatsapp', '/settings', '/help']
 

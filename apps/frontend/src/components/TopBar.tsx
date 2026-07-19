@@ -1,49 +1,15 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
-import {
-	Bell,
-	Bot,
-	CheckCheck,
-	ListTodo,
-	Search,
-	Smartphone,
-	Sparkles,
-	UserPlus,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { Bell, CheckCheck, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import CommandPalette from '@/components/CommandPalette'
 import { CrmAvatar } from '@/components/crm/shared'
 import ThemeToggle from '@/components/ThemeToggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { notifications as notificationsApi, type NotificationItem } from '@/lib/api'
+import { notifDestination, notifIcon } from '@/lib/notifications-meta'
 import { connectSocket } from '@/lib/socket'
 import { CRM_NAV_ITEMS } from '@/lib/crm-navigation'
 import { useAppContext } from '@/routes/_app'
-
-const NOTIF_ICON: Record<string, LucideIcon> = {
-	takeover: Bot,
-	lead_pending: UserPlus,
-	task_urgent: ListTodo,
-	ai_draft: Sparkles,
-	wa_disconnected: Smartphone,
-}
-
-// Where each notification type takes the user when clicked.
-function notifDestination(item: NotificationItem): string {
-	switch (item.type) {
-		case 'takeover':
-			return '/alih-tugas'
-		case 'task_urgent':
-			return item.taskId ? `/tasks/${item.taskId}` : '/tasks'
-		case 'wa_disconnected':
-			return '/whatsapp/connect'
-		case 'lead_pending':
-		case 'ai_draft':
-			return '/chat'
-		default:
-			return '/dashboard'
-	}
-}
 
 function formatNotifTime(value: string) {
 	const date = new Date(value)
@@ -254,7 +220,7 @@ export default function TopBar() {
 						) : (
 							<ul className="max-h-96 divide-y divide-border overflow-y-auto">
 								{notifItems.map((item) => {
-									const Icon = NOTIF_ICON[item.type] || Bell
+									const Icon = notifIcon(item.type)
 									return (
 										<li key={item.id}>
 											<button
@@ -289,6 +255,18 @@ export default function TopBar() {
 								})}
 							</ul>
 						)}
+						<div className="border-t border-border p-2">
+							<button
+								type="button"
+								onClick={() => {
+									setNotifOpen(false)
+									navigate({ to: '/notifikasi' })
+								}}
+								className="w-full rounded-md px-3 py-2 text-center text-xs font-semibold text-primary transition-colors hover:bg-muted/60"
+							>
+								Lihat semua notifikasi
+							</button>
+						</div>
 					</PopoverContent>
 				</Popover>
 

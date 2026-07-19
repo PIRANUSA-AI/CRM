@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
 	BarChart3,
+	Bell,
 	BookOpen,
 	Bot,
 	Code2,
@@ -70,6 +71,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/alih-tugas',
 		group: 'operasional',
 		icon: Handshake,
+	},
+	{
+		id: 'notifikasi',
+		label: 'Notifikasi',
+		path: '/notifikasi',
+		group: 'operasional',
+		icon: Bell,
 	},
 	{
 		id: 'customers',

@@ -22,6 +22,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSalesProfilesRouteImport } from './routes/_app/sales-profiles'
 import { Route as AppProspekRouteImport } from './routes/_app/prospek'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
+import { Route as AppNotifikasiRouteImport } from './routes/_app/notifikasi'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
 import { Route as AppKelolaTimRouteImport } from './routes/_app/kelola-tim'
@@ -122,6 +123,11 @@ const AppProspekRoute = AppProspekRouteImport.update({
 const AppPipelineRoute = AppPipelineRouteImport.update({
   id: '/pipeline',
   path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotifikasiRoute = AppNotifikasiRouteImport.update({
+  id: '/notifikasi',
+  path: '/notifikasi',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMetricsRoute = AppMetricsRouteImport.update({
@@ -337,6 +343,7 @@ export interface FileRoutesByFullPath {
   '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
+  '/notifikasi': typeof AppNotifikasiRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
@@ -388,6 +395,7 @@ export interface FileRoutesByTo {
   '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
+  '/notifikasi': typeof AppNotifikasiRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
@@ -441,6 +449,7 @@ export interface FileRoutesById {
   '/_app/kelola-tim': typeof AppKelolaTimRoute
   '/_app/knowledge': typeof AppKnowledgeRoute
   '/_app/metrics': typeof AppMetricsRoute
+  '/_app/notifikasi': typeof AppNotifikasiRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/prospek': typeof AppProspekRoute
   '/_app/sales-profiles': typeof AppSalesProfilesRoute
@@ -494,6 +503,7 @@ export interface FileRouteTypes {
     | '/kelola-tim'
     | '/knowledge'
     | '/metrics'
+    | '/notifikasi'
     | '/pipeline'
     | '/prospek'
     | '/sales-profiles'
@@ -545,6 +555,7 @@ export interface FileRouteTypes {
     | '/kelola-tim'
     | '/knowledge'
     | '/metrics'
+    | '/notifikasi'
     | '/pipeline'
     | '/prospek'
     | '/sales-profiles'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/_app/kelola-tim'
     | '/_app/knowledge'
     | '/_app/metrics'
+    | '/_app/notifikasi'
     | '/_app/pipeline'
     | '/_app/prospek'
     | '/_app/sales-profiles'
@@ -729,6 +741,13 @@ declare module '@tanstack/react-router' {
       path: '/pipeline'
       fullPath: '/pipeline'
       preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifikasi': {
+      id: '/_app/notifikasi'
+      path: '/notifikasi'
+      fullPath: '/notifikasi'
+      preLoaderRoute: typeof AppNotifikasiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/metrics': {
@@ -1059,6 +1078,7 @@ interface AppRouteChildren {
   AppKelolaTimRoute: typeof AppKelolaTimRoute
   AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppMetricsRoute: typeof AppMetricsRoute
+  AppNotifikasiRoute: typeof AppNotifikasiRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspekRoute: typeof AppProspekRoute
   AppSalesProfilesRoute: typeof AppSalesProfilesRoute
@@ -1099,6 +1119,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppKelolaTimRoute: AppKelolaTimRoute,
   AppKnowledgeRoute: AppKnowledgeRoute,
   AppMetricsRoute: AppMetricsRoute,
+  AppNotifikasiRoute: AppNotifikasiRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspekRoute: AppProspekRoute,
   AppSalesProfilesRoute: AppSalesProfilesRoute,

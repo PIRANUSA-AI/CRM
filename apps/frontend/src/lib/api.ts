@@ -1161,6 +1161,7 @@ export type NotificationType =
 	| 'takeover'
 	| 'lead_pending'
 	| 'task_urgent'
+	| 'task_due'
 	| 'ai_draft'
 	| 'wa_disconnected'
 	| string
@@ -1178,10 +1179,17 @@ export type NotificationItem = {
 }
 
 export const notifications = {
-	list: (options?: { limit?: number; unreadOnly?: boolean }) => {
+	list: (options?: {
+		limit?: number
+		offset?: number
+		unreadOnly?: boolean
+		type?: string
+	}) => {
 		const params = new URLSearchParams()
 		if (options?.limit) params.set('limit', String(options.limit))
+		if (options?.offset) params.set('offset', String(options.offset))
 		if (options?.unreadOnly) params.set('unreadOnly', 'true')
+		if (options?.type) params.set('type', options.type)
 		const query = params.toString()
 		return apiRequest<{ data: NotificationItem[] }>(
 			`/notifications${query ? `?${query}` : ''}`,

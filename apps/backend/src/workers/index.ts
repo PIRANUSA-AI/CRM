@@ -19,6 +19,7 @@ import { BusinessWebhookDispatchService } from '../modules/business-webhooks/dis
 import { KnowledgeIndexService } from '../modules/knowledge/indexing-service'
 import { WebhookService } from '../modules/webhook/service'
 import { PersonalAiReplyService } from '../modules/personal-whatsapp-inbox/ai-reply'
+import { NotificationService } from '../modules/notifications/service'
 import { startWhatsappProfileSyncWorker } from '../modules/personal-whatsapp-inbox/profile-sync'
 import {
 	processTaskAnalysisJob,
@@ -2589,6 +2590,12 @@ export const maintenanceWorker = WORKER_MODE_ENABLED
 					await dispatchDueScheduledBroadcasts()
 				}
 
+				if (job.name === 'notify-due-tasks') {
+					// Window matches the 5-minute repeat so each task is reminded
+					// once as it crosses its due time.
+					await NotificationService.remindDueTasks(5 * 60 * 1000)
+				}
+
 				if (job.name === 'retry-failed-webhooks') {
 					await replayRetryableFailedWebhookEvents()
 				}
@@ -2683,6 +2690,14 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 60 * 1000 },
 			jobId: 'dispatch-scheduled-broadcasts',
+		},
+	)
+	await maintenanceQueue.add(
+		'notify-due-tasks',
+		{},
+		{
+			repeat: { every: 5 * 60 * 1000 },
+			jobId: 'notify-due-tasks',
 		},
 	)
 	await maintenanceQueue.add(

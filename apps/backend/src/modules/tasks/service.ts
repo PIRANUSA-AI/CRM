@@ -1078,6 +1078,12 @@ export abstract class TaskService {
 			return asTask(row)
 		})
 		emitTask('task:updated', task)
+		// Clear any pending "urgent"/"due" bell notifications for a task that is
+		// now closed, so the assignee's inbox does not keep stale reminders.
+		if ((to === 'done' || to === 'cancelled') && task.assignee_id) {
+			await NotificationService.resolve(actor.appId, task.assignee_id, `task:${taskId}`).catch(() => 0)
+			await NotificationService.resolve(actor.appId, task.assignee_id, `task-due:${taskId}`).catch(() => 0)
+		}
 		return (await enrichTasks([task]))[0]
 	}
 }
