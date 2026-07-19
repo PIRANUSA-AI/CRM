@@ -6,10 +6,8 @@ import {
 	tasks as tasksApi,
 	type Task,
 	type TimelineEvent,
-	API_BASE,
 } from '@/lib/api'
 import {
-	User,
 	Mail,
 	Phone,
 	Calendar,
@@ -19,13 +17,13 @@ import {
 	ChevronRight,
 	ArrowLeft,
 	Clock,
-	ExternalLink,
 	ShieldCheck,
 	MapPin,
 	Info,
 	ListTodo,
 	CheckCircle2,
 	CirclePlay,
+	UserRound,
 	UserPlus,
 	StickyNote,
 	Share2,
@@ -34,6 +32,8 @@ import {
 	GitBranch,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { CrmAvatar, CrmSectionHeader, CrmEmptyState } from '@/components/crm/shared'
+import { EditCustomerModal } from '@/components/EditCustomerModal'
 
 const TASK_PRIORITY_LABEL: Record<string, string> = {
 	low: 'Rendah',
@@ -42,10 +42,10 @@ const TASK_PRIORITY_LABEL: Record<string, string> = {
 	urgent: 'Mendesak',
 }
 const TASK_PRIORITY_STYLE: Record<string, string> = {
-	low: 'bg-slate-100 text-slate-600',
-	medium: 'bg-sky-100 text-sky-700',
-	high: 'bg-amber-100 text-amber-700',
-	urgent: 'bg-red-100 text-red-700',
+	low: 'ocm-tag',
+	medium: 'ocm-tag',
+	high: 'ocm-tag ocm-tag-warning',
+	urgent: 'ocm-tag ocm-tag-danger',
 }
 const TASK_STATUS_LABEL: Record<string, string> = {
 	open: 'Belum dimulai',
@@ -58,7 +58,19 @@ const TASK_ACTION_LABEL: Record<string, string> = {
 	follow_up: 'Tindak lanjut',
 	qualify_lead: 'Kualifikasi lead',
 	handover_review: 'Tinjau handover',
+	prospect_followup: 'Prospek',
 	manual: 'Manual',
+}
+
+function formatDate(value?: string | null) {
+	if (!value) return '—'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '—'
+	return new Intl.DateTimeFormat('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+	}).format(date)
 }
 
 function formatTaskDue(value: string | null) {
@@ -114,13 +126,11 @@ function timelineIcon(type: string): LucideIcon {
 }
 
 const TIMELINE_TONE: Record<string, string> = {
-	default: 'bg-gray-100 text-gray-500',
-	info: 'bg-sky-100 text-sky-600',
-	success: 'bg-emerald-100 text-emerald-600',
-	warning: 'bg-amber-100 text-amber-600',
+	default: 'bg-muted text-muted-foreground',
+	info: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+	success: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+	warning: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
 }
-import PageHeader from '@/components/PageHeader'
-import { EditCustomerModal } from '@/components/EditCustomerModal'
 
 export const Route = createFileRoute('/_app/customers/$customerId')({
 	component: CustomerDetail,
@@ -155,6 +165,8 @@ interface Conversation {
 	inbox_name?: string
 }
 
+type CustomerTab = 'overview' | 'conversations' | 'tasks' | 'activity'
+
 function CustomerDetail() {
 	const { customerId } = Route.useParams()
 	const navigate = useNavigate()
@@ -165,9 +177,7 @@ function CustomerDetail() {
 	const [taskBusy, setTaskBusy] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
-	const [activeTab, setActiveTab] = useState<
-		'overview' | 'conversations' | 'tasks' | 'activity'
-	>('overview')
+	const [activeTab, setActiveTab] = useState<CustomerTab>('overview')
 	const [showEditModal, setShowEditModal] = useState(false)
 	const [returnToConversationId, setReturnToConversationId] = useState<
 		string | null
@@ -190,21 +200,21 @@ function CustomerDetail() {
 				contactConversations.list(customerId),
 				tasksApi.list({ contactId: customerId, limit: 50 }).catch(() => ({ data: [] })),
 				customers.timeline(customerId).catch(() => ({ payload: [] })),
-				])
+			])
 
-				setCustomer(customerRes.payload)
-				setConversations(
-					Array.isArray(convsRes?.payload)
-						? convsRes.payload
-						: Array.isArray(convsRes?.data)
-							? convsRes.data
-							: [],
-				)
-				setContactTasks(Array.isArray(tasksRes?.data) ? tasksRes.data : [])
-				setTimeline(Array.isArray(timelineRes?.payload) ? timelineRes.payload : [])
-			} catch (error: any) {
-				console.error('Failed to load customer details:', error)
-				setError(error.message || 'Failed to load data')
+			setCustomer(customerRes.payload)
+			setConversations(
+				Array.isArray(convsRes?.payload)
+					? convsRes.payload
+					: Array.isArray(convsRes?.data)
+						? convsRes.data
+						: [],
+			)
+			setContactTasks(Array.isArray(tasksRes?.data) ? tasksRes.data : [])
+			setTimeline(Array.isArray(timelineRes?.payload) ? timelineRes.payload : [])
+		} catch (error: any) {
+			console.error('Failed to load customer details:', error)
+			setError(error.message || 'Failed to load data')
 		} finally {
 			setLoading(false)
 		}
@@ -235,37 +245,37 @@ function CustomerDetail() {
 
 	if (loading) {
 		return (
-			<div className="flex-1 flex items-center justify-center bg-gray-50/50">
+			<main className="ocm-page items-center justify-center">
 				<div className="flex flex-col items-center gap-3">
-					<div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-					<p className="text-gray-500 font-medium animate-pulse">
-						Loading profile...
+					<div className="size-9 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+					<p className="text-sm font-medium text-muted-foreground">
+						Memuat profil…
 					</p>
 				</div>
-			</div>
+			</main>
 		)
 	}
 
 	if (!customer) {
 		return (
-			<div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
-				<div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-					<User className="text-gray-400" size={40} />
-				</div>
-				<h2 className="text-2xl font-bold text-gray-900 mb-2">
-					Customer Not Found
-				</h2>
-				<p className="text-gray-500 mb-8 max-w-sm">
-					{error ||
-						"The contact you are looking for might have been removed or you don't have permission to view it."}
-				</p>
-				<button
-					onClick={() => navigate({ to: '/customers' })}
-					className="px-6 py-2.5 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
-				>
-					Back to List
-				</button>
-			</div>
+			<main className="ocm-page">
+				<CrmEmptyState
+					title="Customer tidak ditemukan"
+					description={
+						error ||
+						'Kontak yang kamu cari mungkin sudah dihapus atau kamu tidak punya akses.'
+					}
+					action={
+						<button
+							type="button"
+							className="ocm-btn ocm-btn-primary"
+							onClick={() => navigate({ to: '/customers' })}
+						>
+							Kembali ke daftar
+						</button>
+					}
+				/>
+			</main>
 		)
 	}
 
@@ -283,24 +293,30 @@ function CustomerDetail() {
 		([key, value]) => !reservedAttributeKeys.has(key) && value !== null && value !== '',
 	)
 
+	const TAB_OPTIONS: Array<{ value: CustomerTab; label: string }> = [
+		{ value: 'overview', label: 'Ringkasan' },
+		{ value: 'conversations', label: 'Percakapan' },
+		{
+			value: 'tasks',
+			label: `Tugas${contactTasks.length > 0 ? ` (${contactTasks.length})` : ''}`,
+		},
+		{
+			value: 'activity',
+			label: `Aktivitas${timeline.length > 0 ? ` (${timeline.length})` : ''}`,
+		},
+	]
+
 	return (
-		<main className="flex-1 flex flex-col h-full bg-gray-50/30 overflow-hidden">
-			<PageHeader
+		<main className="ocm-page space-y-5">
+			<CrmSectionHeader
 				title={customer.name}
-				description={`Customer from ${customer.source || 'Direct'} • Created ${new Date(customer.created_at!).toLocaleDateString()}`}
-				icon={<User size={24} />}
-				backButton={
-					returnToConversationId
-						? undefined
-						: {
-								to: '/customers',
-								label: 'Back to Customers',
-							}
-				}
+				subtitle={`Dari ${customer.source || 'Direct'} • Bergabung ${formatDate(customer.created_at)}`}
 				actions={
-					<div className="flex items-center gap-3">
-						{returnToConversationId && (
+					<>
+						{returnToConversationId ? (
 							<button
+								type="button"
+								className="ocm-btn ocm-btn-primary"
 								onClick={() => {
 									sessionStorage.removeItem('returnToConversationId')
 									navigate({
@@ -308,209 +324,163 @@ function CustomerDetail() {
 										search: { conversation_id: returnToConversationId },
 									})
 								}}
-								className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all shadow-sm flex items-center gap-2"
 							>
-								<ArrowLeft size={16} />
-								Back to Chat
+								<ArrowLeft size={14} /> Kembali ke Chat
 							</button>
+						) : (
+							<Link to="/customers" className="ocm-btn">
+								<ArrowLeft size={14} /> Pelanggan
+							</Link>
 						)}
 						<button
+							type="button"
+							className="ocm-btn"
 							onClick={() => setShowEditModal(true)}
-							className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm flex items-center gap-2"
 						>
-							Edit Profile
+							Edit Profil
 						</button>
-					</div>
+					</>
 				}
 			/>
 
-			<div className="flex-1 flex flex-col px-4 lg:px-8 pb-8 overflow-hidden">
-				{/* Profile Card Header */}
-				<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
-					<div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center">
-						<div className="shrink-0">
-							{customer.avatar_url ? (
-								<img
-									src={customer.avatar_url}
-									className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-xl"
-								/>
-							) : (
-								<div className="w-24 h-24 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 text-3xl font-black border-4 border-white shadow-xl uppercase">
-									{(customer.name || 'U').charAt(0)}
-								</div>
-							)}
-						</div>
+			{/* Profile header card */}
+			<section className="ocm-card p-5">
+				<div className="flex flex-col gap-5 lg:flex-row lg:items-center">
+					<CrmAvatar
+						name={customer.name}
+						imageUrl={customer.avatar_url}
+						size={72}
+						online={customer.is_window_active}
+					/>
 
-						<div className="flex-1">
-							<div className="flex flex-wrap items-center gap-3 mb-2">
-								<h2 className="text-2xl font-black text-gray-900">
-									{customer.name}
-								</h2>
-								{customer.pipeline_stage_name && (
-									<span
-										className="px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider"
-										style={{
-											backgroundColor: `${customer.pipeline_stage_color}10`,
-											color: customer.pipeline_stage_color,
-											borderColor: `${customer.pipeline_stage_color}30`,
-										}}
-									>
-										{customer.pipeline_stage_name}
-									</span>
-								)}
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center gap-2">
+							<h2 className="text-xl font-bold">{customer.name}</h2>
+							{customer.pipeline_stage_name ? (
 								<span
-									className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-										customer.is_window_active
-											? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-											: 'bg-gray-50 text-gray-400 border-gray-100'
-									}`}
+									className="rounded-full border px-2.5 py-0.5 text-[11px] font-semibold"
+									style={{
+										backgroundColor: `${customer.pipeline_stage_color}1a`,
+										color: customer.pipeline_stage_color || undefined,
+										borderColor: `${customer.pipeline_stage_color}40`,
+									}}
 								>
-									{customer.is_window_active
-										? '● Window Active'
-										: '○ Window Expired'}
+									{customer.pipeline_stage_name}
 								</span>
-							</div>
-
-							<div className="flex flex-wrap gap-4 text-sm text-gray-500 font-medium">
-								<div className="flex items-center gap-1.5 hover:text-emerald-600 transition-colors">
-									<Mail size={16} />
-									{customer.email || 'No email'}
-								</div>
-								<div className="flex items-center gap-1.5 hover:text-emerald-600 transition-colors">
-									<Phone size={16} />
-									{customer.phone_number || 'No phone'}
-								</div>
-								<div className="flex items-center gap-1.5">
-									<Calendar size={16} />
-									Joined{' '}
-									{new Date(customer.created_at!).toLocaleDateString('en-US', {
-										month: 'short',
-										day: 'numeric',
-										year: 'numeric',
-									})}
-								</div>
-							</div>
+							) : null}
+							<span
+								className={`ocm-tag ${customer.is_window_active ? 'ocm-tag-success' : ''}`}
+							>
+								{customer.is_window_active
+									? '● Window aktif'
+									: '○ Window tertutup'}
+							</span>
 						</div>
 
-						<div className="flex gap-2 shrink-0">
-							<div className="text-center px-6 py-3 bg-gray-50 rounded-2xl border border-gray-100/50">
-								<div className="text-2xl font-black text-gray-900">
-									{customer.message_count || 0}
-								</div>
-								<div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-									Messages
-								</div>
+						<div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+							<span className="inline-flex items-center gap-1.5">
+								<Mail size={14} /> {customer.email || 'Tanpa email'}
+							</span>
+							<span className="inline-flex items-center gap-1.5">
+								<Phone size={14} /> {customer.phone_number || 'Tanpa telepon'}
+							</span>
+							<span className="inline-flex items-center gap-1.5">
+								<Calendar size={14} /> Bergabung {formatDate(customer.created_at)}
+							</span>
+						</div>
+					</div>
+
+					<div className="flex gap-2">
+						<div className="rounded-xl border border-border bg-muted/40 px-5 py-3 text-center">
+							<div className="text-2xl font-bold leading-none">
+								{customer.message_count || 0}
 							</div>
-							<div className="text-center px-6 py-3 bg-emerald-50 rounded-2xl border border-emerald-100/50">
-								<div className="text-2xl font-black text-emerald-700">
-									{customer.lead_score || 0}
-								</div>
-								<div className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-									Lead Score
-								</div>
+							<div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+								Pesan
+							</div>
+						</div>
+						<div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-3 text-center">
+							<div className="text-2xl font-bold leading-none text-emerald-600 dark:text-emerald-400">
+								{customer.lead_score || 0}
+							</div>
+							<div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-emerald-600/80 dark:text-emerald-400/80">
+								Lead Score
 							</div>
 						</div>
 					</div>
 				</div>
+			</section>
 
-				{/* Tabs */}
-				<div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-gray-200 w-fit mb-6 shadow-sm">
-					<button
-						onClick={() => setActiveTab('overview')}
-						className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-							activeTab === 'overview'
-								? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-								: 'text-gray-500 hover:bg-gray-50'
-						}`}
-					>
-						Overview
-					</button>
-					<button
-						onClick={() => setActiveTab('conversations')}
-						className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-							activeTab === 'conversations'
-								? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-								: 'text-gray-500 hover:bg-gray-50'
-						}`}
-					>
-						Conversations
-					</button>
-					<button
-						onClick={() => setActiveTab('tasks')}
-						className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-							activeTab === 'tasks'
-								? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-								: 'text-gray-500 hover:bg-gray-50'
-						}`}
-					>
-						Tugas{contactTasks.length > 0 ? ` (${contactTasks.length})` : ''}
-					</button>
-					<button
-						onClick={() => setActiveTab('activity')}
-						className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-							activeTab === 'activity'
-								? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-								: 'text-gray-500 hover:bg-gray-50'
-						}`}
-					>
-						Aktivitas{timeline.length > 0 ? ` (${timeline.length})` : ''}
-					</button>
+			{/* Tabs */}
+			<section className="ocm-card overflow-hidden">
+				<div className="flex items-center gap-1 overflow-x-auto border-b border-border p-2">
+					{TAB_OPTIONS.map((option) => (
+						<button
+							key={option.value}
+							type="button"
+							onClick={() => setActiveTab(option.value)}
+							className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+								activeTab === option.value
+									? 'bg-primary/15 text-primary'
+									: 'text-muted-foreground hover:text-foreground'
+							}`}
+						>
+							{option.label}
+						</button>
+					))}
 				</div>
 
-				{/* Tab Content */}
-				<div className="flex-1 overflow-y-auto">
+				<div className="p-4">
 					{activeTab === 'overview' && (
-						<div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-2 duration-300">
-							{/* Left Column: Details */}
-							<div className="lg:col-span-2 space-y-6">
-								<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-									<div className="px-6 py-4 border-b border-gray-50 bg-gray-50/30">
-										<h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-											<Info size={16} className="text-emerald-500" />
-											About Customer
-										</h3>
+						<div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+							<div className="space-y-4 lg:col-span-2">
+								<div className="ocm-card">
+									<div className="ocm-card-header">
+										<span className="ocm-card-title inline-flex items-center gap-2">
+											<Info size={14} className="text-primary" /> Tentang Customer
+										</span>
 									</div>
-									<div className='p-6'>
+									<div className="ocm-card-body">
 										{customer.notes ? (
-											<p className="text-gray-600 leading-relaxed whitespace-pre-wrap">
+											<p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
 												{customer.notes}
 											</p>
 										) : (
-											<div className="text-gray-400 italic text-sm py-4">
-												No internal notes added yet. Use the edit button to add
-												customer background or context.
-											</div>
+											<p className="text-sm italic text-muted-foreground">
+												Belum ada catatan internal. Gunakan tombol Edit Profil
+												untuk menambah konteks customer.
+											</p>
 										)}
 									</div>
 								</div>
 
-								<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-									<div className="px-6 py-4 border-b border-gray-50 bg-gray-50/30">
-										<h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-											<ShieldCheck size={16} className="text-emerald-500" />
-											Compliance & Data
-										</h3>
+								<div className="ocm-card">
+									<div className="ocm-card-header">
+										<span className="ocm-card-title inline-flex items-center gap-2">
+											<ShieldCheck size={14} className="text-primary" /> Kepatuhan
+											& Data
+										</span>
 									</div>
-									<div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+									<div className="ocm-card-body grid grid-cols-1 gap-6 md:grid-cols-2">
 										<div>
-											<div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-												Consent Status
+											<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+												Status Consent
 											</div>
 											<div className="flex items-center gap-2">
 												<span
-													className={`w-3 h-3 rounded-full ${customer.consent_status === 'granted' ? 'bg-emerald-500' : 'bg-gray-300'}`}
+													className={`size-2.5 rounded-full ${customer.consent_status === 'granted' ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
 												/>
-												<span className="font-bold text-gray-900 capitalize">
-													{customer.consent_status || 'Unknown'}
+												<span className="font-semibold capitalize">
+													{customer.consent_status || 'Tidak diketahui'}
 												</span>
 											</div>
 										</div>
 										<div>
-											<div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
-												Data Source
+											<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+												Sumber Data
 											</div>
-											<div className="font-bold text-gray-900 capitalize flex items-center gap-1.5">
-												<MapPin size={14} className="text-gray-400" />
+											<div className="inline-flex items-center gap-1.5 font-semibold capitalize">
+												<MapPin size={14} className="text-muted-foreground" />
 												{customer.source || 'Direct Entry'}
 											</div>
 										</div>
@@ -518,24 +488,24 @@ function CustomerDetail() {
 								</div>
 
 								{additionalFields.length > 0 && (
-									<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-										<div className="px-6 py-4 border-b border-gray-50 bg-gray-50/30">
-											<h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-												<Info size={16} className="text-emerald-500" />
-												Additional Fields
-											</h3>
+									<div className="ocm-card">
+										<div className="ocm-card-header">
+											<span className="ocm-card-title inline-flex items-center gap-2">
+												<Info size={14} className="text-primary" /> Field
+												Tambahan
+											</span>
 										</div>
-										<div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+										<div className="ocm-card-body grid grid-cols-1 gap-4 md:grid-cols-2">
 											{additionalFields.map(([key, value]) => (
 												<div key={key}>
-													<div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
+													<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
 														{key.replace(/_/g, ' ')}
 													</div>
-													<div className="font-medium text-gray-800 break-words">
+													<div className="break-words text-sm font-medium">
 														{typeof value === 'boolean'
 															? value
-																? 'Yes'
-																: 'No'
+																? 'Ya'
+																: 'Tidak'
 															: String(value)}
 													</div>
 												</div>
@@ -545,62 +515,37 @@ function CustomerDetail() {
 								)}
 							</div>
 
-							{/* Right Column: Sidebar info */}
-							<div className="space-y-6">
-								<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-									<h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-										<Tag size={16} className="text-emerald-500" />
-										Customer Tags
-									</h3>
-									<div className="flex flex-wrap gap-2">
+							<div className="space-y-4">
+								<div className="ocm-card">
+									<div className="ocm-card-header">
+										<span className="ocm-card-title inline-flex items-center gap-2">
+											<Tag size={14} className="text-primary" /> Tag Customer
+										</span>
+									</div>
+									<div className="ocm-card-body flex flex-wrap gap-2">
 										{customer.tags && customer.tags.length > 0 ? (
 											customer.tags.map((tag) => (
-												<div
+												<span
 													key={tag.id}
-													className="px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-2 transition-all hover:scale-105"
+													className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold"
 													style={{
-														borderColor: '${tag.color}30',
-														backgroundColor: '${tag.color}10',
+														borderColor: `${tag.color}40`,
+														backgroundColor: `${tag.color}1a`,
 														color: tag.color,
 													}}
 												>
-													<div
-														className='w-1.5 h-1.5 rounded-full'
+													<span
+														className="size-1.5 rounded-full"
 														style={{ backgroundColor: tag.color }}
 													/>
 													{tag.name}
-												</div>
+												</span>
 											))
 										) : (
-											<div className="text-sm text-gray-400 italic py-2">
-												No tags assigned.
-											</div>
+											<span className="text-sm italic text-muted-foreground">
+												Belum ada tag.
+											</span>
 										)}
-									</div>
-								</div>
-
-								<div className="bg-emerald-950 rounded-2xl p-6 text-white shadow-xl shadow-emerald-950/20 relative overflow-hidden group">
-									<div className="absolute -right-4 -bottom-4 opacity-10 blur-xl w-32 h-32 bg-emerald-400 rounded-full group-hover:scale-150 transition-transform duration-1000" />
-									<h3 className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-4">
-										Quick Insights
-									</h3>
-									<div className="space-y-4 relative z-10">
-										<div>
-											<div className="text-[10px] text-emerald-500 font-black uppercase mb-1">
-												Loyalty Tier
-											</div>
-											<div className="text-lg font-black">
-												{customer.message_count! > 50
-													? '💎 VIP Member'
-													: '⭐ Standard Customer'}
-											</div>
-										</div>
-										<div className="pt-4 border-t border-emerald-900">
-											<p className="text-xs text-emerald-400 italic">
-												"Client often asks about pricing and availability.
-												Responds well to template messages."
-											</p>
-										</div>
 									</div>
 								</div>
 							</div>
@@ -608,118 +553,88 @@ function CustomerDetail() {
 					)}
 
 					{activeTab === 'conversations' && (
-						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
-							<div className="overflow-x-auto">
-								<table className="w-full text-left text-sm">
-									<thead className="bg-gray-50/50 border-b border-gray-100">
-										<tr>
-											<th className="px-6 py-4 font-black text-gray-500 uppercase text-[10px] tracking-widest">
-												Inbox / Channel
-											</th>
-											<th className="px-6 py-4 font-black text-gray-500 uppercase text-[10px] tracking-widest">
-												Last Message
-											</th>
-											<th className="px-6 py-4 font-black text-gray-500 uppercase text-[10px] tracking-widest">
-												Date
-											</th>
-											<th className="px-6 py-4 font-black text-gray-500 uppercase text-[10px] tracking-widest">
-												Status
-											</th>
-											<th className='px-6 py-4'></th>
-										</tr>
-									</thead>
-									<tbody className="divide-y divide-gray-50">
-										{conversations.length === 0 ? (
-											<tr>
-												<td
-													colSpan={5}
-													className="px-6 py-12 text-center text-gray-400 italic"
-												>
-													No conversations history found.
-												</td>
-											</tr>
-										) : (
-											conversations.map((conv) => (
-												<tr
-													key={conv.id}
-													className="hover:bg-gray-50/30 transition-colors group"
-												>
-													<td className='px-6 py-4'>
-														<div className='flex items-center gap-3'>
-															<div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-																<MessageSquare
-																	size={16}
-																	className='text-gray-500'
-																/>
-															</div>
-															<div>
-																<div className='font-bold text-gray-900'>
-																	{conv.inbox_name || 'Direct Channel'}
-																</div>
-																<div className="text-[10px] text-gray-400 uppercase font-black">
-																	{conv.channel_type}
-																</div>
-															</div>
-														</div>
-													</td>
-													<td className='px-6 py-4'>
-														<div className="text-gray-600 line-clamp-1 max-w-xs">
-															{conv.last_message || 'No content'}
-														</div>
-													</td>
-													<td className="px-6 py-4 text-gray-400 text-xs font-medium">
-														{conv.last_message_at
-															? new Date(
-																	conv.last_message_at,
-																).toLocaleDateString()
-															: 'N/A'}
-													</td>
-													<td className='px-6 py-4'>
-														<span
-															className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-																conv.status === 'open'
-																	? 'bg-blue-50 text-blue-600 border-blue-100'
-																	: 'bg-gray-50 text-gray-400 border-gray-100'
-															}`}
-														>
-															{conv.status}
-														</span>
-													</td>
-													<td className='px-6 py-4 text-right'>
-														<Link
-															to="/chat"
-															search={{ conversation_id: conv.id }}
-															className="text-emerald-500 opacity-0 group-hover:opacity-100 transition-all font-bold text-xs flex items-center gap-1 justify-end"
-														>
-															Go to Chat <ChevronRight size={14} />
-														</Link>
-													</td>
+						<>
+							{conversations.length === 0 ? (
+								<CrmEmptyState
+									title="Belum ada percakapan"
+									description="Riwayat percakapan customer ini akan muncul di sini."
+								/>
+							) : (
+								<div className="ocm-card overflow-hidden">
+									<div className="overflow-x-auto">
+										<table className="ocm-table">
+											<thead>
+												<tr>
+													<th>Inbox / Channel</th>
+													<th>Pesan Terakhir</th>
+													<th>Tanggal</th>
+													<th>Status</th>
+													<th />
 												</tr>
-											))
-										)}
-									</tbody>
-								</table>
-							</div>
-						</div>
+											</thead>
+											<tbody>
+												{conversations.map((conv) => (
+													<tr key={conv.id} className="group">
+														<td>
+															<div className="flex items-center gap-3">
+																<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+																	<MessageSquare size={15} />
+																</span>
+																<div>
+																	<div className="font-semibold">
+																		{conv.inbox_name || 'Direct Channel'}
+																	</div>
+																	<div className="text-[10px] font-semibold uppercase text-muted-foreground">
+																		{conv.channel_type}
+																	</div>
+																</div>
+															</div>
+														</td>
+														<td>
+															<div className="line-clamp-1 max-w-xs text-muted-foreground">
+																{conv.last_message || 'Tanpa isi'}
+															</div>
+														</td>
+														<td className="text-muted-foreground">
+															{conv.last_message_at
+																? formatDate(conv.last_message_at)
+																: '—'}
+														</td>
+														<td>
+															<span
+																className={`ocm-tag ${conv.status === 'open' ? 'ocm-tag-success' : ''}`}
+															>
+																{conv.status}
+															</span>
+														</td>
+														<td className="text-right">
+															<Link
+																to="/chat"
+																search={{ conversation_id: conv.id }}
+																className="inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100"
+															>
+																Buka Chat <ChevronRight size={13} />
+															</Link>
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							)}
+						</>
 					)}
 
 					{activeTab === 'tasks' && (
-						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+						<>
 							{contactTasks.length === 0 ? (
-								<div className="flex flex-col items-center justify-center py-12 text-center">
-									<div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-										<ListTodo className="text-gray-300" size={32} />
-									</div>
-									<h3 className="text-lg font-bold text-gray-900 mb-1">
-										Belum ada tugas
-									</h3>
-									<p className="text-sm text-gray-400 max-w-xs">
-										Tugas follow-up untuk pelanggan ini akan muncul di sini
-										setelah lead di-assign atau dianalisis.
-									</p>
-								</div>
+								<CrmEmptyState
+									title="Belum ada tugas"
+									description="Tugas follow-up untuk customer ini akan muncul di sini setelah lead di-assign atau dianalisis."
+								/>
 							) : (
-								<ul className="divide-y divide-gray-50">
+								<ul className="ocm-card divide-y divide-border overflow-hidden">
 									{contactTasks.map((task) => {
 										const isActive =
 											task.status === 'open' || task.status === 'in_progress'
@@ -727,29 +642,29 @@ function CustomerDetail() {
 										return (
 											<li
 												key={task.id}
-												className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center"
+												className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center"
 											>
 												<div className="min-w-0 flex-1">
 													<div className="mb-1 flex flex-wrap items-center gap-2">
 														<span
-															className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${TASK_PRIORITY_STYLE[task.priority] || ''}`}
+															className={TASK_PRIORITY_STYLE[task.priority] || 'ocm-tag'}
 														>
 															{TASK_PRIORITY_LABEL[task.priority] || task.priority}
 														</span>
-														<span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+														<span className="ocm-tag">
 															{TASK_ACTION_LABEL[task.actionKind] || task.actionKind}
 														</span>
-														<span className="text-[11px] text-gray-400">
+														<span className="text-[11px] text-muted-foreground">
 															{TASK_STATUS_LABEL[task.status] || task.status}
 														</span>
 													</div>
-													<p className="font-bold text-gray-900">{task.title}</p>
+													<p className="font-semibold">{task.title}</p>
 													{task.description ? (
-														<p className="mt-1 text-sm text-gray-500">
+														<p className="mt-1 text-sm text-muted-foreground">
 															{task.description}
 														</p>
 													) : null}
-													<div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
+													<div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
 														<Clock size={13} />
 														{formatTaskDue(task.dueAt)}
 													</div>
@@ -760,7 +675,7 @@ function CustomerDetail() {
 															type="button"
 															disabled={busy}
 															onClick={() => runTaskAction(task.id, 'start')}
-															className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+															className="ocm-btn disabled:opacity-50"
 														>
 															<CirclePlay size={14} /> Mulai
 														</button>
@@ -770,9 +685,9 @@ function CustomerDetail() {
 															type="button"
 															disabled={busy}
 															onClick={() => runTaskAction(task.id, 'complete')}
-															className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-600 disabled:opacity-50"
+															className="ocm-btn ocm-btn-primary disabled:opacity-50"
 														>
-															<CheckCircle2 size={14} /> {busy ? '...' : 'Selesai'}
+															<CheckCircle2 size={14} /> {busy ? '…' : 'Selesai'}
 														</button>
 													) : null}
 												</div>
@@ -781,26 +696,18 @@ function CustomerDetail() {
 									})}
 								</ul>
 							)}
-						</div>
+						</>
 					)}
 
 					{activeTab === 'activity' && (
-						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:p-8 animate-in slide-in-from-bottom-2 duration-300">
+						<>
 							{timeline.length === 0 ? (
-								<div className="flex flex-col items-center justify-center py-12 text-center">
-									<div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-										<Activity className="text-gray-300" size={32} />
-									</div>
-									<h3 className="text-lg font-bold text-gray-900 mb-1">
-										Belum ada aktivitas
-									</h3>
-									<p className="text-sm text-gray-400 max-w-xs">
-										Riwayat interaksi tim dengan lead ini — tugas, catatan,
-										handover, dan perubahan tahap — akan muncul di sini.
-									</p>
-								</div>
+								<CrmEmptyState
+									title="Belum ada aktivitas"
+									description="Riwayat interaksi tim dengan lead ini — tugas, catatan, handover, dan perubahan tahap — akan muncul di sini."
+								/>
 							) : (
-								<ol className="relative">
+								<ol className="relative px-1 py-1">
 									{timeline.map((event, index) => {
 										const Icon = timelineIcon(event.type)
 										const time = formatTimelineTime(event.at)
@@ -809,12 +716,12 @@ function CustomerDetail() {
 											<li key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
 												{!isLast && (
 													<span
-														className="absolute left-[19px] top-10 bottom-0 w-px bg-gray-100"
+														className="absolute bottom-0 left-[19px] top-10 w-px bg-border"
 														aria-hidden
 													/>
 												)}
 												<span
-													className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+													className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full ${
 														TIMELINE_TONE[event.tone] || TIMELINE_TONE.default
 													}`}
 												>
@@ -822,22 +729,22 @@ function CustomerDetail() {
 												</span>
 												<div className="min-w-0 flex-1 pt-1">
 													<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-														<p className="font-bold text-gray-900">{event.title}</p>
+														<p className="font-semibold">{event.title}</p>
 														<span
-															className="shrink-0 text-xs text-gray-400"
+															className="shrink-0 text-xs text-muted-foreground"
 															title={time.absolute}
 														>
 															{time.relative}
 														</span>
 													</div>
 													{event.description && (
-														<p className="mt-0.5 text-sm text-gray-500 break-words line-clamp-3">
+														<p className="mt-0.5 line-clamp-3 break-words text-sm text-muted-foreground">
 															{event.description}
 														</p>
 													)}
 													{event.actorName && (
-														<p className="mt-1 text-xs font-medium text-gray-400">
-															oleh {event.actorName}
+														<p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+															<UserRound size={12} /> {event.actorName}
 														</p>
 													)}
 												</div>
@@ -846,10 +753,10 @@ function CustomerDetail() {
 									})}
 								</ol>
 							)}
-						</div>
+						</>
 					)}
 				</div>
-			</div>
+			</section>
 
 			{showEditModal && (
 				<EditCustomerModal
