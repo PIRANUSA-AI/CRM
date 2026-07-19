@@ -674,6 +674,23 @@ export interface TeamMember {
 	joined_at: string
 }
 
+// Shape actually returned by GET /teams: each membership row carries a nested
+// user summary. Kept alongside the richer Team/TeamMember types above.
+export interface TeamMembershipRow {
+	team_id: string
+	user_id: string
+	users?: { id: string; name: string | null; avatar_url: string | null } | null
+}
+
+export interface TeamWithMembers {
+	id: string
+	name: string
+	description?: string | null
+	allow_auto_assign?: boolean
+	created_at?: string
+	team_members?: TeamMembershipRow[]
+}
+
 export const teams = {
 	list: () =>
 		treatyApi.api.teams.get().then((response) => {
