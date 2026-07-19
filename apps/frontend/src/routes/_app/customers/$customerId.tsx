@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react'
 import {
 	customers,
 	contactConversations,
+	opportunities as opportunitiesApi,
 	tasks as tasksApi,
 	type Task,
 	type TimelineEvent,
 } from '@/lib/api'
+import { toast } from 'sonner'
 import {
 	Mail,
 	Phone,
@@ -23,6 +25,7 @@ import {
 	ListTodo,
 	CheckCircle2,
 	CirclePlay,
+	Target,
 	UserRound,
 	UserPlus,
 	StickyNote,
@@ -230,6 +233,26 @@ function CustomerDetail() {
 		}
 	}
 
+	const [promoting, setPromoting] = useState(false)
+	const promoteToOpportunity = async () => {
+		if (!customer) return
+		setPromoting(true)
+		try {
+			await opportunitiesApi.create({
+				contactId: customer.id,
+				name: customer.name,
+				product:
+					(customer.custom_attributes?.product_interest as string) || undefined,
+			})
+			toast.success('Lead dijadikan opportunity')
+			navigate({ to: '/opportunity' })
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal membuat opportunity')
+		} finally {
+			setPromoting(false)
+		}
+	}
+
 	const runTaskAction = async (taskId: string, action: 'start' | 'complete') => {
 		setTaskBusy(taskId)
 		try {
@@ -332,6 +355,14 @@ function CustomerDetail() {
 								<ArrowLeft size={14} /> Pelanggan
 							</Link>
 						)}
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => void promoteToOpportunity()}
+							disabled={promoting}
+						>
+							<Target size={14} /> Jadikan Opportunity
+						</button>
 						<button
 							type="button"
 							className="ocm-btn"

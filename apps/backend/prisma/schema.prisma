@@ -2445,6 +2445,35 @@ model task_events {
   @@index([event_type], map: "idx_task_events_type")
 }
 
+// A qualified deal, distinct from a raw lead (contacts). Opportunities are the
+// "serious/buying" leads worked as deals. Kept as a standalone table (no FK
+// relations, mirroring tasks) linking back to a contact by id.
+model opportunities {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id     String    @db.Uuid
+  contact_id String?   @db.Uuid
+  owner_id   String?   @db.Uuid
+  team_id    String?   @db.Uuid
+
+  name       String    @db.VarChar(255)
+  product    String?   @db.VarChar(120)
+  value      Decimal?  @db.Decimal(16, 2)
+  currency   String    @default("IDR") @db.VarChar(8)
+  status     String    @default("open") @db.VarChar(20)
+  stage      String?   @db.VarChar(60)
+  source     String    @default("manual") @db.VarChar(40)
+  notes      String?
+
+  created_by String?   @db.Uuid
+  closed_at  DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([app_id, status], map: "idx_opportunities_app_status")
+  @@index([app_id, owner_id], map: "idx_opportunities_owner")
+  @@index([contact_id], map: "idx_opportunities_contact")
+}
+
 model import_jobs {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   app_id        String    @db.Uuid

@@ -32,6 +32,7 @@ import {
 	message,
 	metrics,
 	notifications,
+	opportunities,
 	orchestration,
 	personalWhatsappInbox,
 	salesProfiles,
@@ -134,6 +135,7 @@ export const app = new Elysia()
 			.use(message)
 			.use(contact)
 			.use(customer)
+			.use(opportunities)
 				.group('/whatsapp-channels', (app) => app.use(whatsapp))
 				.group('/waba', (app) => app.use(waba))
 				.use(webhook)
@@ -300,6 +302,7 @@ export const app = new Elysia()
 			.use(message)
 			.use(contact)
 			.use(customer)
+			.use(opportunities)
 				.group('/whatsapp-channels', (app) => app.use(whatsapp))
 				.group('/waba', (app) => app.use(waba))
 				.use(webhook)

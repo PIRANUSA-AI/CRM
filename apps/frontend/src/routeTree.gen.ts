@@ -22,6 +22,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSalesProfilesRouteImport } from './routes/_app/sales-profiles'
 import { Route as AppProspekRouteImport } from './routes/_app/prospek'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
+import { Route as AppOpportunityRouteImport } from './routes/_app/opportunity'
 import { Route as AppNotifikasiRouteImport } from './routes/_app/notifikasi'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
@@ -123,6 +124,11 @@ const AppProspekRoute = AppProspekRouteImport.update({
 const AppPipelineRoute = AppPipelineRouteImport.update({
   id: '/pipeline',
   path: '/pipeline',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOpportunityRoute = AppOpportunityRouteImport.update({
+  id: '/opportunity',
+  path: '/opportunity',
   getParentRoute: () => AppRoute,
 } as any)
 const AppNotifikasiRoute = AppNotifikasiRouteImport.update({
@@ -344,6 +350,7 @@ export interface FileRoutesByFullPath {
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
+  '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
@@ -396,6 +403,7 @@ export interface FileRoutesByTo {
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
+  '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
@@ -450,6 +458,7 @@ export interface FileRoutesById {
   '/_app/knowledge': typeof AppKnowledgeRoute
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/notifikasi': typeof AppNotifikasiRoute
+  '/_app/opportunity': typeof AppOpportunityRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/prospek': typeof AppProspekRoute
   '/_app/sales-profiles': typeof AppSalesProfilesRoute
@@ -504,6 +513,7 @@ export interface FileRouteTypes {
     | '/knowledge'
     | '/metrics'
     | '/notifikasi'
+    | '/opportunity'
     | '/pipeline'
     | '/prospek'
     | '/sales-profiles'
@@ -556,6 +566,7 @@ export interface FileRouteTypes {
     | '/knowledge'
     | '/metrics'
     | '/notifikasi'
+    | '/opportunity'
     | '/pipeline'
     | '/prospek'
     | '/sales-profiles'
@@ -609,6 +620,7 @@ export interface FileRouteTypes {
     | '/_app/knowledge'
     | '/_app/metrics'
     | '/_app/notifikasi'
+    | '/_app/opportunity'
     | '/_app/pipeline'
     | '/_app/prospek'
     | '/_app/sales-profiles'
@@ -741,6 +753,13 @@ declare module '@tanstack/react-router' {
       path: '/pipeline'
       fullPath: '/pipeline'
       preLoaderRoute: typeof AppPipelineRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/opportunity': {
+      id: '/_app/opportunity'
+      path: '/opportunity'
+      fullPath: '/opportunity'
+      preLoaderRoute: typeof AppOpportunityRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/notifikasi': {
@@ -1079,6 +1098,7 @@ interface AppRouteChildren {
   AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppMetricsRoute: typeof AppMetricsRoute
   AppNotifikasiRoute: typeof AppNotifikasiRoute
+  AppOpportunityRoute: typeof AppOpportunityRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspekRoute: typeof AppProspekRoute
   AppSalesProfilesRoute: typeof AppSalesProfilesRoute
@@ -1120,6 +1140,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppKnowledgeRoute: AppKnowledgeRoute,
   AppMetricsRoute: AppMetricsRoute,
   AppNotifikasiRoute: AppNotifikasiRoute,
+  AppOpportunityRoute: AppOpportunityRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspekRoute: AppProspekRoute,
   AppSalesProfilesRoute: AppSalesProfilesRoute,

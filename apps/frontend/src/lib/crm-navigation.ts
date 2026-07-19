@@ -17,6 +17,7 @@ import {
 	Plug,
 	Radio,
 	Settings,
+	Target,
 	Upload,
 	UserCog,
 	UserPlus,
@@ -85,6 +86,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/customers',
 		group: 'data',
 		icon: Users,
+	},
+	{
+		id: 'opportunity',
+		label: 'Opportunity',
+		path: '/opportunity',
+		group: 'data',
+		icon: Target,
 	},
 	{
 		// Visible only to ceo/leader: getAllowedPrimaryPathsForRole() (role-access.ts)

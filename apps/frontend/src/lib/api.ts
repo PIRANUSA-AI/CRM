@@ -1514,6 +1514,89 @@ export const customers = {
 
 }
 
+// Opportunities — qualified deals, distinct from raw leads (customers).
+export type OpportunityStatus = 'open' | 'won' | 'lost'
+
+export interface Opportunity {
+	id: string
+	contactId: string | null
+	contactName: string | null
+	ownerId: string | null
+	ownerName: string | null
+	teamId: string | null
+	teamName: string | null
+	name: string
+	product: string | null
+	value: number | null
+	currency: string
+	status: OpportunityStatus | string
+	stage: string | null
+	source: string
+	notes: string | null
+	closedAt: string | null
+	createdAt: string | null
+	updatedAt: string | null
+}
+
+export interface OpportunityStats {
+	open: { count: number; value: number }
+	won: { count: number; value: number }
+	lost: { count: number; value: number }
+}
+
+export interface OpportunityInput {
+	contactId?: string | null
+	name: string
+	product?: string | null
+	value?: number | null
+	ownerId?: string | null
+	stage?: string | null
+	status?: string
+	notes?: string | null
+}
+
+export const opportunities = {
+	list: (params?: {
+		status?: string
+		ownerId?: string
+		contactId?: string
+		search?: string
+		limit?: number
+		offset?: number
+	}): Promise<{ success: boolean; payload: Opportunity[] }> => {
+		const query = new URLSearchParams()
+		for (const [key, value] of Object.entries(params || {})) {
+			if (value === undefined || value === null || value === '') continue
+			query.set(key, String(value))
+		}
+		const qs = query.toString()
+		return apiRequest(`/opportunities${qs ? `?${qs}` : ''}`)
+	},
+
+	stats: (): Promise<{ success: boolean; payload: OpportunityStats }> =>
+		apiRequest('/opportunities/stats'),
+
+	get: (id: string): Promise<{ success: boolean; payload: Opportunity }> =>
+		apiRequest(`/opportunities/${id}`),
+
+	create: (
+		data: OpportunityInput,
+	): Promise<{ success: boolean; payload: Opportunity }> =>
+		apiRequest('/opportunities', { method: 'POST', body: JSON.stringify(data) }),
+
+	update: (
+		id: string,
+		data: Partial<OpportunityInput>,
+	): Promise<{ success: boolean; payload: Opportunity }> =>
+		apiRequest(`/opportunities/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(data),
+		}),
+
+	remove: (id: string): Promise<{ success: boolean }> =>
+		apiRequest(`/opportunities/${id}`, { method: 'DELETE' }),
+}
+
 // Inboxes (Omnichannel)
 export const inboxes = {
 	list: () => treatyApi.api.inboxes.get().then(unwrapTreatyResponse),
