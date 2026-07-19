@@ -28,14 +28,14 @@ export const Route = createFileRoute('/_app/opportunity')({
 const STATUS_TABS: Array<{ value: string; label: string }> = [
 	{ value: 'all', label: 'Semua' },
 	{ value: 'open', label: 'Berjalan' },
-	{ value: 'won', label: 'Menang' },
-	{ value: 'lost', label: 'Kalah' },
+	{ value: 'won', label: 'Closing' },
+	{ value: 'lost', label: 'Batal' },
 ]
 
 const STATUS_META: Record<string, { label: string; tone: string }> = {
 	open: { label: 'Berjalan', tone: 'ocm-tag' },
-	won: { label: 'Menang', tone: 'ocm-tag ocm-tag-success' },
-	lost: { label: 'Kalah', tone: 'ocm-tag ocm-tag-danger' },
+	won: { label: 'Closing', tone: 'ocm-tag ocm-tag-success' },
+	lost: { label: 'Batal', tone: 'ocm-tag ocm-tag-danger' },
 }
 
 function formatIDR(value: number | null): string {
@@ -166,13 +166,13 @@ function OpportunityPage() {
 					icon={<Target size={16} className="text-sky-500" />}
 				/>
 				<CrmStatCard
-					label="Menang"
+					label="Closing"
 					value={String(stats?.won.count ?? 0)}
 					subtitle={formatIDR(stats?.won.value ?? 0)}
 					icon={<CheckCircle2 size={16} className="text-emerald-500" />}
 				/>
 				<CrmStatCard
-					label="Kalah"
+					label="Batal"
 					value={String(stats?.lost.count ?? 0)}
 					subtitle={formatIDR(stats?.lost.value ?? 0)}
 					icon={<XCircle size={16} className="text-red-500" />}
@@ -308,7 +308,7 @@ function OpportunityPage() {
 														<button
 															type="button"
 															className="ocm-btn h-8 px-2"
-															title="Tandai menang"
+															title="Tandai closing"
 															disabled={rowBusy}
 															onClick={() => void setStatus(item, 'won')}
 														>
@@ -319,7 +319,7 @@ function OpportunityPage() {
 														<button
 															type="button"
 															className="ocm-btn h-8 px-2"
-															title="Tandai kalah"
+															title="Tandai batal"
 															disabled={rowBusy}
 															onClick={() => void setStatus(item, 'lost')}
 														>
