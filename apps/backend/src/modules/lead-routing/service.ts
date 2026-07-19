@@ -222,6 +222,16 @@ function scoreCandidates(
 	return scored.sort((a, b) => b.score - a.score)
 }
 
+// Teams a leader has opted OUT of auto-assign for. Their members stay manually
+// assignable (via "Bagikan"), but are excluded from automatic top-pick routing.
+async function blockedAutoAssignTeamIds(appId: string): Promise<Set<string>> {
+	const rows = await prisma.teams.findMany({
+		where: { app_id: appId, deleted_at: null, allow_auto_assign: false },
+		select: { id: true },
+	})
+	return new Set(rows.map((row) => row.id))
+}
+
 export abstract class LeadRoutingService {
 	// Ranked sales recommendations for a conversation (no side effects).
 	static async suggest(actor: RoutingActor, conversationId: string) {
@@ -239,11 +249,19 @@ export abstract class LeadRoutingService {
 			actor.appId,
 			candidates.map((c) => c.userId),
 		)
+		const blocked = await blockedAutoAssignTeamIds(actor.appId)
+		const scored = scoreCandidates(candidates, context.productInterest, lastAssigned)
 		return {
 			conversationId: context.id,
 			contactName: context.contactName,
 			productInterest: context.productInterest || null,
-			candidates: scoreCandidates(candidates, context.productInterest, lastAssigned),
+			// Flag members whose team opted out of auto-assign so the leader knows
+			// they only receive leads when picked manually.
+			candidates: scored.map((candidate) =>
+				candidate.teamId && blocked.has(candidate.teamId)
+					? { ...candidate, reasons: [...candidate.reasons, 'Auto-assign tim ini dimatikan'] }
+					: candidate,
+			),
 		}
 	}
 
@@ -260,9 +278,21 @@ export abstract class LeadRoutingService {
 			candidates.map((c) => c.userId),
 		)
 		const ranked = scoreCandidates(candidates, context.productInterest, lastAssigned)
-		const target = salesUserId
-			? ranked.find((candidate) => candidate.userId === salesUserId)
-			: ranked[0]
+		let target: (typeof ranked)[number] | undefined
+		if (salesUserId) {
+			// Explicit leader pick ("Bagikan") always wins, regardless of the
+			// team's auto-assign setting.
+			target = ranked.find((candidate) => candidate.userId === salesUserId)
+		} else {
+			// Auto top-pick: skip members whose team opted out of auto-assign. Fall
+			// back to the full ranking if that leaves nobody, so a lead is never
+			// dropped just because every team disabled auto-assign.
+			const blocked = await blockedAutoAssignTeamIds(actor.appId)
+			const eligible = ranked.filter(
+				(candidate) => !candidate.teamId || !blocked.has(candidate.teamId),
+			)
+			target = (eligible.length ? eligible : ranked)[0]
+		}
 		if (!target)
 			throw new RoutingError('Sales tujuan tidak valid atau di luar tim Anda')
 
