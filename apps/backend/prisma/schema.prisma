@@ -2474,6 +2474,53 @@ model opportunities {
   @@index([contact_id], map: "idx_opportunities_contact")
 }
 
+// Database Sakti — cross-vendor license records. On a new lead we match the
+// lead's name + company here to decide if they already hold a license bought
+// elsewhere (which requires a Surat Sakti transfer letter).
+model sakti_records {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id        String    @db.Uuid
+  customer_name String    @db.VarChar(255)
+  company       String?   @db.VarChar(255)
+  product       String?   @db.VarChar(120)
+  vendor        String?   @db.VarChar(255)
+  license_no    String?   @db.VarChar(120)
+  purchased_at  DateTime? @db.Timestamptz(6)
+  notes         String?
+  source        String    @default("manual") @db.VarChar(40)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([app_id], map: "idx_sakti_records_app")
+}
+
+// Surat Sakti — a license-transfer decision letter, approved by BOTH the
+// origin vendor and us before a foreign-license customer can become ours.
+model surat_sakti {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String   @db.Uuid
+  contact_id      String?  @db.Uuid
+  opportunity_id  String?  @db.Uuid
+  sakti_record_id String?  @db.Uuid
+
+  customer_name   String   @db.VarChar(255)
+  company         String?  @db.VarChar(255)
+  product         String?  @db.VarChar(120)
+  from_vendor     String?  @db.VarChar(255)
+
+  status          String   @default("draft") @db.VarChar(20)
+  our_approved    Boolean  @default(false)
+  their_approved  Boolean  @default(false)
+  notes           String?
+
+  created_by      String?  @db.Uuid
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([app_id, status], map: "idx_surat_sakti_app_status")
+  @@index([contact_id], map: "idx_surat_sakti_contact")
+}
+
 model import_jobs {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   app_id        String    @db.Uuid

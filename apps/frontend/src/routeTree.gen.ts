@@ -20,6 +20,7 @@ import { Route as WhatsappConnectRouteImport } from './routes/whatsapp.connect'
 import { Route as AppTemplatesRouteImport } from './routes/_app/templates'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSalesProfilesRouteImport } from './routes/_app/sales-profiles'
+import { Route as AppSaktiRouteImport } from './routes/_app/sakti'
 import { Route as AppProspekRouteImport } from './routes/_app/prospek'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppOpportunityRouteImport } from './routes/_app/opportunity'
@@ -114,6 +115,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
 const AppSalesProfilesRoute = AppSalesProfilesRouteImport.update({
   id: '/sales-profiles',
   path: '/sales-profiles',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSaktiRoute = AppSaktiRouteImport.update({
+  id: '/sakti',
+  path: '/sakti',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProspekRoute = AppProspekRouteImport.update({
@@ -353,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
+  '/sakti': typeof AppSaktiRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
@@ -406,6 +413,7 @@ export interface FileRoutesByTo {
   '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
+  '/sakti': typeof AppSaktiRoute
   '/sales-profiles': typeof AppSalesProfilesRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
@@ -461,6 +469,7 @@ export interface FileRoutesById {
   '/_app/opportunity': typeof AppOpportunityRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/prospek': typeof AppProspekRoute
+  '/_app/sakti': typeof AppSaktiRoute
   '/_app/sales-profiles': typeof AppSalesProfilesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/templates': typeof AppTemplatesRoute
@@ -516,6 +525,7 @@ export interface FileRouteTypes {
     | '/opportunity'
     | '/pipeline'
     | '/prospek'
+    | '/sakti'
     | '/sales-profiles'
     | '/settings'
     | '/templates'
@@ -569,6 +579,7 @@ export interface FileRouteTypes {
     | '/opportunity'
     | '/pipeline'
     | '/prospek'
+    | '/sakti'
     | '/sales-profiles'
     | '/settings'
     | '/templates'
@@ -623,6 +634,7 @@ export interface FileRouteTypes {
     | '/_app/opportunity'
     | '/_app/pipeline'
     | '/_app/prospek'
+    | '/_app/sakti'
     | '/_app/sales-profiles'
     | '/_app/settings'
     | '/_app/templates'
@@ -739,6 +751,13 @@ declare module '@tanstack/react-router' {
       path: '/sales-profiles'
       fullPath: '/sales-profiles'
       preLoaderRoute: typeof AppSalesProfilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sakti': {
+      id: '/_app/sakti'
+      path: '/sakti'
+      fullPath: '/sakti'
+      preLoaderRoute: typeof AppSaktiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/prospek': {
@@ -1101,6 +1120,7 @@ interface AppRouteChildren {
   AppOpportunityRoute: typeof AppOpportunityRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspekRoute: typeof AppProspekRoute
+  AppSaktiRoute: typeof AppSaktiRoute
   AppSalesProfilesRoute: typeof AppSalesProfilesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
@@ -1143,6 +1163,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOpportunityRoute: AppOpportunityRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspekRoute: AppProspekRoute,
+  AppSaktiRoute: AppSaktiRoute,
   AppSalesProfilesRoute: AppSalesProfilesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTemplatesRoute: AppTemplatesRoute,

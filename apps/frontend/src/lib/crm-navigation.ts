@@ -17,6 +17,7 @@ import {
 	Plug,
 	Radio,
 	Settings,
+	ShieldCheck,
 	Target,
 	Upload,
 	UserCog,
@@ -93,6 +94,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/opportunity',
 		group: 'data',
 		icon: Target,
+	},
+	{
+		id: 'sakti',
+		label: 'Database Sakti',
+		path: '/sakti',
+		group: 'data',
+		icon: ShieldCheck,
 	},
 	{
 		// Visible only to ceo/leader: getAllowedPrimaryPathsForRole() (role-access.ts)

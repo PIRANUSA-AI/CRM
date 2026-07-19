@@ -1597,6 +1597,113 @@ export const opportunities = {
 		apiRequest(`/opportunities/${id}`, { method: 'DELETE' }),
 }
 
+// Database Sakti — cross-vendor license records + transfer letters (Surat Sakti).
+export interface SaktiRecord {
+	id: string
+	customerName: string
+	company: string | null
+	product: string | null
+	vendor: string | null
+	licenseNo: string | null
+	purchasedAt: string | null
+	notes: string | null
+	source: string
+	createdAt: string | null
+	score?: number
+}
+
+export interface SaktiCheckResult {
+	matched: boolean
+	recommendation: 'surat_sakti' | 'opportunity'
+	message: string
+	records: SaktiRecord[]
+}
+
+export interface SuratSakti {
+	id: string
+	contactId: string | null
+	opportunityId: string | null
+	saktiRecordId: string | null
+	customerName: string
+	company: string | null
+	product: string | null
+	fromVendor: string | null
+	status: 'draft' | 'pending' | 'approved' | 'rejected' | string
+	ourApproved: boolean
+	theirApproved: boolean
+	notes: string | null
+	createdAt: string | null
+	updatedAt: string | null
+}
+
+export const sakti = {
+	records: {
+		list: (params?: {
+			search?: string
+			limit?: number
+			offset?: number
+		}): Promise<{ success: boolean; payload: SaktiRecord[] }> => {
+			const query = new URLSearchParams()
+			for (const [key, value] of Object.entries(params || {})) {
+				if (value === undefined || value === null || value === '') continue
+				query.set(key, String(value))
+			}
+			const qs = query.toString()
+			return apiRequest(`/sakti/records${qs ? `?${qs}` : ''}`)
+		},
+		create: (data: {
+			customerName: string
+			company?: string | null
+			product?: string | null
+			vendor?: string | null
+			licenseNo?: string | null
+			notes?: string | null
+		}): Promise<{ success: boolean; payload: SaktiRecord }> =>
+			apiRequest('/sakti/records', { method: 'POST', body: JSON.stringify(data) }),
+		remove: (id: string): Promise<{ success: boolean }> =>
+			apiRequest(`/sakti/records/${id}`, { method: 'DELETE' }),
+	},
+
+	check: (data: {
+		name: string
+		company?: string | null
+		product?: string | null
+	}): Promise<{ success: boolean; payload: SaktiCheckResult }> =>
+		apiRequest('/sakti/check', { method: 'POST', body: JSON.stringify(data) }),
+
+	letters: {
+		list: (params?: {
+			status?: string
+		}): Promise<{ success: boolean; payload: SuratSakti[] }> => {
+			const qs = params?.status ? `?status=${encodeURIComponent(params.status)}` : ''
+			return apiRequest(`/sakti/letters${qs}`)
+		},
+		create: (data: {
+			customerName: string
+			company?: string | null
+			product?: string | null
+			fromVendor?: string | null
+			contactId?: string | null
+			opportunityId?: string | null
+			saktiRecordId?: string | null
+			notes?: string | null
+		}): Promise<{ success: boolean; payload: SuratSakti }> =>
+			apiRequest('/sakti/letters', { method: 'POST', body: JSON.stringify(data) }),
+		update: (
+			id: string,
+			data: {
+				status?: string
+				ourApproved?: boolean
+				theirApproved?: boolean
+				notes?: string | null
+			},
+		): Promise<{ success: boolean; payload: SuratSakti }> =>
+			apiRequest(`/sakti/letters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+		remove: (id: string): Promise<{ success: boolean }> =>
+			apiRequest(`/sakti/letters/${id}`, { method: 'DELETE' }),
+	},
+}
+
 // Inboxes (Omnichannel)
 export const inboxes = {
 	list: () => treatyApi.api.inboxes.get().then(unwrapTreatyResponse),

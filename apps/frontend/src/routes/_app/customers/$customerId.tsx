@@ -4,6 +4,7 @@ import {
 	customers,
 	contactConversations,
 	opportunities as opportunitiesApi,
+	sakti as saktiApi,
 	tasks as tasksApi,
 	type Task,
 	type TimelineEvent,
@@ -253,6 +254,40 @@ function CustomerDetail() {
 		}
 	}
 
+	const [checkingSakti, setCheckingSakti] = useState(false)
+	const checkSakti = async () => {
+		if (!customer) return
+		setCheckingSakti(true)
+		try {
+			const company =
+				(customer.custom_attributes?.company as string) ||
+				(customer.custom_attributes?.instansi as string) ||
+				undefined
+			const res = await saktiApi.check({ name: customer.name, company })
+			const result = res.payload
+			if (!result.matched) {
+				toast.success(result.message)
+				return
+			}
+			toast.warning(result.message)
+			if (window.confirm('Lisensi ditemukan di vendor lain. Buat Surat Sakti sekarang?')) {
+				await saktiApi.letters.create({
+					customerName: customer.name,
+					company,
+					contactId: customer.id,
+					fromVendor: result.records[0]?.vendor || undefined,
+					product: result.records[0]?.product || undefined,
+					saktiRecordId: result.records[0]?.id || undefined,
+				})
+				toast.success('Surat Sakti dibuat — buka menu Database Sakti › Surat Sakti')
+			}
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal cek Sakti')
+		} finally {
+			setCheckingSakti(false)
+		}
+	}
+
 	const runTaskAction = async (taskId: string, action: 'start' | 'complete') => {
 		setTaskBusy(taskId)
 		try {
@@ -355,6 +390,14 @@ function CustomerDetail() {
 								<ArrowLeft size={14} /> Pelanggan
 							</Link>
 						)}
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => void checkSakti()}
+							disabled={checkingSakti}
+						>
+							<ShieldCheck size={14} /> Cek Sakti
+						</button>
 						<button
 							type="button"
 							className="ocm-btn"
