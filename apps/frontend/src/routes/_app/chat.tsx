@@ -67,10 +67,15 @@ export const Route = createFileRoute('/_app/chat')({
 	component: PersonalWhatsappInbox,
 	// `?c=<conversationId>` lets other pages (Alih Tugas, Tugas) deep-link to a
 	// specific personal WhatsApp conversation instead of just opening the inbox.
-	validateSearch: (search: Record<string, unknown>) => ({
-		c: typeof search.c === 'string' ? search.c : undefined,
-		draft: typeof search.draft === 'string' ? search.draft : undefined,
-	}),
+	// Both keys are optional rather than `string | undefined`, so a caller that
+	// only wants to open a conversation can pass `{ c }` without also spelling
+	// out `draft: undefined`.
+	validateSearch: (search: Record<string, unknown>) => {
+		const next: { c?: string; draft?: string } = {}
+		if (typeof search.c === 'string') next.c = search.c
+		if (typeof search.draft === 'string') next.draft = search.draft
+		return next
+	},
 })
 
 type Conversation = {

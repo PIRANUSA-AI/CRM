@@ -205,12 +205,12 @@ function mapServerToolToView(tool: ServerApiTool): ApiTool {
 	const additionalPayload = (
 		Array.isArray(tool.additional_payload) ? tool.additional_payload : []
 	)
-		.map((item) => ({
+		.map((item): ApiToolAdditionalPayloadItem => ({
 			key: String(item?.key || '').trim(),
 			type:
 				item?.type === 'number' || item?.type === 'boolean'
 					? item.type
-					: ('text' as const),
+					: 'text',
 			value: String(item?.value || ''),
 		}))
 		.filter((item) => item.key.length > 0)
@@ -286,7 +286,7 @@ function resolveBusinessIdFromClient(token: string | null): string {
 }
 
 function DevelopersApiToolsPage() {
-	const search = Route.useSearch() as { state?: string; tool_id?: string }
+	const search = Route.useSearch()
 	const navigate = useNavigate()
 	const matches = useMatches()
 	const isCreateRoute = matches.some((match) =>
@@ -1323,7 +1323,8 @@ function DevelopersApiToolsPage() {
 
 										<div className="z-10 mt-4 flex flex-wrap gap-2">
 											<Link
-												to={`/developers/api-tools?tool_id=${encodeURIComponent(tool.id)}`}
+												to="/developers/api-tools"
+												search={{ tool_id: tool.id }}
 												className="w-auto rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all duration-300 ease-in-out hover:bg-gray-50 active:scale-95"
 												data-testid={`${tool.testId}-settings`}
 											>
@@ -1343,4 +1344,12 @@ function DevelopersApiToolsPage() {
 
 export const Route = createFileRoute('/_app/developers/api-tools')({
 	component: DevelopersApiToolsPage,
+	validateSearch: (search: Record<string, unknown>) => {
+		// Optional keys (not `string | undefined` ones) so callers that don't care
+		// about search params can keep linking here without passing an empty object.
+		const next: { state?: string; tool_id?: string } = {}
+		if (typeof search.state === 'string') next.state = search.state
+		if (typeof search.tool_id === 'string') next.tool_id = search.tool_id
+		return next
+	},
 })

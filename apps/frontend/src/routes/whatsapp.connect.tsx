@@ -125,9 +125,11 @@ function WhatsAppConnectPage() {
 				color: 'transparent',
 			},
 		})
-		void qr.getRawData('png').then((blob) => {
-			if (!active || !blob) return
-			const url = URL.createObjectURL(blob)
+		// getRawData resolves to a Buffer under Node and a Blob in the browser;
+		// this effect only ever runs client-side, so narrow to the Blob case.
+		void qr.getRawData('png').then((raw) => {
+			if (!active || !(raw instanceof Blob)) return
+			const url = URL.createObjectURL(raw)
 			setQrImage(url)
 		})
 		return () => { active = false }

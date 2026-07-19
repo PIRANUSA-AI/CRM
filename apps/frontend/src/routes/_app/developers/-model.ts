@@ -366,7 +366,7 @@ const DEFAULT_API_TOOLS: ApiTool[] = API_TOOLS_SEED_RESPONSE.map((tool) => ({
 		}))
 		.filter((property) => property.name.length > 0),
 	additionalPayload: (tool.additional_payload || [])
-		.map((item) => ({
+		.map((item): ApiToolAdditionalPayloadItem => ({
 			key: String(item.key || '').trim(),
 			type:
 				item.type === 'number' || item.type === 'boolean' ? item.type : 'text',
