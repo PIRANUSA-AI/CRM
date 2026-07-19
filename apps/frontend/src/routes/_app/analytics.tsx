@@ -9,23 +9,17 @@ import {
 	BarChart3,
 	RefreshCw,
 	TrendingUp,
-	Bot,
 } from 'lucide-react'
 import { metrics } from '@/lib/api'
 import {
-	BarChart,
-	Bar,
 	XAxis,
 	YAxis,
 	CartesianGrid,
 	Tooltip,
-	Legend,
 	ResponsiveContainer,
 	PieChart,
 	Pie,
 	Cell,
-	LineChart,
-	Line,
 	AreaChart,
 	Area,
 } from 'recharts'

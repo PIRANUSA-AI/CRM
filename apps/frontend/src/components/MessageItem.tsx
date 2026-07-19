@@ -5,7 +5,6 @@ import {
 	FileText,
 	Image as ImageIcon,
 	MapPin,
-	Play,
 	Reply,
 } from 'lucide-react'
 

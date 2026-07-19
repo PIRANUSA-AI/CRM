@@ -11,26 +11,19 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
 	Check,
 	Copy,
 	Info,
 	Loader2,
-	RefreshCw,
 	Trash2,
 	Link,
 	Facebook,
-	Upload,
-	X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
 	Dialog,
 	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
 	DialogTrigger,
 } from '@/components/ui/dialog'
 

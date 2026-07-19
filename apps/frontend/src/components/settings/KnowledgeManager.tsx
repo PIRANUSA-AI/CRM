@@ -5,11 +5,9 @@ import {
 	Search,
 	Globe,
 	FileText,
-	Database,
 	Trash2,
 	Edit2,
 	Layout,
-	ExternalLink,
 	Brain,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'

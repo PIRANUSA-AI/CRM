@@ -25,8 +25,6 @@ import {
 	type AIGenerateNodeData,
 	type AIClassifyNodeData,
 	type AIHandoffNodeData,
-	getAINodeIcon,
-	getAINodeTypeLabel,
 } from './AINodeTypes'
 
 interface AINodeProps {

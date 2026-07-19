@@ -9,10 +9,6 @@ import React, { useState, useEffect } from 'react'
 import {
 	X,
 	Save,
-	Settings,
-	Sparkles,
-	Brain,
-	ShieldAlert,
 	Database,
 	MessageSquare,
 	ChevronRight,

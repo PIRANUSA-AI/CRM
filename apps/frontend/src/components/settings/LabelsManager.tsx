@@ -5,8 +5,6 @@ import {
 	Trash2,
 	Tag,
 	Loader2,
-	X,
-	Check,
 	Palette,
 } from 'lucide-react'
 import {

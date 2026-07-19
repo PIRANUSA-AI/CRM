@@ -4,20 +4,11 @@ import {
 	Plus,
 	Settings,
 	GripVertical,
-	Trash2,
-	Edit,
-	X,
 	DollarSign,
-	Calendar,
 	User,
-	Phone,
-	Mail,
-	TrendingUp,
 	Target,
 	Clock,
-	Award,
 	BarChart2,
-	PieChart,
 	KanbanSquare,
 } from 'lucide-react'
 import {
@@ -32,7 +23,6 @@ import {
 	type DragEndEvent,
 } from '@dnd-kit/core'
 import {
-	arrayMove,
 	SortableContext,
 	sortableKeyboardCoordinates,
 	verticalListSortingStrategy,

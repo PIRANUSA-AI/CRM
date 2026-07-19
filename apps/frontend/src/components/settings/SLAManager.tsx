@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import {
 	Timer,
 	Plus,
-	Edit2,
 	Trash2,
 	Activity,
 	ShieldCheck,
