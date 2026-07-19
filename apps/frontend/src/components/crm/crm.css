@@ -35,6 +35,17 @@
 	color: var(--ocm-text);
 }
 
+/*
+ * .ocm-page is a bounded flex column that owns the page scroll. Without this,
+ * its children default to flex-shrink:1 and get compressed to fit the viewport
+ * instead of overflowing — so the page never scrolls and cards with
+ * overflow:hidden clip their content. Keeping children at natural height makes
+ * the column overflow and scroll as intended.
+ */
+.ocm-page > * {
+	flex-shrink: 0;
+}
+
 @media (min-width: 1024px) {
 	.ocm-page {
 		padding: 24px;
