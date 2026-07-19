@@ -452,7 +452,7 @@ function AppLayout() {
 
 				<div className="flex min-w-0 flex-1 flex-col bg-background lg:pt-3">
 					<TopBar />
-					<div className={cn('relative flex min-h-0 flex-1 lg:pb-0', isChatWorkspace ? 'pb-20' : 'pb-16')}>
+					<div className={cn('relative flex min-h-0 flex-1 flex-col lg:pb-0', isChatWorkspace ? 'overflow-hidden pb-20' : 'overflow-y-auto pb-16')}>
 						<Outlet />
 					</div>
 					<BottomNav
