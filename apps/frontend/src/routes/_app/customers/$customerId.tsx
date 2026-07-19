@@ -379,7 +379,7 @@ function CustomerDetail() {
 									sessionStorage.removeItem('returnToConversationId')
 									navigate({
 										to: '/chat',
-										search: { conversation_id: returnToConversationId },
+										search: { c: returnToConversationId, draft: undefined },
 									})
 								}}
 							>
@@ -684,7 +684,7 @@ function CustomerDetail() {
 														<td className="text-right">
 															<Link
 																to="/chat"
-																search={{ conversation_id: conv.id }}
+																search={{ c: conv.id, draft: undefined }}
 																className="inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100"
 															>
 																Buka Chat <ChevronRight size={13} />

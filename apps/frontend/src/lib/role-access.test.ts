@@ -45,7 +45,7 @@ describe('role-access: sales/leader/ceo/superadmin', () => {
 		expect(isPathAllowedForRole('/kelola-tim', 'sales')).toBe(false)
 		expect(isPathAllowedForRole('/dashboard', 'sales')).toBe(true)
 		expect(isPathAllowedForRole('/chat', 'sales')).toBe(true)
-		expect(isPathAllowedForRole('/handover', 'sales')).toBe(true)
+		expect(isPathAllowedForRole('/alih-tugas', 'sales')).toBe(true)
 	})
 
 	test('help is reachable by every role', () => {
