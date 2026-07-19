@@ -232,11 +232,25 @@ async function blockedAutoAssignTeamIds(appId: string): Promise<Set<string>> {
 	return new Set(rows.map((row) => row.id))
 }
 
+// Only sales receive leads. listWithProfiles also returns leaders, because a
+// leader is a member of their sales' teams so routing can resolve the team at
+// all — but that also made the leader a candidate for the leads they are
+// sharing. Fairness ranks whoever went longest without a task, and a leader
+// works intake rather than tasks, so they kept surfacing above the sales whose
+// skills actually matched. Leaders hand leads over; they don't receive them.
+function leadRecipients(candidates: Candidate[]): Candidate[] {
+	return candidates.filter(
+		(candidate) => String(candidate.role || '').trim().toLowerCase() === 'sales',
+	)
+}
+
 export abstract class LeadRoutingService {
 	// Ranked sales recommendations for a conversation (no side effects).
 	static async suggest(actor: RoutingActor, conversationId: string) {
 		const context = await loadConversation(actor, conversationId)
-		const candidates = await SalesProfileService.listWithProfiles(actor)
+		const candidates = leadRecipients(
+			await SalesProfileService.listWithProfiles(actor),
+		)
 		if (!candidates.length) {
 			return {
 				conversationId: context.id,
@@ -270,7 +284,9 @@ export abstract class LeadRoutingService {
 	// follow-up task, and notifies the sales.
 	static async assign(actor: RoutingActor, conversationId: string, salesUserId?: string | null) {
 		const context = await loadConversation(actor, conversationId)
-		const candidates = await SalesProfileService.listWithProfiles(actor)
+		const candidates = leadRecipients(
+			await SalesProfileService.listWithProfiles(actor),
+		)
 		if (!candidates.length) throw new RoutingError('Tidak ada sales yang bisa menerima lead')
 
 		const lastAssigned = await lastAssignedMap(
