@@ -375,7 +375,21 @@ export abstract class TaskService {
 	// production inbox routes stay untouched.
 	static async openChat(actor: TaskActor, taskId: string) {
 		const task = await TaskService.get(actor, taskId)
+		// F4: a lead shared by the leader (routing task) is handled AI-first — the
+		// sales' AI replies until the sales explicitly takes over — so opening it must
+		// NOT take over. Other task types keep the take-over-on-open behavior.
+		const isHandoff = task.source === 'routing'
+		const handoffOpener =
+			isHandoff && task.aiSnapshot && typeof task.aiSnapshot === 'object'
+				? String(
+						(task.aiSnapshot as Record<string, unknown>).suggestedReply || '',
+					).trim()
+				: ''
 		if (task.conversationId) {
+			if (isHandoff) {
+				// Keep the sales' AI in control; the sales takes over from the chat.
+				return { conversationId: task.conversationId }
+			}
 			// Already linked — just make sure the human owns it and return it.
 			await PersonalTakeoverService.takeover({
 				appId: actor.appId,
@@ -525,20 +539,27 @@ export abstract class TaskService {
 			}
 		}
 
-		// Human takes over — the AI stops auto-replying to this lead.
-		await PersonalTakeoverService.takeover({
-			appId: actor.appId,
-			ownerUserId: actor.userId,
-			conversationId: conversation.id,
-			source: 'manual',
-			byUserId: actor.userId,
-			reason: 'Follow-up lead diambil alih dari daftar tugas',
-		})
-		await PersonalAiReplyService.cancelConversationTasks(
-			actor.appId,
-			actor.userId,
-			conversation.id,
-		).catch(() => null)
+		if (isHandoff) {
+			// AI-first handoff: keep the sales' AI enabled and send the opener from
+			// the sales' number (explicit consent via "Buka Chat"). The sales' AI then
+			// handles the customer's replies until the sales takes over.
+			await TaskService.sendHandoffOpener(actor, conversation.id, handoffOpener)
+		} else {
+			// Human takes over — the AI stops auto-replying to this lead.
+			await PersonalTakeoverService.takeover({
+				appId: actor.appId,
+				ownerUserId: actor.userId,
+				conversationId: conversation.id,
+				source: 'manual',
+				byUserId: actor.userId,
+				reason: 'Follow-up lead diambil alih dari daftar tugas',
+			})
+			await PersonalAiReplyService.cancelConversationTasks(
+				actor.appId,
+				actor.userId,
+				conversation.id,
+			).catch(() => null)
+		}
 
 		// Link the task to the conversation and move it to in_progress so the
 		// detail page now shows the live chat + reply box.
@@ -563,6 +584,91 @@ export abstract class TaskService {
 		emitTask('task:updated', updated as unknown as TaskRecord)
 
 		return { conversationId: conversation.id }
+	}
+
+	// F4: send the handoff opener from the sales' own WhatsApp number to start the
+	// thread, then let the sales' AI take the conversation from there. Requires the
+	// sales' WhatsApp to be connected.
+	private static async sendHandoffOpener(
+		actor: TaskActor,
+		conversationId: string,
+		opener: string,
+	) {
+		if (!opener) return
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: conversationId, app_id: actor.appId, deleted_at: null },
+			include: {
+				contacts: { select: { id: true, phone_number: true, whatsapp_id: true } },
+			},
+		})
+		const phone = String(
+			conversation?.contacts?.phone_number || conversation?.contacts?.whatsapp_id || '',
+		).replace(/\D/g, '')
+		if (!conversation || !phone) return
+		const session = await prisma.baileys_sessions.findFirst({
+			where: { app_id: actor.appId, owner_user_id: actor.userId, status: 'connected' },
+			select: { provider_channel_key: true, channel_id: true },
+		})
+		if (!session)
+			throw new TaskConflictError(
+				'WhatsApp kamu belum terhubung — hubungkan dulu untuk memulai chat AI.',
+			)
+		const channel = await prisma.whatsapp_channels.findFirst({
+			where: { id: session.channel_id, app_id: actor.appId, provider: 'baileys', deleted_at: null },
+			select: { api_key: true, inbox_id: true },
+		})
+		if (!channel?.api_key || !channel.inbox_id)
+			throw new TaskConflictError('Channel WhatsApp sales tidak valid.')
+		const sent = await BaileysServiceClient.sendMessage(
+			{
+				channelKey: session.provider_channel_key,
+				recipientWhatsAppId: phone,
+				recipientAddressingMode: 'pn',
+				type: 'text',
+				text: { body: opener },
+			},
+			{
+				Authorization: `Bearer ${channel.api_key}`,
+				'X-Crm-Channel-Secret': channel.api_key,
+			},
+		)
+		const now = new Date()
+		const message = await prisma.$transaction(async (tx) => {
+			const created = await tx.messages.create({
+				data: {
+					conversation_id: conversationId,
+					app_id: actor.appId,
+					inbox_id: channel.inbox_id,
+					message_type: 'outgoing',
+					sender_type: 'user',
+					sender_id: actor.userId,
+					content: opener,
+					content_type: 'text',
+					status: 'sent',
+					external_id: sent.externalId || null,
+					content_attributes: { handoff_opener: true, ai_generated: true },
+					created_at: now,
+					updated_at: now,
+				},
+			})
+			await tx.conversations.update({
+				where: { id: conversationId },
+				data: { last_message_at: now, last_activity_at: now, updated_at: now },
+			})
+			if (conversation.contacts?.id)
+				await tx.contacts.update({
+					where: { id: conversation.contacts.id },
+					data: { last_message_at: now, last_activity_at: now, updated_at: now },
+				})
+			return created
+		})
+		const io = getRealtimeIO()
+		const payload = {
+			message,
+			conversation: { id: conversationId, app_id: actor.appId, channel_type: 'whatsapp' },
+		}
+		io?.to(`app:${actor.appId}`).emit('message:created', payload)
+		io?.to(`conversation:${conversationId}`).emit('message:created', payload)
 	}
 
 	static async summary(actor: TaskActor) {

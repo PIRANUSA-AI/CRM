@@ -968,6 +968,9 @@ function PersonalWhatsappInbox() {
 	}, [blockedLeads, filter, ignoredLeads, pendingLeads, query])
 
 	const active = conversations.find((item) => item.id === selectedId) || null
+	// While the AI holds this lead, the sales cannot type — they must "Ambil Alih"
+	// first. Keeps the AI and the human from replying over each other.
+	const aiInControl = Boolean(active?.aiHandling)
 	const visibleMessages = messages.filter((message) => message.content_type !== 'reaction')
 	const singleSelectedMessage = selectedMessageIds.size === 1
 		? messages.find((message) => selectedMessageIds.has(message.id)) || null
@@ -1304,10 +1307,16 @@ function PersonalWhatsappInbox() {
 										<button type="button" onClick={() => setReplyTarget(null)} className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground" aria-label="Batalkan balasan"><X className="size-4" /></button>
 									</div>
 								)}
+								{aiInControl ? (
+									<div className="mb-2 flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
+										<Bot className="size-4 shrink-0" />
+										<span>AI sedang menangani percakapan ini. Klik <b>Ambil Alih</b> di atas untuk membalas sendiri.</span>
+									</div>
+								) : null}
 								<div className="flex items-end gap-2">
 									<Popover>
 										<PopoverTrigger
-											disabled={!connected || uploadingMedia || sendingMessage}
+											disabled={!connected || uploadingMedia || sendingMessage || aiInControl}
 											className="grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
 											aria-label="Lampirkan media"
 										>
@@ -1364,8 +1373,8 @@ function PersonalWhatsappInbox() {
 										}}
 										rows={1}
 										maxLength={4096}
-										placeholder={connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
-										disabled={!connected || sendingMessage || uploadingMedia}
+										placeholder={aiInControl ? 'AI sedang menangani — klik "Ambil Alih" untuk membalas' : connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
+										disabled={!connected || sendingMessage || uploadingMedia || aiInControl}
 										className="max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-muted px-4 py-3 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
 									/>
 								)}
@@ -1373,7 +1382,7 @@ function PersonalWhatsappInbox() {
 									<button
 										type={draft.trim() || pendingAttachments.length ? 'submit' : 'button'}
 										onClick={draft.trim() || pendingAttachments.length ? undefined : () => void toggleVoiceNote()}
-										disabled={!connected || sendingMessage || uploadingMedia}
+										disabled={!connected || sendingMessage || uploadingMedia || aiInControl}
 										className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 motion-reduce:transform-none"
 										aria-label={draft.trim() || pendingAttachments.length ? 'Kirim pesan' : 'Rekam voice note'}
 									>

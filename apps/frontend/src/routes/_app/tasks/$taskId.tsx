@@ -421,7 +421,9 @@ function TaskDetailPage() {
 												<MessageCircle size={16} />
 												{busy === 'openChat'
 													? 'Menyiapkan chat...'
-													: 'Ambil Alih & Chat di CRM'}
+													: task.source === 'routing'
+														? 'Buka Chat (AI bantu)'
+														: 'Ambil Alih & Chat di CRM'}
 											</button>
 										) : null}
 										<div className="flex flex-wrap gap-2">
@@ -451,10 +453,21 @@ function TaskDetailPage() {
 											) : null}
 										</div>
 										<p className="text-xs text-muted-foreground">
-											<b>Ambil Alih & Chat di CRM</b> membuka percakapan lead di inbox
-											WhatsApp-mu, menghentikan balasan otomatis AI, dan kamu yang
-											menangani — pesan pembuka sudah terisi otomatis. Alternatif: buka
-											WhatsApp langsung di HP/desktop.
+											{task.source === 'routing' ? (
+												<>
+													<b>Buka Chat (AI bantu)</b> mengirim pesan pembuka dari nomor
+													WhatsApp-mu, lalu <b>AI-mu yang membalas</b> customer sampai
+													kamu menekan <b>Ambil Alih</b> di header chat untuk menangani
+													sendiri.
+												</>
+											) : (
+												<>
+													<b>Ambil Alih & Chat di CRM</b> membuka percakapan lead di inbox
+													WhatsApp-mu, menghentikan balasan otomatis AI, dan kamu yang
+													menangani — pesan pembuka sudah terisi otomatis. Alternatif:
+													buka WhatsApp langsung di HP/desktop.
+												</>
+											)}
 										</p>
 									</>
 								) : (
