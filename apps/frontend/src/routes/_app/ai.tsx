@@ -637,6 +637,18 @@ function AiPlaygroundPage() {
 		)
 	}, [activeModels, models, selectedProvider])
 
+	const getRuleModelsForProvider = useCallback(
+		(provider: string) => {
+			const sourceModels = activeModels.length > 0 ? activeModels : models
+			const normalizedProvider = normalizeProviderKey(provider)
+			if (!normalizedProvider) return sourceModels
+			return sourceModels.filter(
+				(model) => normalizeProviderKey(model.vendor) === normalizedProvider,
+			)
+		},
+		[activeModels, models],
+	)
+
 	useEffect(() => {
 		if (providerOptions.length === 0) return
 		const hasSelectedProvider = providerOptions.some(
