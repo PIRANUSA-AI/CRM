@@ -43,6 +43,7 @@ const ACTION_LABEL: Record<string, string> = {
 	follow_up: 'Tindak lanjut',
 	qualify_lead: 'Kualifikasi lead',
 	handover_review: 'Tinjau handover',
+	prospect_followup: 'Prospek',
 	manual: 'Tugas manual',
 }
 const EVENT_LABEL: Record<string, string> = {

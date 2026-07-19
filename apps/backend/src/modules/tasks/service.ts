@@ -133,7 +133,7 @@ async function enrichTasks(rows: TaskRecord[]) {
 		contactIds.length
 			? prisma.contacts.findMany({
 					where: { id: { in: contactIds }, deleted_at: null },
-					select: { id: true, name: true, phone_number: true, whatsapp_id: true },
+					select: { id: true, name: true, phone_number: true, whatsapp_id: true, email: true },
 				})
 			: [],
 		conversationIds.length
@@ -172,6 +172,7 @@ async function enrichTasks(rows: TaskRecord[]) {
 			confidence: row.confidence,
 			contactName: contact?.name || null,
 			contactPhone: contact?.phone_number || contact?.whatsapp_id || null,
+			contactEmail: contact?.email || null,
 			conversationStatus: conversation?.status || null,
 			createdAt: row.created_at,
 			updatedAt: row.updated_at,

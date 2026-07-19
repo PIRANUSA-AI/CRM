@@ -18,6 +18,7 @@ import {
 	Settings,
 	Upload,
 	UserCog,
+	UserPlus,
 	Users,
 	UsersRound,
 	WandSparkles,
@@ -55,6 +56,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/tasks',
 		group: 'operasional',
 		icon: ListTodo,
+	},
+	{
+		id: 'prospek',
+		label: 'Tambah Prospek',
+		path: '/prospek',
+		group: 'operasional',
+		icon: UserPlus,
 	},
 	{
 		id: 'alih-tugas',

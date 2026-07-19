@@ -2530,6 +2530,7 @@ export type TaskActionKind =
 	| 'follow_up'
 	| 'qualify_lead'
 	| 'handover_review'
+	| 'prospect_followup'
 	| 'manual'
 
 export interface Task {
@@ -2554,6 +2555,7 @@ export interface Task {
 	confidence: number | null
 	contactName: string | null
 	contactPhone: string | null
+	contactEmail: string | null
 	conversationStatus: string | null
 	createdAt: string
 	updatedAt: string
@@ -2759,6 +2761,37 @@ export const leadImport = {
 				assigneeName: string | null
 			}
 		}>('/import/manual-lead', { method: 'POST', body: JSON.stringify(input) }),
+}
+
+export type ProspectChannel =
+	| 'event'
+	| 'linkedin'
+	| 'instagram'
+	| 'whatsapp'
+	| 'referral'
+	| 'other'
+
+export const prospects = {
+	create: (input: {
+		name: string
+		phone?: string
+		email?: string
+		company?: string
+		city?: string
+		productInterest?: string
+		channel?: ProspectChannel
+		notes?: string
+		followUpAt?: string
+	}) =>
+		apiRequest<{
+			data: {
+				contactId: string
+				taskId: string
+				updated: boolean
+				dueAt: string
+				channel: ProspectChannel
+			}
+		}>('/import/prospect', { method: 'POST', body: JSON.stringify(input) }),
 }
 
 export type SalesProfileData = {

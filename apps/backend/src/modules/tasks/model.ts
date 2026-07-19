@@ -19,6 +19,7 @@ const taskActionKind = t.Union([
 	t.Literal('follow_up'),
 	t.Literal('qualify_lead'),
 	t.Literal('handover_review'),
+	t.Literal('prospect_followup'),
 	t.Literal('manual'),
 ])
 
@@ -48,6 +49,7 @@ export const TaskModel = {
 		confidence: t.Nullable(t.Number()),
 		contactName: t.Nullable(t.String()),
 		contactPhone: t.Nullable(t.String()),
+		contactEmail: t.Nullable(t.String()),
 		conversationStatus: t.Nullable(t.String()),
 		createdAt: t.Date(),
 		updatedAt: t.Date(),

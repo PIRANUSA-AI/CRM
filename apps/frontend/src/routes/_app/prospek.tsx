@@ -1,0 +1,239 @@
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { CheckCircle2, Sparkles, TriangleAlert, UserPlus } from 'lucide-react'
+import { type ReactNode, useCallback, useMemo, useState } from 'react'
+import { CrmSectionHeader } from '@/components/crm/shared'
+import { prospects, type ProspectChannel } from '@/lib/api'
+
+export const Route = createFileRoute('/_app/prospek')({
+	component: ProspekPage,
+})
+
+const CHANNEL_OPTIONS: Array<{ value: ProspectChannel; label: string }> = [
+	{ value: 'event', label: 'Event / Pameran' },
+	{ value: 'linkedin', label: 'LinkedIn' },
+	{ value: 'instagram', label: 'Instagram' },
+	{ value: 'whatsapp', label: 'WhatsApp' },
+	{ value: 'referral', label: 'Referral' },
+	{ value: 'other', label: 'Lainnya' },
+]
+
+/** Tomorrow 09:00 in the local timezone, formatted for <input type="datetime-local">. */
+function defaultFollowUp(): string {
+	const d = new Date()
+	d.setDate(d.getDate() + 1)
+	d.setHours(9, 0, 0, 0)
+	const pad = (n: number) => String(n).padStart(2, '0')
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function ProspekPage() {
+	const navigate = useNavigate()
+	const emptyForm = useMemo(
+		() => ({
+			name: '',
+			channel: 'event' as ProspectChannel,
+			phone: '',
+			email: '',
+			company: '',
+			city: '',
+			productInterest: '',
+			followUpAt: defaultFollowUp(),
+			notes: '',
+		}),
+		[],
+	)
+	const [form, setForm] = useState(emptyForm)
+	const [saving, setSaving] = useState(false)
+	const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+	const set = useCallback(
+		<K extends keyof typeof emptyForm>(key: K, value: (typeof emptyForm)[K]) =>
+			setForm((f) => ({ ...f, [key]: value })),
+		[],
+	)
+
+	const submit = useCallback(async () => {
+		if (!form.name.trim()) {
+			setMsg({ ok: false, text: 'Nama prospek wajib diisi.' })
+			return
+		}
+		if (!form.phone.trim() && !form.email.trim()) {
+			setMsg({ ok: false, text: 'Isi minimal nomor WhatsApp atau email.' })
+			return
+		}
+		setSaving(true)
+		setMsg(null)
+		try {
+			const res = await prospects.create({
+				name: form.name.trim(),
+				channel: form.channel,
+				phone: form.phone.trim() || undefined,
+				email: form.email.trim() || undefined,
+				company: form.company.trim() || undefined,
+				city: form.city.trim() || undefined,
+				productInterest: form.productInterest.trim() || undefined,
+				followUpAt: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
+				notes: form.notes.trim() || undefined,
+			})
+			const due = new Date(res.data.dueAt)
+			const dueLabel = new Intl.DateTimeFormat('id-ID', {
+				day: 'numeric',
+				month: 'short',
+				hour: '2-digit',
+				minute: '2-digit',
+			}).format(due)
+			setMsg({
+				ok: true,
+				text: `Prospek "${form.name.trim()}" tersimpan. Task follow-up dibuat untuk ${dueLabel}.`,
+			})
+			setForm({ ...emptyForm, channel: form.channel, followUpAt: defaultFollowUp() })
+		} catch (reason) {
+			setMsg({ ok: false, text: reason instanceof Error ? reason.message : 'Gagal menyimpan prospek' })
+		} finally {
+			setSaving(false)
+		}
+	}, [form, emptyForm])
+
+	return (
+		<main className="ocm-page space-y-5">
+			<CrmSectionHeader
+				title="Tambah Prospek"
+				subtitle="Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Otomatis jadi tugas follow-up milikmu."
+				actions={
+					<button type="button" className="ocm-btn" onClick={() => navigate({ to: '/tasks' })}>
+						Lihat Daftar Tugas
+					</button>
+				}
+			/>
+
+			<section className="ocm-card max-w-2xl p-5">
+				<div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+					<Sparkles size={16} className="mt-0.5 shrink-0 text-primary" />
+					<span>
+						Prospek yang kamu simpan langsung ditugaskan ke kamu dan muncul di{' '}
+						<strong>Daftar Tugas</strong> pada tanggal follow-up yang dipilih.
+					</span>
+				</div>
+
+				{msg ? (
+					<div
+						className={`mb-4 flex items-start gap-2 rounded-md px-3 py-2 text-sm ${
+							msg.ok
+								? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+								: 'bg-red-500/10 text-red-600 dark:text-red-300'
+						}`}
+					>
+						{msg.ok ? (
+							<CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+						) : (
+							<TriangleAlert size={16} className="mt-0.5 shrink-0" />
+						)}
+						<span>{msg.text}</span>
+					</div>
+				) : null}
+
+				<div className="grid gap-3 sm:grid-cols-2">
+					<Field label="Nama prospek *">
+						<input
+							value={form.name}
+							onChange={(e) => set('name', e.target.value)}
+							placeholder="Nama kontak"
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Sumber prospek *">
+						<select
+							value={form.channel}
+							onChange={(e) => set('channel', e.target.value as ProspectChannel)}
+							className="ocm-input"
+						>
+							{CHANNEL_OPTIONS.map((opt) => (
+								<option key={opt.value} value={opt.value}>
+									{opt.label}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="No. WhatsApp">
+						<input
+							value={form.phone}
+							onChange={(e) => set('phone', e.target.value)}
+							placeholder="08xx / 62xx"
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Email">
+						<input
+							value={form.email}
+							onChange={(e) => set('email', e.target.value)}
+							placeholder="email@perusahaan.com"
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Perusahaan / Instansi">
+						<input
+							value={form.company}
+							onChange={(e) => set('company', e.target.value)}
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Kota">
+						<input
+							value={form.city}
+							onChange={(e) => set('city', e.target.value)}
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Produk diminati">
+						<input
+							value={form.productInterest}
+							onChange={(e) => set('productInterest', e.target.value)}
+							placeholder="mis. ZWCAD 2025 Professional"
+							className="ocm-input"
+						/>
+					</Field>
+					<Field label="Follow-up pada">
+						<input
+							type="datetime-local"
+							value={form.followUpAt}
+							onChange={(e) => set('followUpAt', e.target.value)}
+							className="ocm-input"
+						/>
+					</Field>
+				</div>
+				<div className="mt-3">
+					<Field label="Catatan">
+						<textarea
+							value={form.notes}
+							onChange={(e) => set('notes', e.target.value)}
+							rows={2}
+							placeholder="Konteks singkat: kebutuhan, obrolan awal, dsb."
+							className="ocm-input resize-y"
+						/>
+					</Field>
+				</div>
+
+				<div className="mt-4 flex justify-end">
+					<button
+						type="button"
+						className="ocm-btn bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+						onClick={() => void submit()}
+						disabled={saving}
+					>
+						<UserPlus size={15} />
+						{saving ? 'Menyimpan...' : 'Simpan Prospek & Buat Tugas'}
+					</button>
+				</div>
+			</section>
+		</main>
+	)
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+	return (
+		<label className="block">
+			<span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+			{children}
+		</label>
+	)
+}

@@ -11,8 +11,11 @@ import {
 
 // Import is a management action: it distributes leads to multiple sales.
 const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'ceo', 'superadmin']
+// Prospecting is sales-owned: a sales logs their own sourced leads.
+const PROSPECT_ROLES: CanonicalRole[] = ['sales', 'leader', 'ceo', 'superadmin']
 
-async function resolveActor(
+async function resolveActorFor(
+	roles: CanonicalRole[],
 	resolvedAppId: string | null,
 	userId: string | null,
 	set: { status?: number | string },
@@ -21,12 +24,20 @@ async function resolveActor(
 		set.status = 401
 		return null
 	}
-	const authorization = await requireRole(userId, ALLOWED_ROLES)
+	const authorization = await requireRole(userId, roles)
 	if (!authorization.ok) {
 		set.status = authorization.status
 		return null
 	}
 	return { appId: resolvedAppId, userId, role: authorization.role as CanonicalRole }
+}
+
+async function resolveActor(
+	resolvedAppId: string | null,
+	userId: string | null,
+	set: { status?: number | string },
+): Promise<ImportActor | null> {
+	return resolveActorFor(ALLOWED_ROLES, resolvedAppId, userId, set)
 }
 
 function toErrorResponse(error: unknown, set: { status?: number | string }) {
@@ -85,6 +96,27 @@ export const importLeads = new Elysia({ prefix: '/import', tags: ['Import'] })
 			pipelineStage: t.Optional(t.String({ maxLength: 80 })),
 			notes: t.Optional(t.String({ maxLength: 2000 })),
 			assignedTo: t.String({ minLength: 1 }),
+		}),
+	})
+	.post('/prospect', async ({ resolvedAppId, userId, body, set }) => {
+		const actor = await resolveActorFor(PROSPECT_ROLES, resolvedAppId, userId, set)
+		if (!actor) return { error: 'Sesi CRM tidak valid' }
+		try {
+			return { data: await ImportService.createProspect(actor, body) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, {
+		body: t.Object({
+			name: t.String({ minLength: 1, maxLength: 255 }),
+			phone: t.Optional(t.String({ maxLength: 40 })),
+			email: t.Optional(t.String({ maxLength: 255 })),
+			company: t.Optional(t.String({ maxLength: 255 })),
+			city: t.Optional(t.String({ maxLength: 120 })),
+			productInterest: t.Optional(t.String({ maxLength: 255 })),
+			channel: t.Optional(t.String({ maxLength: 40 })),
+			notes: t.Optional(t.String({ maxLength: 2000 })),
+			followUpAt: t.Optional(t.String({ maxLength: 40 })),
 		}),
 	})
 	.post('/csv/preview', async ({ resolvedAppId, userId, body, set }) => {

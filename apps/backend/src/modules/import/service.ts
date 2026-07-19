@@ -63,6 +63,45 @@ function cell(row: string[], index: number | undefined): string {
 	return String(row[index] ?? '').trim()
 }
 
+export const PROSPECT_CHANNELS = [
+	'event',
+	'linkedin',
+	'instagram',
+	'whatsapp',
+	'referral',
+	'other',
+] as const
+export type ProspectChannel = (typeof PROSPECT_CHANNELS)[number]
+
+const PROSPECT_CHANNEL_LABEL: Record<ProspectChannel, string> = {
+	event: 'Event',
+	linkedin: 'LinkedIn',
+	instagram: 'Instagram',
+	whatsapp: 'WhatsApp',
+	referral: 'Referral',
+	other: 'Lainnya',
+}
+
+function normalizeProspectChannel(value: string | null | undefined): ProspectChannel {
+	const v = String(value || '').trim().toLowerCase()
+	return (PROSPECT_CHANNELS as readonly string[]).includes(v) ? (v as ProspectChannel) : 'other'
+}
+
+/** First team the actor belongs to within the current app, or null. */
+async function resolveOwnTeamId(actor: ImportActor): Promise<string | null> {
+	const appTeams = await prisma.teams.findMany({
+		where: { app_id: actor.appId, deleted_at: null },
+		select: { id: true },
+	})
+	const appTeamIds = appTeams.map((team) => team.id)
+	if (!appTeamIds.length) return null
+	const membership = await prisma.team_members.findFirst({
+		where: { team_id: { in: appTeamIds }, user_id: actor.userId },
+		select: { team_id: true },
+	})
+	return membership?.team_id || null
+}
+
 function priorityForStage(stage: string | null): string {
 	const s = String(stage || '').toLowerCase()
 	if (s.includes('negosiasi')) return 'high'
@@ -682,6 +721,146 @@ export abstract class ImportService {
 			taskId: result.taskId,
 			updated: result.wasUpdate,
 			assigneeName: assignee.name,
+		}
+	}
+
+	/**
+	 * Sales-owned prospecting: a sales enters a lead they sourced themselves
+	 * (event, LinkedIn, sosmed, referral…). The contact is created/updated and a
+	 * follow-up task is always assigned to the sales (self), due on the date they
+	 * pick (defaults to tomorrow 09:00). Leaders/ceo may also use it to log their
+	 * own prospects.
+	 */
+	static async createProspect(
+		actor: ImportActor,
+		input: {
+			name: string
+			phone?: string | null
+			email?: string | null
+			company?: string | null
+			city?: string | null
+			productInterest?: string | null
+			channel?: string | null
+			notes?: string | null
+			followUpAt?: string | null
+		},
+	) {
+		const name = String(input.name || '').trim()
+		if (!name) throw new ImportError('Nama prospek wajib diisi')
+
+		const phone = input.phone ? normalizePhone(String(input.phone)) : null
+		const rawEmail = input.email ? String(input.email).trim().toLowerCase() : ''
+		if (rawEmail && !isValidEmail(rawEmail)) throw new ImportError('Format email tidak valid')
+		const email = rawEmail || null
+		if (!phone && !email) throw new ImportError('Isi minimal nomor WhatsApp atau email')
+
+		const channel = normalizeProspectChannel(input.channel)
+
+		// Resolve the follow-up date: the sales-picked date, else tomorrow 09:00.
+		let dueAt: Date
+		if (input.followUpAt) {
+			const parsed = new Date(input.followUpAt)
+			if (Number.isNaN(parsed.getTime())) throw new ImportError('Tanggal follow-up tidak valid')
+			dueAt = parsed
+		} else {
+			dueAt = new Date()
+			dueAt.setDate(dueAt.getDate() + 1)
+			dueAt.setHours(9, 0, 0, 0)
+		}
+
+		const teamId = await resolveOwnTeamId(actor)
+		const now = new Date()
+		const productInterest = input.productInterest?.trim() || null
+		const notes = input.notes?.trim() || null
+
+		const result = await prisma.$transaction(async (tx) => {
+			const orConds: Array<Record<string, unknown>> = []
+			if (phone) {
+				orConds.push({ phone_number: phone })
+				orConds.push({ whatsapp_id: phone })
+			}
+			if (email) orConds.push({ email })
+			const existing = orConds.length
+				? await tx.contacts.findFirst({
+						where: { app_id: actor.appId, deleted_at: null, OR: orConds },
+					})
+				: null
+
+			const customAttributes = {
+				...((existing?.custom_attributes as Record<string, unknown>) || {}),
+				assigned_user_id: actor.userId,
+				product_interest: productInterest,
+				prospect_channel: channel,
+				import_notes: notes,
+			}
+			const contactData = {
+				name: name || existing?.name || phone || 'Prospek',
+				email: email || existing?.email || null,
+				phone_number: phone || existing?.phone_number || null,
+				whatsapp_id: phone || existing?.whatsapp_id || null,
+				company: input.company?.trim() || existing?.company || null,
+				city: input.city?.trim() || existing?.city || null,
+				source: existing?.source || `prospect:${channel}`,
+				custom_attributes: customAttributes as object,
+				channel_type: existing?.channel_type || 'whatsapp',
+				updated_at: now,
+			}
+
+			let contactId: string
+			let wasUpdate = false
+			if (existing) {
+				await tx.contacts.update({ where: { id: existing.id }, data: contactData })
+				contactId = existing.id
+				wasUpdate = true
+			} else {
+				const created = await tx.contacts.create({
+					data: {
+						app_id: actor.appId,
+						identifier: phone ? `wa:${actor.appId}:${phone}` : null,
+						first_contact_at: now,
+						created_at: now,
+						...contactData,
+					},
+				})
+				contactId = created.id
+			}
+
+			const title = `Follow-up prospek ${PROSPECT_CHANNEL_LABEL[channel]} — ${name}`.slice(0, 255)
+			const task = await tx.tasks.create({
+				data: {
+					app_id: actor.appId,
+					assignee_id: actor.userId,
+					team_id: teamId,
+					created_by: actor.userId,
+					contact_id: contactId,
+					action_kind: 'prospect_followup',
+					title,
+					description: notes,
+					priority: 'medium',
+					status: 'open',
+					due_at: dueAt,
+					source: 'prospect',
+					ai_snapshot: { prospect: { channel, productInterest } },
+				},
+			})
+			await tx.task_events.create({
+				data: {
+					task_id: task.id,
+					event_type: 'created',
+					actor_id: actor.userId,
+					metadata: { source: 'prospect', channel },
+				},
+			})
+
+			return { contactId, taskId: task.id, wasUpdate }
+		})
+
+		return {
+			contactId: result.contactId,
+			taskId: result.taskId,
+			updated: result.wasUpdate,
+			dueAt: dueAt.toISOString(),
+			channel,
 		}
 	}
 
