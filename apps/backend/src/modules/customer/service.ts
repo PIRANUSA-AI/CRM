@@ -241,6 +241,26 @@ function toNumber(value: unknown, fallback = 0): number {
 	return Number.isFinite(num) ? num : fallback
 }
 
+/**
+ * Turn a raw contact `source` into a readable label for the activity timeline.
+ * Prospect sources are stored as `prospect:<channel>` by the prospect form.
+ */
+function formatTimelineSource(source: string): string {
+	const PROSPECT_LABELS: Record<string, string> = {
+		event: 'Event',
+		linkedin: 'LinkedIn',
+		instagram: 'Instagram',
+		whatsapp: 'WhatsApp',
+		referral: 'Referral',
+		other: 'Lainnya',
+	}
+	if (source.startsWith('prospect:')) {
+		const channel = source.slice('prospect:'.length)
+		return `Prospek · ${PROSPECT_LABELS[channel] || channel}`
+	}
+	return source
+}
+
 function toDateOrNull(value: unknown): Date | null {
 	if (value instanceof Date && !Number.isNaN(value.getTime())) return value
 	if (typeof value === 'string' || typeof value === 'number') {
@@ -733,6 +753,295 @@ export abstract class CustomerService {
 			tags,
 			stageMap,
 		)
+	}
+
+	/**
+	 * Unified activity timeline for a contact — the sales↔lead history.
+	 *
+	 * Merges events from several existing tables (no dedicated audit table):
+	 * lead creation, task lifecycle (task_events), internal notes, handover
+	 * requests, conversation reassignments and pipeline stage moves. Everything
+	 * is normalized to a single shape and returned newest-first so the UI can
+	 * render one chronological feed. Conversation-keyed sources are looked up
+	 * via the contact's conversations.
+	 */
+	static async getContactTimeline(id: string) {
+		if (!isUuid(id)) return null
+
+		const contact = await prisma.contacts.findUnique({
+			where: { id },
+			select: {
+				id: true,
+				created_at: true,
+				first_contact_at: true,
+				source: true,
+			},
+		})
+		if (!contact) return null
+
+		const conversations = await prisma.conversations.findMany({
+			where: { contact_id: id },
+			select: { id: true },
+		})
+		const conversationIds = conversations.map((c) => c.id)
+		const hasConversations = conversationIds.length > 0
+
+		const [taskRows, contactNotes, handovers, assignments, stageTransitions] =
+			await Promise.all([
+				prisma.tasks.findMany({
+					where: { contact_id: id },
+					select: { id: true, title: true },
+				}),
+				prisma.contact_notes.findMany({
+					where: { contact_id: id },
+					select: {
+						id: true,
+						content: true,
+						user_id: true,
+						created_at: true,
+					},
+					orderBy: { created_at: 'desc' },
+					take: 50,
+				}),
+				hasConversations
+					? prisma.handover_requests.findMany({
+							where: { conversation_id: { in: conversationIds } },
+							select: {
+								id: true,
+								request_type: true,
+								status: true,
+								requested_by: true,
+								target_agent_id: true,
+								approved_at: true,
+								created_at: true,
+							},
+						})
+					: Promise.resolve([]),
+				hasConversations
+					? prisma.assignment_history.findMany({
+							where: { conversation_id: { in: conversationIds } },
+							select: {
+								id: true,
+								assigned_to: true,
+								assigned_from: true,
+								assignment_type: true,
+								created_at: true,
+							},
+						})
+					: Promise.resolve([]),
+				hasConversations
+					? prisma.stage_transitions.findMany({
+							where: { conversation_id: { in: conversationIds } },
+							select: {
+								id: true,
+								from_stage_id: true,
+								to_stage_id: true,
+								user_id: true,
+								transition_type: true,
+								notes: true,
+								created_at: true,
+							},
+						})
+					: Promise.resolve([]),
+			])
+
+		const taskMap = new Map(taskRows.map((task) => [task.id, task.title]))
+		const taskIds = taskRows.map((task) => task.id)
+		const taskEvents = taskIds.length
+			? await prisma.task_events.findMany({
+					where: { task_id: { in: taskIds } },
+					select: {
+						id: true,
+						task_id: true,
+						event_type: true,
+						actor_id: true,
+						actor_type: true,
+						reason: true,
+						created_at: true,
+					},
+					orderBy: { created_at: 'desc' },
+					take: 200,
+				})
+			: []
+
+		const stageIds = new Set<string>()
+		for (const st of stageTransitions) {
+			if (st.from_stage_id) stageIds.add(st.from_stage_id)
+			if (st.to_stage_id) stageIds.add(st.to_stage_id)
+		}
+		const stageNameMap = new Map<string, string>()
+		if (stageIds.size > 0) {
+			const stages = await prisma.pipeline_stages.findMany({
+				where: { id: { in: [...stageIds] } },
+				select: { id: true, name: true },
+			})
+			for (const stage of stages) stageNameMap.set(stage.id, stage.name)
+		}
+
+		type TimelineTone = 'default' | 'info' | 'success' | 'warning'
+		type TimelineEvent = {
+			id: string
+			type: string
+			title: string
+			description: string | null
+			actorId: string | null
+			actorName: string | null
+			tone: TimelineTone
+			at: Date
+		}
+
+		const events: TimelineEvent[] = []
+		const actorIds = new Set<string>()
+
+		const createdAt = contact.first_contact_at || contact.created_at
+		if (createdAt) {
+			events.push({
+				id: `lead-created-${contact.id}`,
+				type: 'lead_created',
+				title: 'Lead masuk',
+				description: contact.source
+					? `Sumber: ${formatTimelineSource(contact.source)}`
+					: null,
+				actorId: null,
+				actorName: null,
+				tone: 'info',
+				at: createdAt,
+			})
+		}
+
+		const TASK_EVENT_META: Record<
+			string,
+			{ title: string; tone: TimelineTone }
+		> = {
+			created: { title: 'Tugas dibuat', tone: 'default' },
+			started: { title: 'Tugas dimulai', tone: 'info' },
+			completed: { title: 'Tugas selesai', tone: 'success' },
+			cancelled: { title: 'Tugas dibatalkan', tone: 'warning' },
+			snoozed: { title: 'Tugas ditunda', tone: 'warning' },
+			reassigned: { title: 'Tugas dialihkan', tone: 'warning' },
+			updated: { title: 'Tugas diperbarui', tone: 'default' },
+			ai_analyzed: { title: 'AI menganalisis', tone: 'info' },
+			replied_whatsapp: { title: 'Dibalas via WhatsApp', tone: 'success' },
+		}
+		for (const ev of taskEvents) {
+			if (!(ev.created_at instanceof Date)) continue
+			const meta = TASK_EVENT_META[ev.event_type] || {
+				title: `Tugas: ${ev.event_type}`,
+				tone: 'default' as TimelineTone,
+			}
+			const isAi = ev.actor_type === 'ai' || ev.actor_type === 'system'
+			if (!isAi && ev.actor_id) actorIds.add(ev.actor_id)
+			events.push({
+				id: `task-event-${ev.id}`,
+				type: `task_${ev.event_type}`,
+				title: meta.title,
+				description: taskMap.get(ev.task_id) || ev.reason || null,
+				actorId: isAi ? null : ev.actor_id,
+				actorName: isAi ? 'AI' : null,
+				tone: meta.tone,
+				at: ev.created_at,
+			})
+		}
+
+		for (const note of contactNotes) {
+			if (!(note.created_at instanceof Date)) continue
+			if (note.user_id) actorIds.add(note.user_id)
+			events.push({
+				id: `note-${note.id}`,
+				type: 'note_added',
+				title: 'Catatan ditambahkan',
+				description: note.content,
+				actorId: note.user_id,
+				actorName: null,
+				tone: 'default',
+				at: note.created_at,
+			})
+		}
+
+		for (const h of handovers) {
+			const at = h.approved_at || h.created_at
+			if (!(at instanceof Date)) continue
+			if (h.requested_by) actorIds.add(h.requested_by)
+			if (h.target_agent_id) actorIds.add(h.target_agent_id)
+			const isTake = h.request_type === 'take'
+			events.push({
+				id: `handover-${h.id}`,
+				type: isTake ? 'handover_take' : 'handover_share',
+				title: isTake ? 'Sales ambil alih percakapan' : 'Lead dibagikan ke sales',
+				description: h.status ? `Status: ${h.status}` : null,
+				actorId: h.requested_by,
+				actorName: null,
+				tone: 'info',
+				at,
+			})
+		}
+
+		for (const a of assignments) {
+			if (!(a.created_at instanceof Date)) continue
+			if (a.assigned_to) actorIds.add(a.assigned_to)
+			if (a.assigned_from) actorIds.add(a.assigned_from)
+			events.push({
+				id: `assignment-${a.id}`,
+				type: 'assignment',
+				title: 'Percakapan di-assign',
+				description: null,
+				actorId: a.assigned_to,
+				actorName: null,
+				tone: 'info',
+				at: a.created_at,
+			})
+		}
+
+		for (const st of stageTransitions) {
+			if (!(st.created_at instanceof Date)) continue
+			if (st.user_id) actorIds.add(st.user_id)
+			const fromName = st.from_stage_id
+				? stageNameMap.get(st.from_stage_id)
+				: null
+			const toName = st.to_stage_id ? stageNameMap.get(st.to_stage_id) : null
+			events.push({
+				id: `stage-${st.id}`,
+				type: 'stage_change',
+				title: 'Pindah tahap pipeline',
+				description: toName
+					? fromName
+						? `${fromName} → ${toName}`
+						: `Ke ${toName}`
+					: st.notes || null,
+				actorId: st.user_id,
+				actorName: null,
+				tone: 'default',
+				at: st.created_at,
+			})
+		}
+
+		const actorNameMap = new Map<string, string>()
+		if (actorIds.size > 0) {
+			const users = await prisma.users.findMany({
+				where: { id: { in: [...actorIds] } },
+				select: { id: true, name: true, email: true },
+			})
+			for (const user of users) {
+				actorNameMap.set(
+					user.id,
+					user.name?.trim() || user.email?.split('@')[0] || 'Pengguna',
+				)
+			}
+		}
+
+		return events
+			.map((event) => ({
+				id: event.id,
+				type: event.type,
+				title: event.title,
+				description: event.description,
+				tone: event.tone,
+				actorName:
+					event.actorName ||
+					(event.actorId ? actorNameMap.get(event.actorId) || null : null),
+				at: event.at.toISOString(),
+			}))
+			.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
 	}
 
 	static async updateCustomer(

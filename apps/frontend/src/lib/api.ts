@@ -1405,6 +1405,18 @@ export const contacts = {
 }
 
 // Customers (Enhanced)
+export type TimelineTone = 'default' | 'info' | 'success' | 'warning'
+
+export interface TimelineEvent {
+	id: string
+	type: string
+	title: string
+	description: string | null
+	tone: TimelineTone
+	actorName: string | null
+	at: string
+}
+
 export const customers = {
 	list: (params?: {
 		page?: number
@@ -1440,6 +1452,9 @@ export const customers = {
 	stats: () => apiRequest('/customers/stats'),
 
 	get: (id: string) => apiRequest(`/customers/${id}`),
+
+	timeline: (id: string): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
+		apiRequest(`/customers/${id}/timeline`),
 
 	update: (
 		id: string,

@@ -106,6 +106,20 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 			params: t.Object({ id: t.String() }),
 		},
 	)
+	.get(
+		'/:id/timeline',
+		async ({ params, set }) => {
+			const timeline = await CustomerService.getContactTimeline(params.id)
+			if (timeline === null) {
+				set.status = 404
+				return { error: 'Customer not found' }
+			}
+			return { success: true, payload: timeline }
+		},
+		{
+			params: t.Object({ id: t.String() }),
+		},
+	)
 	.put(
 		'/:id',
 		async ({ params, body, set }) => {

@@ -5,6 +5,7 @@ import {
 	contactConversations,
 	tasks as tasksApi,
 	type Task,
+	type TimelineEvent,
 	API_BASE,
 } from '@/lib/api'
 import {
@@ -25,7 +26,14 @@ import {
 	ListTodo,
 	CheckCircle2,
 	CirclePlay,
+	UserPlus,
+	StickyNote,
+	Share2,
+	Bot,
+	ArrowRightLeft,
+	GitBranch,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 const TASK_PRIORITY_LABEL: Record<string, string> = {
 	low: 'Rendah',
@@ -63,6 +71,53 @@ function formatTaskDue(value: string | null) {
 		hour: '2-digit',
 		minute: '2-digit',
 	}).format(date)
+}
+
+// Absolute + short relative time for the activity timeline.
+function formatTimelineTime(value: string): { absolute: string; relative: string } {
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return { absolute: '', relative: '' }
+	const absolute = new Intl.DateTimeFormat('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	}).format(date)
+
+	const diffMs = Date.now() - date.getTime()
+	const mins = Math.round(diffMs / 60000)
+	let relative: string
+	if (mins < 1) relative = 'Baru saja'
+	else if (mins < 60) relative = `${mins} mnt lalu`
+	else if (mins < 1440) relative = `${Math.round(mins / 60)} jam lalu`
+	else if (mins < 10080) relative = `${Math.round(mins / 1440)} hari lalu`
+	else relative = absolute
+	return { absolute, relative }
+}
+
+// Icon + accent color per timeline event type (prefix-matched).
+const TIMELINE_ICON: Array<{ match: (type: string) => boolean; icon: LucideIcon }> = [
+	{ match: (t) => t === 'lead_created', icon: UserPlus },
+	{ match: (t) => t === 'note_added', icon: StickyNote },
+	{ match: (t) => t.startsWith('handover'), icon: Share2 },
+	{ match: (t) => t === 'assignment', icon: ArrowRightLeft },
+	{ match: (t) => t === 'stage_change', icon: GitBranch },
+	{ match: (t) => t === 'task_replied_whatsapp', icon: MessageSquare },
+	{ match: (t) => t === 'task_ai_analyzed', icon: Bot },
+	{ match: (t) => t === 'task_completed', icon: CheckCircle2 },
+	{ match: (t) => t.startsWith('task_'), icon: ListTodo },
+]
+
+function timelineIcon(type: string): LucideIcon {
+	return TIMELINE_ICON.find((entry) => entry.match(type))?.icon || Activity
+}
+
+const TIMELINE_TONE: Record<string, string> = {
+	default: 'bg-gray-100 text-gray-500',
+	info: 'bg-sky-100 text-sky-600',
+	success: 'bg-emerald-100 text-emerald-600',
+	warning: 'bg-amber-100 text-amber-600',
 }
 import PageHeader from '@/components/PageHeader'
 import { EditCustomerModal } from '@/components/EditCustomerModal'
@@ -106,6 +161,7 @@ function CustomerDetail() {
 	const [customer, setCustomer] = useState<Customer | null>(null)
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [contactTasks, setContactTasks] = useState<Task[]>([])
+	const [timeline, setTimeline] = useState<TimelineEvent[]>([])
 	const [taskBusy, setTaskBusy] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
@@ -129,10 +185,11 @@ function CustomerDetail() {
 	const loadData = async () => {
 		setLoading(true)
 		try {
-			const [customerRes, convsRes, tasksRes]: any = await Promise.all([
+			const [customerRes, convsRes, tasksRes, timelineRes]: any = await Promise.all([
 				customers.get(customerId),
 				contactConversations.list(customerId),
 				tasksApi.list({ contactId: customerId, limit: 50 }).catch(() => ({ data: [] })),
+				customers.timeline(customerId).catch(() => ({ payload: [] })),
 				])
 
 				setCustomer(customerRes.payload)
@@ -144,6 +201,7 @@ function CustomerDetail() {
 							: [],
 				)
 				setContactTasks(Array.isArray(tasksRes?.data) ? tasksRes.data : [])
+				setTimeline(Array.isArray(timelineRes?.payload) ? timelineRes.payload : [])
 			} catch (error: any) {
 				console.error('Failed to load customer details:', error)
 				setError(error.message || 'Failed to load data')
@@ -395,7 +453,7 @@ function CustomerDetail() {
 								: 'text-gray-500 hover:bg-gray-50'
 						}`}
 					>
-						Activity Logs
+						Aktivitas{timeline.length > 0 ? ` (${timeline.length})` : ''}
 					</button>
 				</div>
 
@@ -727,19 +785,67 @@ function CustomerDetail() {
 					)}
 
 					{activeTab === 'activity' && (
-						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 animate-in slide-in-from-bottom-2 duration-300">
-							<div className="flex flex-col items-center justify-center py-12 text-center">
-								<div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-									<Activity className="text-gray-300" size={32} />
+						<div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 lg:p-8 animate-in slide-in-from-bottom-2 duration-300">
+							{timeline.length === 0 ? (
+								<div className="flex flex-col items-center justify-center py-12 text-center">
+									<div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+										<Activity className="text-gray-300" size={32} />
+									</div>
+									<h3 className="text-lg font-bold text-gray-900 mb-1">
+										Belum ada aktivitas
+									</h3>
+									<p className="text-sm text-gray-400 max-w-xs">
+										Riwayat interaksi tim dengan lead ini — tugas, catatan,
+										handover, dan perubahan tahap — akan muncul di sini.
+									</p>
 								</div>
-								<h3 className="text-lg font-bold text-gray-900 mb-1">
-									No major activity yet
-								</h3>
-								<p className="text-sm text-gray-400 max-w-xs">
-									Detailed audit logs for this contact will appear here as they
-									interact with your team.
-								</p>
-							</div>
+							) : (
+								<ol className="relative">
+									{timeline.map((event, index) => {
+										const Icon = timelineIcon(event.type)
+										const time = formatTimelineTime(event.at)
+										const isLast = index === timeline.length - 1
+										return (
+											<li key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
+												{!isLast && (
+													<span
+														className="absolute left-[19px] top-10 bottom-0 w-px bg-gray-100"
+														aria-hidden
+													/>
+												)}
+												<span
+													className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+														TIMELINE_TONE[event.tone] || TIMELINE_TONE.default
+													}`}
+												>
+													<Icon size={18} />
+												</span>
+												<div className="min-w-0 flex-1 pt-1">
+													<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+														<p className="font-bold text-gray-900">{event.title}</p>
+														<span
+															className="shrink-0 text-xs text-gray-400"
+															title={time.absolute}
+														>
+															{time.relative}
+														</span>
+													</div>
+													{event.description && (
+														<p className="mt-0.5 text-sm text-gray-500 break-words line-clamp-3">
+															{event.description}
+														</p>
+													)}
+													{event.actorName && (
+														<p className="mt-1 text-xs font-medium text-gray-400">
+															oleh {event.actorName}
+														</p>
+													)}
+												</div>
+											</li>
+										)
+									})}
+								</ol>
+							)}
 						</div>
 					)}
 				</div>
