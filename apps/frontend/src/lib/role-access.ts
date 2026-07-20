@@ -67,6 +67,7 @@ export const SALES_PATHS = [
 	'/prospek',
 	'/alih-tugas',
 	'/customers',
+	'/companies',
 	// Deals live on /pipeline. '/opportunity' stays listed because it redirects
 	// there — drop it and the redirect bounces the sales off their own deals.
 	'/pipeline',
@@ -87,6 +88,7 @@ export const LEADER_PATHS = [
 	'/kelola-tim',
 	'/sales-profiles',
 	'/customers',
+	'/companies',
 	'/opportunity',
 	'/sakti',
 	'/pipeline',

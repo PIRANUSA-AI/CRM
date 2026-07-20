@@ -1541,6 +1541,70 @@ export const customers = {
 
 }
 
+// Companies — the firm a contact buys for. Read-only for now: rows are created
+// by the write paths that already accept a company name (contact form, import,
+// prospek), so there is no "add company" that could produce an empty one.
+export type CompanyRow = {
+	id: string
+	name: string
+	city: string | null
+	website: string | null
+	notes: string | null
+	contact_count: number
+	deal_count: number
+	deal_value: number
+	last_activity_at: string | null
+	created_at: string | null
+}
+
+export type CompanyDetail = {
+	id: string
+	name: string
+	city: string | null
+	website: string | null
+	notes: string | null
+	created_at: string | null
+	contacts: Array<{
+		id: string
+		name: string | null
+		email: string | null
+		phone_number: string | null
+		owner_name: string | null
+		last_activity_at: string | null
+	}>
+	deals: Array<{
+		id: string
+		name: string
+		stage: string | null
+		stage_label: string
+		value: number
+		probability: number | null
+		contact_name: string | null
+	}>
+	deal_value: number
+}
+
+export const companies = {
+	list: (params?: { page?: number; per_page?: number; search?: string }) => {
+		const queryParams = new URLSearchParams()
+		for (const [key, value] of Object.entries(params || {})) {
+			if (value === undefined || value === null) continue
+			const asString = typeof value === 'string' ? value.trim() : String(value)
+			if (!asString) continue
+			queryParams.set(key, asString)
+		}
+		const query = queryParams.toString()
+		return apiRequest<{
+			success: boolean
+			payload: CompanyRow[]
+			meta: { page: number; per_page: number; total: number; total_pages: number }
+		}>(`/companies${query ? `?${query}` : ''}`)
+	},
+
+	get: (id: string) =>
+		apiRequest<{ success: boolean; payload: CompanyDetail }>(`/companies/${id}`),
+}
+
 // Opportunities — qualified deals, distinct from raw leads (customers).
 export type OpportunityStatus = 'open' | 'won' | 'lost'
 

@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
 	BarChart3,
+	Building2,
 	BookOpen,
 	Bot,
 	Code2,
@@ -70,6 +71,15 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/customers',
 		group: 'data',
 		icon: Users,
+	},
+	{
+		// The firm a contact buys for. Sits next to Pelanggan because it is the
+		// same data seen the other way round — one company, several PIC.
+		id: 'companies',
+		label: 'Perusahaan',
+		path: '/companies',
+		group: 'data',
+		icon: Building2,
 	},
 	{
 		// Prospek and Opportunity used to sit here as separate entries. They are

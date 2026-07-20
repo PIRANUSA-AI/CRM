@@ -43,6 +43,7 @@ import { Route as AppSalesProfilesIndexRouteImport } from './routes/_app/sales-p
 import { Route as AppSaktiIndexRouteImport } from './routes/_app/sakti/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/_app/developers/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/_app/customers/index'
+import { Route as AppCompaniesIndexRouteImport } from './routes/_app/companies/index'
 import { Route as AppTasksTaskIdRouteImport } from './routes/_app/tasks/$taskId'
 import { Route as AppSalesProfilesUserIdRouteImport } from './routes/_app/sales-profiles/$userId'
 import { Route as AppSaktiSuratBaruRouteImport } from './routes/_app/sakti/surat-baru'
@@ -52,6 +53,7 @@ import { Route as AppDevelopersMessagesSentByApiRouteImport } from './routes/_ap
 import { Route as AppDevelopersApiToolsRouteImport } from './routes/_app/developers/api-tools'
 import { Route as AppDevelopersApiDocumentationRouteImport } from './routes/_app/developers/api-documentation'
 import { Route as AppCustomersCustomerIdRouteImport } from './routes/_app/customers/$customerId'
+import { Route as AppCompaniesCompanyIdRouteImport } from './routes/_app/companies/$companyId'
 import { Route as AppChannelsWhatsappRouteImport } from './routes/_app/channels/whatsapp'
 import { Route as AppChannelsTelegramRouteImport } from './routes/_app/channels/telegram'
 import { Route as AppChannelsLivechatRouteImport } from './routes/_app/channels/livechat'
@@ -234,6 +236,11 @@ const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
   path: '/customers/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCompaniesIndexRoute = AppCompaniesIndexRouteImport.update({
+  id: '/companies/',
+  path: '/companies/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTasksTaskIdRoute = AppTasksTaskIdRouteImport.update({
   id: '/tasks/$taskId',
   path: '/tasks/$taskId',
@@ -279,6 +286,11 @@ const AppDevelopersApiDocumentationRoute =
 const AppCustomersCustomerIdRoute = AppCustomersCustomerIdRouteImport.update({
   id: '/customers/$customerId',
   path: '/customers/$customerId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCompaniesCompanyIdRoute = AppCompaniesCompanyIdRouteImport.update({
+  id: '/companies/$companyId',
+  path: '/companies/$companyId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppChannelsWhatsappRoute = AppChannelsWhatsappRouteImport.update({
@@ -383,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/channels/livechat': typeof AppChannelsLivechatRoute
   '/channels/telegram': typeof AppChannelsTelegramRoute
   '/channels/whatsapp': typeof AppChannelsWhatsappRouteWithChildren
+  '/companies/$companyId': typeof AppCompaniesCompanyIdRoute
   '/customers/$customerId': typeof AppCustomersCustomerIdRoute
   '/developers/api-documentation': typeof AppDevelopersApiDocumentationRoute
   '/developers/api-tools': typeof AppDevelopersApiToolsRouteWithChildren
@@ -392,6 +405,7 @@ export interface FileRoutesByFullPath {
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/companies/': typeof AppCompaniesIndexRoute
   '/customers/': typeof AppCustomersIndexRoute
   '/developers/': typeof AppDevelopersIndexRoute
   '/sakti/': typeof AppSaktiIndexRoute
@@ -439,6 +453,7 @@ export interface FileRoutesByTo {
   '/channels/livechat': typeof AppChannelsLivechatRoute
   '/channels/telegram': typeof AppChannelsTelegramRoute
   '/channels/whatsapp': typeof AppChannelsWhatsappRouteWithChildren
+  '/companies/$companyId': typeof AppCompaniesCompanyIdRoute
   '/customers/$customerId': typeof AppCustomersCustomerIdRoute
   '/developers/api-documentation': typeof AppDevelopersApiDocumentationRoute
   '/developers/api-tools': typeof AppDevelopersApiToolsRouteWithChildren
@@ -448,6 +463,7 @@ export interface FileRoutesByTo {
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/companies': typeof AppCompaniesIndexRoute
   '/customers': typeof AppCustomersIndexRoute
   '/developers': typeof AppDevelopersIndexRoute
   '/sakti': typeof AppSaktiIndexRoute
@@ -497,6 +513,7 @@ export interface FileRoutesById {
   '/_app/channels/livechat': typeof AppChannelsLivechatRoute
   '/_app/channels/telegram': typeof AppChannelsTelegramRoute
   '/_app/channels/whatsapp': typeof AppChannelsWhatsappRouteWithChildren
+  '/_app/companies/$companyId': typeof AppCompaniesCompanyIdRoute
   '/_app/customers/$customerId': typeof AppCustomersCustomerIdRoute
   '/_app/developers/api-documentation': typeof AppDevelopersApiDocumentationRoute
   '/_app/developers/api-tools': typeof AppDevelopersApiToolsRouteWithChildren
@@ -506,6 +523,7 @@ export interface FileRoutesById {
   '/_app/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/_app/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/_app/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/_app/companies/': typeof AppCompaniesIndexRoute
   '/_app/customers/': typeof AppCustomersIndexRoute
   '/_app/developers/': typeof AppDevelopersIndexRoute
   '/_app/sakti/': typeof AppSaktiIndexRoute
@@ -555,6 +573,7 @@ export interface FileRouteTypes {
     | '/channels/livechat'
     | '/channels/telegram'
     | '/channels/whatsapp'
+    | '/companies/$companyId'
     | '/customers/$customerId'
     | '/developers/api-documentation'
     | '/developers/api-tools'
@@ -564,6 +583,7 @@ export interface FileRouteTypes {
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
+    | '/companies/'
     | '/customers/'
     | '/developers/'
     | '/sakti/'
@@ -611,6 +631,7 @@ export interface FileRouteTypes {
     | '/channels/livechat'
     | '/channels/telegram'
     | '/channels/whatsapp'
+    | '/companies/$companyId'
     | '/customers/$customerId'
     | '/developers/api-documentation'
     | '/developers/api-tools'
@@ -620,6 +641,7 @@ export interface FileRouteTypes {
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
+    | '/companies'
     | '/customers'
     | '/developers'
     | '/sakti'
@@ -668,6 +690,7 @@ export interface FileRouteTypes {
     | '/_app/channels/livechat'
     | '/_app/channels/telegram'
     | '/_app/channels/whatsapp'
+    | '/_app/companies/$companyId'
     | '/_app/customers/$customerId'
     | '/_app/developers/api-documentation'
     | '/_app/developers/api-tools'
@@ -677,6 +700,7 @@ export interface FileRouteTypes {
     | '/_app/sakti/surat-baru'
     | '/_app/sales-profiles/$userId'
     | '/_app/tasks/$taskId'
+    | '/_app/companies/'
     | '/_app/customers/'
     | '/_app/developers/'
     | '/_app/sakti/'
@@ -938,6 +962,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCustomersIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/companies/': {
+      id: '/_app/companies/'
+      path: '/companies'
+      fullPath: '/companies/'
+      preLoaderRoute: typeof AppCompaniesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/tasks/$taskId': {
       id: '/_app/tasks/$taskId'
       path: '/tasks/$taskId'
@@ -999,6 +1030,13 @@ declare module '@tanstack/react-router' {
       path: '/customers/$customerId'
       fullPath: '/customers/$customerId'
       preLoaderRoute: typeof AppCustomersCustomerIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/companies/$companyId': {
+      id: '/_app/companies/$companyId'
+      path: '/companies/$companyId'
+      fullPath: '/companies/$companyId'
+      preLoaderRoute: typeof AppCompaniesCompanyIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/channels/whatsapp': {
@@ -1168,6 +1206,7 @@ interface AppRouteChildren {
   AppChannelsLivechatRoute: typeof AppChannelsLivechatRoute
   AppChannelsTelegramRoute: typeof AppChannelsTelegramRoute
   AppChannelsWhatsappRoute: typeof AppChannelsWhatsappRouteWithChildren
+  AppCompaniesCompanyIdRoute: typeof AppCompaniesCompanyIdRoute
   AppCustomersCustomerIdRoute: typeof AppCustomersCustomerIdRoute
   AppDevelopersApiDocumentationRoute: typeof AppDevelopersApiDocumentationRoute
   AppDevelopersApiToolsRoute: typeof AppDevelopersApiToolsRouteWithChildren
@@ -1176,6 +1215,7 @@ interface AppRouteChildren {
   AppSaktiSuratBaruRoute: typeof AppSaktiSuratBaruRoute
   AppSalesProfilesUserIdRoute: typeof AppSalesProfilesUserIdRoute
   AppTasksTaskIdRoute: typeof AppTasksTaskIdRoute
+  AppCompaniesIndexRoute: typeof AppCompaniesIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
   AppSaktiIndexRoute: typeof AppSaktiIndexRoute
@@ -1213,6 +1253,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppChannelsLivechatRoute: AppChannelsLivechatRoute,
   AppChannelsTelegramRoute: AppChannelsTelegramRoute,
   AppChannelsWhatsappRoute: AppChannelsWhatsappRouteWithChildren,
+  AppCompaniesCompanyIdRoute: AppCompaniesCompanyIdRoute,
   AppCustomersCustomerIdRoute: AppCustomersCustomerIdRoute,
   AppDevelopersApiDocumentationRoute: AppDevelopersApiDocumentationRoute,
   AppDevelopersApiToolsRoute: AppDevelopersApiToolsRouteWithChildren,
@@ -1221,6 +1262,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSaktiSuratBaruRoute: AppSaktiSuratBaruRoute,
   AppSalesProfilesUserIdRoute: AppSalesProfilesUserIdRoute,
   AppTasksTaskIdRoute: AppTasksTaskIdRoute,
+  AppCompaniesIndexRoute: AppCompaniesIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,
   AppSaktiIndexRoute: AppSaktiIndexRoute,

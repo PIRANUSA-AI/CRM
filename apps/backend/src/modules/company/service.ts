@@ -1,5 +1,6 @@
 import prisma from '../../lib/prisma'
 import { Prisma } from '../../generated/prisma'
+import { resolveStage } from '../opportunities/stages'
 
 /**
  * Reading companies.
@@ -220,7 +221,13 @@ export const CompanyService = {
 		return {
 			...company,
 			contacts,
-			deals: deals.map((deal) => ({ ...deal, value: Number(deal.value || 0) })),
+			// Label resolved here rather than in the UI so the company page and the
+			// pipeline cannot end up calling the same stage two different things.
+			deals: deals.map((deal) => ({
+				...deal,
+				value: Number(deal.value || 0),
+				stage_label: resolveStage(deal.stage).label,
+			})),
 			// The number the company page exists to answer: what is this firm
 			// worth across every PIC we talk to, not per conversation.
 			deal_value: deals.reduce((sum, deal) => sum + Number(deal.value || 0), 0),
