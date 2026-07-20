@@ -814,17 +814,51 @@ opportunity. Tabelnya adalah `opportunities`.
 |---|---|
 | Frontend | `routes/_app/sakti.tsx` |
 | Service | `modules/sakti/service.ts` |
+| Impor CSV | `modules/sakti/import.ts` |
+| Template surat | `modules/sakti/letter-templates.ts` |
 | Tabel | `sakti_records`, `surat_sakti` |
 
 Database lisensi lintas-vendor untuk mencocokkan lead dengan lisensi yang sudah
 ada. `matchLead()` mengembalikan rekomendasi `surat_sakti` (kalau cocok) atau
 `opportunity` (kalau tidak).
 
-**Belum ada**: impor spreadsheet, dan template surat. Keduanya Fase 3.
-Empat template yang diminta: Surat Penawaran Harga, Surat Penunjukan Dealer
-Resmi, Surat Keterangan Lisensi Asli, Surat Serah Terima Lisensi. Tiga dari
-empat adalah lampiran tender, jadi strukturnya perlu nomor surat, tanggal, kop,
-dan tanda tangan — bukan sekadar body teks bebas.
+#### Impor CSV
+
+`POST /sakti/records/import` dengan `{ content, dryRun }`.
+
+- **CSV saja, disengaja.** Semua aplikasi sheet bisa ekspor CSV, dan menambah
+  pustaka XLSX berarti dependensi baru untuk format yang toh akan diratakan ke
+  baris yang sama. Parsernya dipakai ulang dari importer lead
+  (`modules/import/parser.ts`, RFC 4180).
+- **Idempoten.** Nomor lisensi yang sudah tersimpan — atau berulang di dalam
+  file yang sama — dilewati, bukan disisipkan. Sheet vendor sering dikirim
+  ulang, jadi mengimpor file yang sama dua kali tidak boleh menggandakan data.
+  Tanpa nomor lisensi, kunci jatuh ke pasangan customer + produk.
+- `dryRun: true` mengembalikan pratinjau yang sama tanpa menulis apa pun.
+- Header yang dikenali punya banyak alias (`Nama Customer`, `No Lisensi`,
+  `Tgl Beli`, plus varian Inggris). Kolom asing diabaikan dan dilaporkan di
+  `unmapped`.
+- Daftar record mengembalikan `meta.total` supaya tabel bisa dipaginasi jujur,
+  dan pencarian mencakup nomor lisensi serta produk.
+
+#### Template surat
+
+`GET /sakti/templates` · `POST /sakti/templates/preview`
+
+Empat template: **Penawaran Harga, Penunjukan Dealer Resmi, Keterangan Lisensi
+Asli, Serah Terima Lisensi.** Tiga di antaranya lampiran tender, jadi tiap
+template membawa nomor surat, tanggal, kop, dan blok tanda tangan — bukan
+sekadar body teks bebas.
+
+> **Isi suratnya masih DUMMY.** Strukturnya benar, tapi redaksinya perlu
+> diganti dengan kalimat resmi PIRANUSA sebelum dikirim ke pelanggan atau
+> dilampirkan ke tender. Jangan anggap sudah disetujui legal.
+
+Surat menyimpan **`template` + `template_values`, bukan teks jadinya.**
+`renderedBody` dihitung saat dibaca, jadi begitu redaksi template diperbaiki,
+surat lama ikut terbaca dengan kalimat yang baru tanpa migrasi. Placeholder
+yang kosong dirender jadi `-`, tidak pernah menyisakan `{{field}}` yang terlihat
+rusak kalau surat itu dicetak.
 
 ---
 
@@ -1057,10 +1091,21 @@ Perubahan skema (sudah di-`prisma db push`):
 
 Detail lengkapnya di [§6.9](#69-deal-prospek-pipeline-opportunity).
 
-### Fase 3 — Sakti (belum dikerjakan)
+### Fase 3 — Sakti (selesai)
 
-1. Impor spreadsheet (CSV/XLSX) + pencarian (barisnya akan banyak)
-2. Empat template surat (lihat [§6.10](#610-database-sakti--surat-sakti))
+| Commit | Isi |
+|---|---|
+| `65ca92f` | impor CSV + empat template surat (backend) |
+| `acc5c13` | dialog impor, pratinjau surat, paginasi tabel (frontend) |
+
+Perubahan skema (sudah di-`prisma db push`): `surat_sakti.template` dan
+`surat_sakti.template_values`.
+
+Detail di [§6.10](#610-database-sakti--surat-sakti).
+
+**Tindak lanjut yang masih menunggu bisnis:** redaksi keempat template masih
+teks contoh. Ganti isinya di `modules/sakti/letter-templates.ts` — strukturnya
+tidak perlu diubah, cukup kalimatnya.
 
 ### Utang teknis yang ditunda sadar
 
