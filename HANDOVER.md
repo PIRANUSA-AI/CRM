@@ -737,48 +737,74 @@ Baris terakhir itu penting: **notifikasi lead ada dua bentuk.**
 
 ---
 
-### 6.9 Prospek, Pelanggan, Opportunity
+### 6.9 Deal: Prospek, Pipeline, Opportunity
 
-**Status: bagian ini sedang dirombak (Fase 2 — belum dikerjakan).**
+Sistem ini hanya punya **dua** entitas nyata: **Kontak/Pelanggan** (permanen)
+dan **Deal** (satu percobaan penjualan; satu kontak bisa punya banyak, karena
+lisensi CAD diperpanjang tiap tahun).
 
-Kondisi sekarang:
+**"Prospek" dan "Opportunity" bukan entitas** — keduanya Deal yang sama pada
+nilai `probability` berbeda. Di bawah ambang tim = prospek, di atas =
+opportunity. Tabelnya adalah `opportunities`.
 
-| Halaman | File | Kondisi |
+| | |
+|---|---|
+| Stage | `modules/opportunities/stages.ts` (**di kode, bukan DB**) |
+| Service | `modules/opportunities/service.ts` |
+| Rute | `modules/opportunities/index.ts` |
+| Halaman | `routes/_app/pipeline.tsx` (tabel + papan) |
+| Ambang | `teams.deal_threshold`, diatur di `routes/_app/kelola-tim.tsx` |
+
+**Stage → probability default:**
+
+| Stage | % | Status |
 |---|---|---|
-| Tambah Prospek | `routes/_app/prospek.tsx` | form; **leader wajib pilih sales** |
-| Pelanggan | `routes/_app/customers/index.tsx` | tabel + tombol Tambah (baru berfungsi) |
-| Opportunity | `routes/_app/opportunity.tsx` | masih input manual |
-| Pipeline | `routes/_app/pipeline.tsx` | kanban terpisah |
+| `baru` | 10 | open |
+| `kontak` | 25 | open |
+| `kualifikasi` | 50 | open |
+| `penawaran` | 75 | open |
+| `negosiasi` | 90 | open |
+| `menang` | 100 | won |
+| `kalah` | 0 | lost |
+
+> Stage sengaja ditaruh di kode, bukan di tabel `pipeline_stages`. Tabel itu
+> `pipeline_type = 'contact'` dan mengatur siklus hidup **kontak** (New Leads →
+> Hot Leads → Payment → Customer) yang tampil di halaman Pelanggan — sumbu yang
+> berbeda: *siapa orangnya*, bukan *sejauh apa satu penjualan*.
+
+**Aturan yang dijaga:**
+
+- `PATCH /opportunities/:id/stage` adalah **seluruh siklus hidup**. Menggeser
+  stage menyetel `probability`, `status`, dan `closed_at` sekaligus. Tidak ada
+  aksi "promote" terpisah, dan **tidak ada input opportunity manual**.
+- Deal **membuka dirinya sendiri**: dari prospek (`createProspect`) dan dari
+  handoff lead (`LeadRoutingService.assign`). Keduanya melewati kontak yang
+  sudah punya deal `open`, supaya menambah prospek dua kali tidak memecah
+  pipeline orang yang sama.
+- `bucket` (`prospek` | `opportunity` | `closed`) **dihitung saat dibaca**, dari
+  `probability` versus ambang tim pemilik deal. Karena itu mengubah ambang
+  langsung mengubah klasifikasi tanpa migrasi data. Konsekuensinya filter
+  `?bucket=` tidak bisa masuk ke query SQL — ia disaring setelah enrichment.
+- `menang`/`kalah` masuk bucket `closed`, bukan `opportunity`. Deal yang sudah
+  menang tidak boleh ikut menghitung pipeline yang sedang dibaca leader.
+- Baca di-scope per peran lewat `dealVisibilityScope()` — sales lihat miliknya,
+  leader lihat timnya. Berlaku juga untuk `moveStage`, `update`, `remove`.
 
 **Prospek** (`modules/import/service.ts` → `createProspect()`):
-- sales → task jadi miliknya sendiri
+- sales → task dan deal jadi miliknya sendiri
 - leader → **wajib** `assigneeId`; menugaskan ke diri sendiri **ditolak**;
-  tim task mengikuti tim sales yang dipilih
+  tim task dan deal mengikuti tim sales yang dipilih
+- Halamannya (`/prospek`) tidak ada di sidebar; dibuka dari tombol di Pipeline
 
 **Pelanggan** (`modules/customer/**`):
 - `POST /customers` → `createCustomer()`; nomor dinormalisasi, **duplikat
   ditolak `409`** (WhatsApp masuk dicocokkan lewat nomor, jadi kontak ganda
   akan memecah riwayat satu pelanggan)
-- Filter segmen sekarang **masih sisa e-commerce** (VIP, cart abandon, komplain)
-  dan **disaring di klien atas satu halaman 10 baris** — jadi angkanya salah.
-  Ini yang akan dibetulkan di Fase 2.
-
-**Rencana Fase 2 yang sudah disepakati** — baca ini sebelum menyentuh ketiganya:
-
-> Sistem ini hanya punya **dua** entitas nyata: **Kontak/Pelanggan** (permanen)
-> dan **Deal** (satu percobaan penjualan; satu kontak bisa punya banyak, karena
-> lisensi CAD diperpanjang tiap tahun).
->
-> **"Prospek" dan "Opportunity" bukan entitas** — keduanya Deal yang sama pada
-> nilai `probability` berbeda. Di bawah ambang = prospek, di atas = opportunity.
->
-> Stage → probability default: Baru 10 · Kontak awal 25 · Kualifikasi 50 ·
-> Penawaran 75 · Negosiasi 90 · Menang 100 / Kalah 0.
-> **Ambangnya bisa diatur leader per tim** (belum dibuat).
->
-> Konsekuensi: `/opportunity`, `/pipeline`, `/prospek` **dilebur jadi satu
-> halaman Pipeline**; form opportunity manual dibuang — deal naik karena sales
-> menggeser stage.
+- Filter **di SQL**, bukan di klien: `segment` (`prospek`, `belum_beli`,
+  `sering_beli`, `idle_90d`), `team_id`, `owner_id`
+- **"Pernah beli" = deal menang ATAU order berbayar.** Tabel `orders` kosong di
+  deployment ini, jadi menyandarkan definisi itu pada `orders` saja akan
+  menandai semua 320 kontak sebagai belum pernah beli
 
 ---
 
@@ -909,11 +935,17 @@ Sudah dibahas di [§2](#2-menjalankan-sistem). Aplikasi memakai `cpira-postgres`
 
 Jangan hapus. Disimpan untuk pemakaian di masa depan.
 
-### 7.8 Filter Pelanggan menyaring di klien
+### 7.8 Jangan menyaring daftar berpaginasi di klien
 
-`customers/index.tsx` memfilter array `rows` yang hanya berisi **satu halaman
-(10 baris)**. Jadi chip "Repeat buyer" hanya menyaring 10 baris yang sedang
-tampil, dan angkanya menyesatkan. Perlu dipindah ke server (Fase 2).
+Dulu `customers/index.tsx` memfilter array `rows` yang hanya berisi **satu
+halaman (10 baris)**, jadi tiap chip menyaring 10 baris yang kebetulan tampil
+dan angkanya menyesatkan — terlihat masuk akal, padahal salah. Sudah dipindah
+ke SQL. **Pola yang sama masih mungkin terulang di halaman lain**: kalau sebuah
+daftar dipaginasi, filternya wajib ikut ke query.
+
+Pengecualian yang sah ada satu: filter `?bucket=` di Pipeline. Bucket butuh
+ambang tim yang baru diketahui setelah enrichment, jadi ia memang disaring di
+memori — tapi atas **seluruh** hasil query, bukan satu halaman.
 
 ### 7.9 Leader ada di dalam semua tim
 
@@ -1010,19 +1042,20 @@ menempatkan mereka di AEC/MFG, dan leader di keduanya.
 Plus pembersihan data: tim `Tim Sales` dihapus, 24 task + 1 conversation
 dipindah ke AEC/MFG sesuai pemiliknya.
 
-### Fase 2 — model deal (belum dikerjakan)
+### Fase 2 — model deal (selesai)
 
-1. Tambah `stage` + `probability` ke deal
-2. Buang form opportunity manual
-3. Lebur `/opportunity` + `/pipeline` + `/prospek` → satu halaman **Pipeline**
-   (tabel + kanban)
-4. Ambang probability bisa diatur leader per tim (kolom baru di `teams` +
-   bagian di Pengaturan)
-5. Filter Pelanggan **pindah ke server**, ganti segmen sisa e-commerce dengan:
-   tim, sales, belum pernah beli, sering beli, idle
-6. Rampingkan sidebar grup Data jadi: Pelanggan · Pipeline · Sakti
+| Commit | Isi |
+|---|---|
+| `32d4d89` | deal membuka diri dari lead, progres digerakkan stage |
+| `62b1369` | satu halaman Pipeline, mengganti papan yang tidak pernah memuat |
+| `af34db6` | filter Pelanggan pindah ke server, segmen sesuai kebutuhan |
+| `41be555` | leader mengatur ambang opportunity per tim |
 
-**Fase ini menyentuh skema DB** → `prisma db push`.
+Perubahan skema (sudah di-`prisma db push`):
+`opportunities.probability` (Int, default 10) dan `teams.deal_threshold`
+(Int, default 50).
+
+Detail lengkapnya di [§6.9](#69-deal-prospek-pipeline-opportunity).
 
 ### Fase 3 — Sakti (belum dikerjakan)
 
