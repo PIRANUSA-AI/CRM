@@ -373,6 +373,9 @@ export abstract class LeadRoutingService {
 					contact: context.contact,
 					leadNeed: context.leadNeed,
 					transcript,
+					// The opener goes out from this sales' own number, so the brief
+					// needs to know whose voice to write in.
+					salesName: target.name,
 				}).catch(() => null)
 			: null
 		// F1 + F4: lead-need profile + briefing (summary + ready opener) carried into
