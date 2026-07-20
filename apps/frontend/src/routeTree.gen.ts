@@ -19,7 +19,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhatsappConnectRouteImport } from './routes/whatsapp.connect'
 import { Route as AppTemplatesRouteImport } from './routes/_app/templates'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
-import { Route as AppSaktiRouteImport } from './routes/_app/sakti'
 import { Route as AppProspekRouteImport } from './routes/_app/prospek'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppOpportunityRouteImport } from './routes/_app/opportunity'
@@ -41,10 +40,12 @@ import { Route as AppAiAgentsRouteImport } from './routes/_app/ai-agents'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppTasksIndexRouteImport } from './routes/_app/tasks/index'
 import { Route as AppSalesProfilesIndexRouteImport } from './routes/_app/sales-profiles/index'
+import { Route as AppSaktiIndexRouteImport } from './routes/_app/sakti/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/_app/developers/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/_app/customers/index'
 import { Route as AppTasksTaskIdRouteImport } from './routes/_app/tasks/$taskId'
 import { Route as AppSalesProfilesUserIdRouteImport } from './routes/_app/sales-profiles/$userId'
+import { Route as AppSaktiSuratBaruRouteImport } from './routes/_app/sakti/surat-baru'
 import { Route as AppFlowsFlowIdRouteImport } from './routes/_app/flows/$flowId'
 import { Route as AppDevelopersWebhooksRouteImport } from './routes/_app/developers/webhooks'
 import { Route as AppDevelopersMessagesSentByApiRouteImport } from './routes/_app/developers/messages-sent-by-api'
@@ -111,11 +112,6 @@ const AppTemplatesRoute = AppTemplatesRouteImport.update({
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppSaktiRoute = AppSaktiRouteImport.update({
-  id: '/sakti',
-  path: '/sakti',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProspekRoute = AppProspekRouteImport.update({
@@ -223,6 +219,11 @@ const AppSalesProfilesIndexRoute = AppSalesProfilesIndexRouteImport.update({
   path: '/sales-profiles/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSaktiIndexRoute = AppSaktiIndexRouteImport.update({
+  id: '/sakti/',
+  path: '/sakti/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
   id: '/developers/',
   path: '/developers/',
@@ -241,6 +242,11 @@ const AppTasksTaskIdRoute = AppTasksTaskIdRouteImport.update({
 const AppSalesProfilesUserIdRoute = AppSalesProfilesUserIdRouteImport.update({
   id: '/sales-profiles/$userId',
   path: '/sales-profiles/$userId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSaktiSuratBaruRoute = AppSaktiSuratBaruRouteImport.update({
+  id: '/sakti/surat-baru',
+  path: '/sakti/surat-baru',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFlowsFlowIdRoute = AppFlowsFlowIdRouteImport.update({
@@ -365,7 +371,6 @@ export interface FileRoutesByFullPath {
   '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
-  '/sakti': typeof AppSaktiRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -384,10 +389,12 @@ export interface FileRoutesByFullPath {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/customers/': typeof AppCustomersIndexRoute
   '/developers/': typeof AppDevelopersIndexRoute
+  '/sakti/': typeof AppSaktiIndexRoute
   '/sales-profiles/': typeof AppSalesProfilesIndexRoute
   '/tasks/': typeof AppTasksIndexRoute
   '/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
@@ -420,7 +427,6 @@ export interface FileRoutesByTo {
   '/opportunity': typeof AppOpportunityRoute
   '/pipeline': typeof AppPipelineRoute
   '/prospek': typeof AppProspekRoute
-  '/sakti': typeof AppSaktiRoute
   '/settings': typeof AppSettingsRoute
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -439,10 +445,12 @@ export interface FileRoutesByTo {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/customers': typeof AppCustomersIndexRoute
   '/developers': typeof AppDevelopersIndexRoute
+  '/sakti': typeof AppSaktiIndexRoute
   '/sales-profiles': typeof AppSalesProfilesIndexRoute
   '/tasks': typeof AppTasksIndexRoute
   '/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
@@ -477,7 +485,6 @@ export interface FileRoutesById {
   '/_app/opportunity': typeof AppOpportunityRoute
   '/_app/pipeline': typeof AppPipelineRoute
   '/_app/prospek': typeof AppProspekRoute
-  '/_app/sakti': typeof AppSaktiRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
@@ -496,10 +503,12 @@ export interface FileRoutesById {
   '/_app/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/_app/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/_app/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/_app/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/_app/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/_app/tasks/$taskId': typeof AppTasksTaskIdRoute
   '/_app/customers/': typeof AppCustomersIndexRoute
   '/_app/developers/': typeof AppDevelopersIndexRoute
+  '/_app/sakti/': typeof AppSaktiIndexRoute
   '/_app/sales-profiles/': typeof AppSalesProfilesIndexRoute
   '/_app/tasks/': typeof AppTasksIndexRoute
   '/_app/channels/whatsapp/$channelId': typeof AppChannelsWhatsappChannelIdRoute
@@ -534,7 +543,6 @@ export interface FileRouteTypes {
     | '/opportunity'
     | '/pipeline'
     | '/prospek'
-    | '/sakti'
     | '/settings'
     | '/templates'
     | '/whatsapp/connect'
@@ -553,10 +561,12 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
     | '/customers/'
     | '/developers/'
+    | '/sakti/'
     | '/sales-profiles/'
     | '/tasks/'
     | '/channels/whatsapp/$channelId'
@@ -589,7 +599,6 @@ export interface FileRouteTypes {
     | '/opportunity'
     | '/pipeline'
     | '/prospek'
-    | '/sakti'
     | '/settings'
     | '/templates'
     | '/whatsapp/connect'
@@ -608,10 +617,12 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
     | '/customers'
     | '/developers'
+    | '/sakti'
     | '/sales-profiles'
     | '/tasks'
     | '/channels/whatsapp/$channelId'
@@ -645,7 +656,6 @@ export interface FileRouteTypes {
     | '/_app/opportunity'
     | '/_app/pipeline'
     | '/_app/prospek'
-    | '/_app/sakti'
     | '/_app/settings'
     | '/_app/templates'
     | '/whatsapp/connect'
@@ -664,10 +674,12 @@ export interface FileRouteTypes {
     | '/_app/developers/messages-sent-by-api'
     | '/_app/developers/webhooks'
     | '/_app/flows/$flowId'
+    | '/_app/sakti/surat-baru'
     | '/_app/sales-profiles/$userId'
     | '/_app/tasks/$taskId'
     | '/_app/customers/'
     | '/_app/developers/'
+    | '/_app/sakti/'
     | '/_app/sales-profiles/'
     | '/_app/tasks/'
     | '/_app/channels/whatsapp/$channelId'
@@ -756,13 +768,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/sakti': {
-      id: '/_app/sakti'
-      path: '/sakti'
-      fullPath: '/sakti'
-      preLoaderRoute: typeof AppSaktiRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/prospek': {
@@ -912,6 +917,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSalesProfilesIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/sakti/': {
+      id: '/_app/sakti/'
+      path: '/sakti'
+      fullPath: '/sakti/'
+      preLoaderRoute: typeof AppSaktiIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/developers/': {
       id: '/_app/developers/'
       path: '/developers'
@@ -938,6 +950,13 @@ declare module '@tanstack/react-router' {
       path: '/sales-profiles/$userId'
       fullPath: '/sales-profiles/$userId'
       preLoaderRoute: typeof AppSalesProfilesUserIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sakti/surat-baru': {
+      id: '/_app/sakti/surat-baru'
+      path: '/sakti/surat-baru'
+      fullPath: '/sakti/surat-baru'
+      preLoaderRoute: typeof AppSaktiSuratBaruRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/flows/$flowId': {
@@ -1139,7 +1158,6 @@ interface AppRouteChildren {
   AppOpportunityRoute: typeof AppOpportunityRoute
   AppPipelineRoute: typeof AppPipelineRoute
   AppProspekRoute: typeof AppProspekRoute
-  AppSaktiRoute: typeof AppSaktiRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
   AppAppsMetaAdsTrackerRoute: typeof AppAppsMetaAdsTrackerRoute
@@ -1155,10 +1173,12 @@ interface AppRouteChildren {
   AppDevelopersApiToolsRoute: typeof AppDevelopersApiToolsRouteWithChildren
   AppDevelopersMessagesSentByApiRoute: typeof AppDevelopersMessagesSentByApiRoute
   AppDevelopersWebhooksRoute: typeof AppDevelopersWebhooksRoute
+  AppSaktiSuratBaruRoute: typeof AppSaktiSuratBaruRoute
   AppSalesProfilesUserIdRoute: typeof AppSalesProfilesUserIdRoute
   AppTasksTaskIdRoute: typeof AppTasksTaskIdRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
+  AppSaktiIndexRoute: typeof AppSaktiIndexRoute
   AppSalesProfilesIndexRoute: typeof AppSalesProfilesIndexRoute
   AppTasksIndexRoute: typeof AppTasksIndexRoute
 }
@@ -1183,7 +1203,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppOpportunityRoute: AppOpportunityRoute,
   AppPipelineRoute: AppPipelineRoute,
   AppProspekRoute: AppProspekRoute,
-  AppSaktiRoute: AppSaktiRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTemplatesRoute: AppTemplatesRoute,
   AppAppsMetaAdsTrackerRoute: AppAppsMetaAdsTrackerRoute,
@@ -1199,10 +1218,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevelopersApiToolsRoute: AppDevelopersApiToolsRouteWithChildren,
   AppDevelopersMessagesSentByApiRoute: AppDevelopersMessagesSentByApiRoute,
   AppDevelopersWebhooksRoute: AppDevelopersWebhooksRoute,
+  AppSaktiSuratBaruRoute: AppSaktiSuratBaruRoute,
   AppSalesProfilesUserIdRoute: AppSalesProfilesUserIdRoute,
   AppTasksTaskIdRoute: AppTasksTaskIdRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,
+  AppSaktiIndexRoute: AppSaktiIndexRoute,
   AppSalesProfilesIndexRoute: AppSalesProfilesIndexRoute,
   AppTasksIndexRoute: AppTasksIndexRoute,
 }

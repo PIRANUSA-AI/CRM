@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import {
 	AlertTriangle,
@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import {
 	sakti as saktiApi,
-	type LetterTemplate,
 	type SaktiCheckResult,
 	type SaktiImportResult,
 	type SaktiRecord,
@@ -30,7 +29,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
-export const Route = createFileRoute('/_app/sakti')({
+export const Route = createFileRoute('/_app/sakti/')({
 	component: SaktiPage,
 })
 
@@ -56,7 +55,7 @@ function SaktiPage() {
 					).map((option) => (
 						<button
 							key={option.value}
-							type="button"
+							type='button'
 							onClick={() => setTab(option.value)}
 							className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
 								tab === option.value
@@ -285,17 +284,17 @@ function DatabaseTab() {
 										{result.records.map((r) => (
 											<li key={r.id}>
 												• {r.customerName}
-												{r.company ? ` — ${r.company}` : ''}
+												{r.company ? ' — ${r.company}' : ''}
 												{r.vendor ? ` (vendor: ${r.vendor})` : ''}
-												{r.product ? ` · ${r.product}` : ''}
+												{r.product ? ' · ${r.product}' : ''}
 											</li>
 										))}
 									</ul>
 								) : null}
 								{result.matched ? (
 									<button
-										type="button"
-										className="ocm-btn mt-2"
+										type='button'
+										className='ocm-btn mt-2'
 										onClick={() => void createLetterFromCheck()}
 									>
 										<FileText size={14} /> Buat Surat Sakti
@@ -328,7 +327,7 @@ function DatabaseTab() {
 				</form>
 				<div className="flex items-center gap-2">
 					<button
-						type="button"
+						type='button'
 						className="ocm-btn"
 						onClick={() => {
 							setImportPreview(null)
@@ -339,7 +338,7 @@ function DatabaseTab() {
 						<Upload size={14} /> Impor CSV
 					</button>
 					<button
-						type="button"
+						type='button'
 						className="ocm-btn ocm-btn-primary"
 						onClick={() => setShowForm((v) => !v)}
 					>
@@ -352,32 +351,32 @@ function DatabaseTab() {
 				<form onSubmit={handleCreate} className="ocm-card space-y-3 p-4">
 					<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
 						<input
-							className="ocm-input"
+							className='ocm-input'
 							placeholder="Nama customer *"
 							value={form.customerName}
 							onChange={(e) => setForm({ ...form, customerName: e.target.value })}
 							required
 						/>
 						<input
-							className="ocm-input"
+							className='ocm-input'
 							placeholder="Instansi / perusahaan"
 							value={form.company}
 							onChange={(e) => setForm({ ...form, company: e.target.value })}
 						/>
 						<input
-							className="ocm-input"
+							className='ocm-input'
 							placeholder="Produk (mis. Archicad)"
 							value={form.product}
 							onChange={(e) => setForm({ ...form, product: e.target.value })}
 						/>
 						<input
-							className="ocm-input"
+							className='ocm-input'
 							placeholder="Vendor asal (beli di mana)"
 							value={form.vendor}
 							onChange={(e) => setForm({ ...form, vendor: e.target.value })}
 						/>
 						<input
-							className="ocm-input"
+							className='ocm-input'
 							placeholder="No. lisensi (opsional)"
 							value={form.licenseNo}
 							onChange={(e) => setForm({ ...form, licenseNo: e.target.value })}
@@ -427,13 +426,13 @@ function DatabaseTab() {
 										<td className="text-muted-foreground">{r.product || '—'}</td>
 										<td className="text-muted-foreground">{r.vendor || '—'}</td>
 										<td className="text-muted-foreground">{r.licenseNo || '—'}</td>
-										<td className="text-right">
+										<td className='text-right'>
 											<button
-												type="button"
-												className="ocm-btn h-8 px-2"
+												type='button'
+												className='ocm-btn h-8 px-2'
 												disabled={busy === r.id}
 												onClick={() => void handleDelete(r)}
-												aria-label="Hapus"
+												aria-label='Hapus'
 											>
 												<Trash2 size={14} className="text-muted-foreground" />
 											</button>
@@ -452,7 +451,7 @@ function DatabaseTab() {
 							</span>
 							<div className="flex items-center gap-2">
 								<button
-									type="button"
+									type='button'
 									className="ocm-btn h-8 px-3"
 									disabled={loading || offset === 0}
 									onClick={() => void load(search, Math.max(0, offset - RECORDS_PAGE_SIZE))}
@@ -460,7 +459,7 @@ function DatabaseTab() {
 									Sebelumnya
 								</button>
 								<button
-									type="button"
+									type='button'
 									className="ocm-btn h-8 px-3"
 									disabled={loading || offset + RECORDS_PAGE_SIZE >= total}
 									onClick={() => void load(search, offset + RECORDS_PAGE_SIZE)}
@@ -483,7 +482,7 @@ function DatabaseTab() {
 					</DialogHeader>
 
 					<input
-						type="file"
+						type='file'
 						accept=".csv,text/csv"
 						disabled={importBusy}
 						onChange={(event) => {
@@ -530,7 +529,7 @@ function DatabaseTab() {
 										{importPreview.rows.map((row) => (
 											<tr key={row.line}>
 												<td className="w-10 px-2 py-1.5 text-muted-foreground">{row.line}</td>
-												<td className="px-2 py-1.5">
+												<td className='px-2 py-1.5'>
 													{row.customerName || (
 														<span className="text-muted-foreground">(kosong)</span>
 													)}
@@ -572,15 +571,15 @@ function DatabaseTab() {
 
 					<DialogFooter>
 						<button
-							type="button"
-							className="ocm-btn"
+							type='button'
+							className='ocm-btn'
 							onClick={() => setImportOpen(false)}
 							disabled={importBusy}
 						>
 							Batal
 						</button>
 						<button
-							type="button"
+							type='button'
 							className="ocm-btn ocm-btn-primary"
 							onClick={() => void commitImport()}
 							disabled={importBusy || !importPreview || importPreview.summary.ok === 0}
@@ -611,17 +610,9 @@ function SuratTab() {
 	const [loading, setLoading] = useState(true)
 	const [busy, setBusy] = useState<string | null>(null)
 
-	// Template catalogue comes from the backend so the field list and the wording
-	// stay in one place — the bodies are still placeholder copy and will change.
-	const [templates, setTemplates] = useState<LetterTemplate[]>([])
-	const [composeOpen, setComposeOpen] = useState(false)
-	const [templateId, setTemplateId] = useState('')
-	const [values, setValues] = useState<Record<string, string>>({})
-	const [preview, setPreview] = useState<string>('')
-	const [missing, setMissing] = useState<string[]>([])
-	const [composing, setComposing] = useState(false)
-
-	const activeTemplate = templates.find((item) => item.id === templateId) || null
+	// Only the count is needed here; composing happens on its own page, where the
+	// letter has room to be read while it is written.
+	const [templateCount, setTemplateCount] = useState(0)
 
 	const load = useCallback(async () => {
 		setLoading(true)
@@ -642,62 +633,11 @@ function SuratTab() {
 	useEffect(() => {
 		void saktiApi
 			.templates()
-			.then((res) => setTemplates(res.payload || []))
+			.then((res) => setTemplateCount((res.payload || []).length))
 			.catch(() => undefined)
 	}, [])
 
-	// Re-render on every keystroke so the operator sees the letter take shape.
-	// Debounced because it is a round trip, and the body is long.
-	useEffect(() => {
-		if (!templateId) {
-			setPreview('')
-			setMissing([])
-			return
-		}
-		const timer = setTimeout(() => {
-			void saktiApi
-				.previewLetter(templateId, values)
-				.then((res) => {
-					setPreview(res.payload.body)
-					setMissing(res.payload.missing)
-				})
-				.catch(() => undefined)
-		}, 300)
-		return () => clearTimeout(timer)
-	}, [templateId, values])
-
-	async function saveLetter() {
-		if (!activeTemplate) return
-		const customerName = values.penerima?.trim()
-		if (!customerName) {
-			toast.error('Isi dulu "Ditujukan kepada"')
-			return
-		}
-		setComposing(true)
-		try {
-			await saktiApi.letters.create({
-				customerName,
-				company: values.penerima?.trim() || null,
-				product: values.produk?.trim() || null,
-				template: activeTemplate.id,
-				templateValues: values,
-			})
-			toast.success(`${activeTemplate.name} tersimpan sebagai draf`)
-			setComposeOpen(false)
-			setTemplateId('')
-			setValues({})
-			await load()
-		} catch (err: any) {
-			toast.error(err?.message || 'Gagal menyimpan surat')
-		} finally {
-			setComposing(false)
-		}
-	}
-
-	async function toggle(
-		letter: SuratSakti,
-		field: 'ourApproved' | 'theirApproved',
-	) {
+	async function toggle(letter: SuratSakti, field: 'ourApproved' | 'theirApproved') {
 		setBusy(letter.id)
 		try {
 			await saktiApi.letters.update(letter.id, { [field]: !letter[field] })
@@ -744,115 +684,19 @@ function SuratTab() {
 		)
 	}
 
-	// The compose button lives above the list rather than inside it, so it is
-	// still reachable when there are no letters yet — which is exactly when
-	// someone needs to write the first one.
+	// Composing happens on its own page: the letter needs room to be read while
+	// it is written, which a dialog could not give it. The button sits above the
+	// list so it is reachable when there are no letters yet.
 	const composeBar = (
 		<div className="flex flex-wrap items-center justify-between gap-2">
 			<p className="text-xs text-muted-foreground">
-				{templates.length} template tersedia · isi surat masih contoh, ganti dengan
+				{templateCount} template tersedia · isi surat masih contoh, ganti dengan
 				redaksi resmi sebelum dikirim
 			</p>
-			<button
-				type="button"
-				className="ocm-btn ocm-btn-primary"
-				onClick={() => {
-					setTemplateId('')
-					setValues({})
-					setComposeOpen(true)
-				}}
-			>
+			<Link to="/sakti/surat-baru" className="ocm-btn ocm-btn-primary">
 				<FileText size={14} /> Susun Surat
-			</button>
+			</Link>
 		</div>
-	)
-
-	const composeDialog = (
-		<Dialog open={composeOpen} onOpenChange={(open) => !composing && setComposeOpen(open)}>
-			<DialogContent className="sm:max-w-3xl">
-				<DialogHeader>
-					<DialogTitle>Susun Surat</DialogTitle>
-					<DialogDescription>
-						Pilih template, isi datanya, lalu simpan sebagai draf.
-					</DialogDescription>
-				</DialogHeader>
-
-				<select
-					className="ocm-input"
-					value={templateId}
-					onChange={(event) => {
-						setTemplateId(event.target.value)
-						setValues({})
-					}}
-				>
-					<option value="">— Pilih template —</option>
-					{templates.map((template) => (
-						<option key={template.id} value={template.id}>
-							{template.name}
-						</option>
-					))}
-				</select>
-
-				{activeTemplate ? (
-					<>
-						<p className="text-[11px] text-muted-foreground">{activeTemplate.description}</p>
-						<div className="grid max-h-[45vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
-							<div className="space-y-2">
-								{activeTemplate.fields.map((field) => (
-									<label key={field.key} className="block">
-										<span className="mb-1 block text-xs font-medium text-muted-foreground">
-											{field.label}
-											{field.required ? ' *' : ''}
-										</span>
-										<input
-											className="ocm-input"
-											placeholder={field.example}
-											value={values[field.key] || ''}
-											onChange={(event) =>
-												setValues((prev) => ({ ...prev, [field.key]: event.target.value }))
-											}
-										/>
-									</label>
-								))}
-							</div>
-							<div>
-								<span className="mb-1 block text-xs font-medium text-muted-foreground">
-									Pratinjau
-								</span>
-								<pre className="h-full whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed">
-									{preview || 'Isi datanya untuk melihat pratinjau.'}
-								</pre>
-							</div>
-						</div>
-						{missing.length > 0 ? (
-							<p className="rounded-md bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-								Belum diisi: {missing.join(', ')}
-							</p>
-						) : null}
-					</>
-				) : null}
-
-				<DialogFooter>
-					<button
-						type="button"
-						className="ocm-btn"
-						onClick={() => setComposeOpen(false)}
-						disabled={composing}
-					>
-						Batal
-					</button>
-					<button
-						type="button"
-						className="ocm-btn ocm-btn-primary"
-						onClick={() => void saveLetter()}
-						disabled={composing || !activeTemplate}
-					>
-						{composing ? <Loader2 size={14} className="animate-spin" /> : null}
-						Simpan draf
-					</button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
 	)
 
 	if (letters.length === 0) {
@@ -863,8 +707,7 @@ function SuratTab() {
 					title="Belum ada Surat Sakti"
 					description="Susun surat dari template, atau buka tab Database Sakti untuk cek lead yang lisensinya ada di vendor lain."
 				/>
-				{composeDialog}
-			</div>
+				</div>
 		)
 	}
 
@@ -893,11 +736,11 @@ function SuratTab() {
 							<div className="flex shrink-0 items-center gap-2">
 								<span className={meta.tone}>{meta.label}</span>
 								<button
-									type="button"
+									type='button'
 									className="text-muted-foreground hover:text-red-500"
 									disabled={rowBusy}
 									onClick={() => void handleDelete(letter)}
-									aria-label="Hapus"
+									aria-label='Hapus'
 								>
 									<Trash2 size={15} />
 								</button>
@@ -905,7 +748,7 @@ function SuratTab() {
 						</div>
 						<div className="ocm-card-body flex flex-wrap items-center gap-2">
 							<button
-								type="button"
+								type='button'
 								disabled={rowBusy}
 								onClick={() => void toggle(letter, 'ourApproved')}
 								className={`ocm-tag ${letter.ourApproved ? 'ocm-tag-success' : ''}`}
@@ -913,7 +756,7 @@ function SuratTab() {
 								{letter.ourApproved ? '● ' : '○ '}Persetujuan kami (PIRANUSA)
 							</button>
 							<button
-								type="button"
+								type='button'
 								disabled={rowBusy}
 								onClick={() => void toggle(letter, 'theirApproved')}
 								className={`ocm-tag ${letter.theirApproved ? 'ocm-tag-success' : ''}`}
@@ -922,7 +765,7 @@ function SuratTab() {
 							</button>
 							{letter.status !== 'rejected' && letter.status !== 'approved' ? (
 								<button
-									type="button"
+									type='button'
 									disabled={rowBusy}
 									onClick={() => void reject(letter)}
 									className="ocm-tag ocm-tag-danger"
@@ -934,7 +777,6 @@ function SuratTab() {
 					</div>
 				)
 			})}
-			{composeDialog}
 		</div>
 	)
 }
