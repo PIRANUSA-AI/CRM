@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Filter, MoreHorizontal, Plus, Upload } from 'lucide-react'
+import { Filter, Loader2, MoreHorizontal, Plus, Upload } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
 	CrmAvatar,
@@ -7,6 +7,14 @@ import {
 	CrmSectionHeader,
 	unwrapPayload,
 } from '@/components/crm/shared'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 import { customers as customersApi } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/customers/')({
@@ -262,10 +270,23 @@ function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 	}
 }
 
+const EMPTY_NEW_CUSTOMER = {
+	name: '',
+	phone_number: '',
+	email: '',
+	company: '',
+	city: '',
+	notes: '',
+}
+
 function CustomersPage() {
 	const navigate = useNavigate()
 	const openDetail = (id: string) =>
 		navigate({ to: '/customers/$customerId', params: { customerId: id } })
+	const [addOpen, setAddOpen] = useState(false)
+	const [newCustomer, setNewCustomer] = useState(EMPTY_NEW_CUSTOMER)
+	const [addSaving, setAddSaving] = useState(false)
+	const [addError, setAddError] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [loadError, setLoadError] = useState<string | null>(null)
 	const [rows, setRows] = useState<CustomerRow[]>([])
@@ -352,6 +373,31 @@ function CustomersPage() {
 	useEffect(() => {
 		void loadPage(1, { includeStats: true })
 	}, [])
+
+	const submitNewCustomer = async () => {
+		setAddSaving(true)
+		setAddError(null)
+		try {
+			await customersApi.create({
+				name: newCustomer.name.trim(),
+				phone_number: newCustomer.phone_number.trim() || undefined,
+				email: newCustomer.email.trim() || undefined,
+				company: newCustomer.company.trim() || undefined,
+				city: newCustomer.city.trim() || undefined,
+				notes: newCustomer.notes.trim() || undefined,
+			})
+			setAddOpen(false)
+			setNewCustomer(EMPTY_NEW_CUSTOMER)
+			// Back to page 1 with fresh stats — the new contact is the newest row.
+			await loadPage(1, { includeStats: true })
+		} catch (error) {
+			setAddError(
+				error instanceof Error ? error.message : 'Pelanggan gagal ditambahkan.',
+			)
+		} finally {
+			setAddSaving(false)
+		}
+	}
 
 	const chips = useMemo(
 		() =>
@@ -446,7 +492,14 @@ function CustomersPage() {
 							<Upload size={14} />
 							Import CSV
 						</button>
-						<button type="button" className="ocm-btn ocm-btn-primary">
+						<button
+							type="button"
+							className="ocm-btn ocm-btn-primary"
+							onClick={() => {
+								setAddError(null)
+								setAddOpen(true)
+							}}
+						>
 							<Plus size={14} />
 							Tambah
 						</button>
@@ -718,6 +771,125 @@ function CustomersPage() {
 					</p>
 				</section>
 			</div>
+
+			<Dialog open={addOpen} onOpenChange={(open) => !addSaving && setAddOpen(open)}>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle>Tambah Pelanggan</DialogTitle>
+						<DialogDescription>
+							Catat kontak yang belum pernah masuk lewat WhatsApp atau import.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-3 sm:grid-cols-2">
+						<NewCustomerField label="Nama *">
+							<input
+								className="ocm-input"
+								value={newCustomer.name}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, name: event.target.value }))
+								}
+								placeholder="Nama kontak"
+							/>
+						</NewCustomerField>
+						<NewCustomerField label="No. WhatsApp">
+							<input
+								className="ocm-input"
+								value={newCustomer.phone_number}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, phone_number: event.target.value }))
+								}
+								placeholder="08xx / 62xx"
+							/>
+						</NewCustomerField>
+						<NewCustomerField label="Email">
+							<input
+								className="ocm-input"
+								value={newCustomer.email}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, email: event.target.value }))
+								}
+								placeholder="email@perusahaan.com"
+							/>
+						</NewCustomerField>
+						<NewCustomerField label="Perusahaan">
+							<input
+								className="ocm-input"
+								value={newCustomer.company}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, company: event.target.value }))
+								}
+							/>
+						</NewCustomerField>
+						<NewCustomerField label="Kota">
+							<input
+								className="ocm-input"
+								value={newCustomer.city}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, city: event.target.value }))
+								}
+							/>
+						</NewCustomerField>
+					</div>
+					<div className="mt-3">
+						<NewCustomerField label="Catatan">
+							<textarea
+								rows={2}
+								className="ocm-input resize-y"
+								value={newCustomer.notes}
+								onChange={(event) =>
+									setNewCustomer((prev) => ({ ...prev, notes: event.target.value }))
+								}
+							/>
+						</NewCustomerField>
+					</div>
+
+					<p className="mt-2 text-[11px] text-muted-foreground">
+						Isi minimal nomor WhatsApp atau email.
+					</p>
+
+					{addError ? (
+						<p className="mt-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+							{addError}
+						</p>
+					) : null}
+
+					<DialogFooter>
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => setAddOpen(false)}
+							disabled={addSaving}
+						>
+							Batal
+						</button>
+						<button
+							type="button"
+							className="ocm-btn ocm-btn-primary"
+							onClick={() => void submitNewCustomer()}
+							disabled={addSaving || !newCustomer.name.trim()}
+						>
+							{addSaving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+							Simpan
+						</button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</main>
+	)
+}
+
+function NewCustomerField({
+	label,
+	children,
+}: {
+	label: string
+	children: React.ReactNode
+}) {
+	return (
+		<label className="block">
+			<span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+			{children}
+		</label>
 	)
 }

@@ -1476,6 +1476,19 @@ export const customers = {
 
 	stats: () => apiRequest('/customers/stats'),
 
+	create: (data: {
+		name: string
+		phone_number?: string
+		email?: string
+		company?: string
+		city?: string
+		notes?: string
+	}) =>
+		apiRequest<{ data: { id: string; name: string | null } }>('/customers', {
+			method: 'POST',
+			body: JSON.stringify(data),
+		}),
+
 	get: (id: string) => apiRequest(`/customers/${id}`),
 
 	timeline: (id: string): Promise<{ success: boolean; payload: TimelineEvent[] }> =>

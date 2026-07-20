@@ -2,6 +2,17 @@ import prisma from '../../lib/prisma'
 import { Prisma } from '../../generated/prisma'
 import { isUuid, resolveAppId } from '../../lib/utils'
 import { BusinessWebhookDispatchService } from '../business-webhooks/dispatch-service'
+import { normalizePhone } from '../import/parser'
+
+/** Raised when a manual add collides with a contact that already exists. */
+export class CustomerDuplicateError extends Error {
+	constructor(
+		message: string,
+		readonly existingId: string,
+	) {
+		super(message)
+	}
+}
 
 type CustomerTag = {
 	id: string
@@ -1042,6 +1053,82 @@ export abstract class CustomerService {
 				at: event.at.toISOString(),
 			}))
 			.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+	}
+
+	/**
+	 * Add a contact by hand from the Pelanggan page. The other two ways contacts
+	 * appear — spreadsheet import and the WhatsApp webhook — both normalise the
+	 * phone the same way, so this does too; a number stored in a different shape
+	 * would never match an incoming message.
+	 */
+	static async createCustomer(
+		appId: string,
+		data: {
+			name: string
+			phone_number?: string | null
+			email?: string | null
+			company?: string | null
+			city?: string | null
+			notes?: string | null
+		},
+	) {
+		const name = String(data.name || '').trim()
+		if (!name) throw new Error('Nama pelanggan wajib diisi')
+
+		const phoneInput = String(data.phone_number || '').trim()
+		const phone = phoneInput ? normalizePhone(phoneInput) : null
+		if (phoneInput && !phone) throw new Error('Nomor WhatsApp tidak valid')
+
+		const email = String(data.email || '').trim().toLowerCase() || null
+		if (!phone && !email) throw new Error('Isi minimal nomor WhatsApp atau email')
+
+		// Incoming WhatsApp is matched to a contact by phone, so a second record
+		// with the same number would split one customer's history in two and leave
+		// whichever copy the webhook picks looking empty.
+		const duplicate = await prisma.contacts.findFirst({
+			where: {
+				app_id: appId,
+				deleted_at: null,
+				OR: [
+					...(phone ? [{ phone_number: phone }, { whatsapp_id: phone }] : []),
+					...(email ? [{ email }] : []),
+				],
+			},
+			select: { id: true, name: true },
+		})
+		if (duplicate) {
+			throw new CustomerDuplicateError(
+				`Kontak sudah ada: ${duplicate.name || phone || email}`,
+				duplicate.id,
+			)
+		}
+
+		const city = String(data.city || '').trim()
+		const notes = String(data.notes || '').trim()
+
+		return prisma.contacts.create({
+			data: {
+				app_id: appId,
+				// account_id is left null on purpose: it has an FK to `accounts`,
+				// which this deployment does not populate, and every existing contact
+				// (import and webhook alike) is app-scoped only.
+				name,
+				phone_number: phone,
+				whatsapp_id: phone,
+				// Same identifier shape the importer uses, so a manually added contact
+				// is matched by the WhatsApp path rather than duplicated by it.
+				identifier: phone ? `wa:${appId}:${phone}` : null,
+				email,
+				company: String(data.company || '').trim() || null,
+				source: 'manual',
+				first_contact_at: new Date(),
+				custom_attributes: {
+					...(city ? { city } : {}),
+					...(notes ? { notes } : {}),
+				} as Prisma.InputJsonValue,
+			},
+			select: { id: true, name: true, phone_number: true, email: true },
+		})
 	}
 
 	static async updateCustomer(

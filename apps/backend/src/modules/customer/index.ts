@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia'
 import { appContext } from '../../plugins'
 import prisma from '../../lib/prisma'
-import { CustomerService } from './service'
+import { CustomerDuplicateError, CustomerService } from './service'
 
 /**
  * Decide whether to block a request outright (fail closed) when a userId
@@ -151,6 +151,39 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				consent_purpose: t.Optional(t.String()),
 				consent_source: t.Optional(t.String()),
 				custom_attributes: t.Optional(t.Any()),
+			}),
+		},
+	)
+	.post(
+		'/',
+		async ({ resolvedAppId, body, set }) => {
+			if (!resolvedAppId) {
+				set.status = 400
+				return { error: 'App ID required' }
+			}
+			try {
+				const customer = await CustomerService.createCustomer(resolvedAppId, body)
+				set.status = 201
+				return { data: customer }
+			} catch (error) {
+				if (error instanceof CustomerDuplicateError) {
+					set.status = 409
+					return { error: error.message, existingId: error.existingId }
+				}
+				set.status = 400
+				return {
+					error: error instanceof Error ? error.message : 'Gagal menambah pelanggan',
+				}
+			}
+		},
+		{
+			body: t.Object({
+				name: t.String({ maxLength: 255 }),
+				phone_number: t.Optional(t.Union([t.String({ maxLength: 50 }), t.Null()])),
+				email: t.Optional(t.Union([t.String({ maxLength: 255 }), t.Null()])),
+				company: t.Optional(t.Union([t.String({ maxLength: 255 }), t.Null()])),
+				city: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+				notes: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
 			}),
 		},
 	)
