@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, Sparkles, TriangleAlert, UserPlus } from 'lucide-react'
-import { type ReactNode, useCallback, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmSectionHeader } from '@/components/crm/shared'
-import { prospects, type ProspectChannel } from '@/lib/api'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { leadImport, prospects, type ProspectChannel } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/prospek')({
 	component: ProspekPage,
@@ -46,6 +47,33 @@ function ProspekPage() {
 	const [saving, setSaving] = useState(false)
 	const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+	// A leader hands the prospect to a sales instead of keeping it: they assign
+	// leads, they do not work them through to closing. A sales always keeps
+	// their own, so the picker is only rendered for a leader.
+	const currentUser = useCurrentUser()
+	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const [salesOptions, setSalesOptions] = useState<
+		Array<{ userId: string; name: string | null; email: string }>
+	>([])
+	const [assigneeId, setAssigneeId] = useState('')
+
+	useEffect(() => {
+		if (!isLeader) return
+		let active = true
+		void leadImport
+			.assignables()
+			.then((response) => {
+				if (!active) return
+				const options = response.data.filter((item) => item.userId !== currentUser?.id)
+				setSalesOptions(options)
+				if (options.length === 1) setAssigneeId(options[0].userId)
+			})
+			.catch(() => undefined)
+		return () => {
+			active = false
+		}
+	}, [isLeader, currentUser?.id])
+
 	const set = useCallback(
 		<K extends keyof typeof emptyForm>(key: K, value: (typeof emptyForm)[K]) =>
 			setForm((f) => ({ ...f, [key]: value })),
@@ -61,6 +89,10 @@ function ProspekPage() {
 			setMsg({ ok: false, text: 'Isi minimal nomor WhatsApp atau email.' })
 			return
 		}
+		if (isLeader && !assigneeId) {
+			setMsg({ ok: false, text: 'Pilih sales yang akan menangani prospek ini.' })
+			return
+		}
 		setSaving(true)
 		setMsg(null)
 		try {
@@ -74,6 +106,7 @@ function ProspekPage() {
 				productInterest: form.productInterest.trim() || undefined,
 				followUpAt: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
 				notes: form.notes.trim() || undefined,
+				assigneeId: isLeader ? assigneeId : undefined,
 			})
 			const due = new Date(res.data.dueAt)
 			const dueLabel = new Intl.DateTimeFormat('id-ID', {
@@ -82,9 +115,14 @@ function ProspekPage() {
 				hour: '2-digit',
 				minute: '2-digit',
 			}).format(due)
+			const owner = isLeader
+				? salesOptions.find((item) => item.userId === assigneeId)
+				: null
 			setMsg({
 				ok: true,
-				text: `Prospek "${form.name.trim()}" tersimpan. Task follow-up dibuat untuk ${dueLabel}.`,
+				text: owner
+					? `Prospek "${form.name.trim()}" tersimpan dan ditugaskan ke ${owner.name || owner.email}. Follow-up ${dueLabel}.`
+					: `Prospek "${form.name.trim()}" tersimpan. Task follow-up dibuat untuk ${dueLabel}.`,
 			})
 			setForm({ ...emptyForm, channel: form.channel, followUpAt: defaultFollowUp() })
 		} catch (reason) {
@@ -92,7 +130,7 @@ function ProspekPage() {
 		} finally {
 			setSaving(false)
 		}
-	}, [form, emptyForm])
+	}, [form, emptyForm, isLeader, assigneeId, salesOptions])
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -110,8 +148,17 @@ function ProspekPage() {
 				<div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
 					<Sparkles size={16} className="mt-0.5 shrink-0 text-primary" />
 					<span>
-						Prospek yang kamu simpan langsung ditugaskan ke kamu dan muncul di{' '}
-						<strong>Daftar Tugas</strong> pada tanggal follow-up yang dipilih.
+						{isLeader ? (
+							<>
+								Prospek ini ditugaskan ke sales yang kamu pilih dan muncul di{' '}
+								<strong>Daftar Tugas</strong> mereka pada tanggal follow-up.
+							</>
+						) : (
+							<>
+								Prospek yang kamu simpan langsung ditugaskan ke kamu dan muncul di{' '}
+								<strong>Daftar Tugas</strong> pada tanggal follow-up yang dipilih.
+							</>
+						)}
 					</span>
 				</div>
 
@@ -133,6 +180,22 @@ function ProspekPage() {
 				) : null}
 
 				<div className="grid gap-3 sm:grid-cols-2">
+					{isLeader ? (
+						<Field label="Tugaskan ke sales *">
+							<select
+								value={assigneeId}
+								onChange={(e) => setAssigneeId(e.target.value)}
+								className="ocm-input"
+							>
+								<option value="">— Pilih sales —</option>
+								{salesOptions.map((option) => (
+									<option key={option.userId} value={option.userId}>
+										{option.name || option.email}
+									</option>
+								))}
+							</select>
+						</Field>
+					) : null}
 					<Field label="Nama prospek *">
 						<input
 							value={form.name}

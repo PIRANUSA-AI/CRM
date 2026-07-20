@@ -743,6 +743,7 @@ export abstract class ImportService {
 			channel?: string | null
 			notes?: string | null
 			followUpAt?: string | null
+			assigneeId?: string | null
 		},
 	) {
 		const name = String(input.name || '').trim()
@@ -768,7 +769,26 @@ export abstract class ImportService {
 			dueAt.setHours(9, 0, 0, 0)
 		}
 
-		const teamId = await resolveOwnTeamId(actor)
+		// A sales keeps their own prospect. A leader hands it to a sales — they
+		// assign leads rather than work them, so a task in a leader's name has no
+		// one actually following it up (same rule the lead router enforces).
+		let assigneeId = actor.userId
+		let teamId: string | null
+		if (actor.role === 'leader') {
+			const chosen = String(input.assigneeId || '').trim()
+			if (!chosen) throw new ImportError('Pilih sales yang akan menangani prospek ini')
+			const assignables = await resolveAssignables(actor)
+			const target = [...assignables.values()].find((a) => a.userId === chosen)
+			if (!target) throw new ImportError('Sales tidak ditemukan atau di luar tim Anda')
+			if (target.userId === actor.userId) {
+				throw new ImportError('Prospek harus ditugaskan ke sales, bukan ke leader')
+			}
+			assigneeId = target.userId
+			teamId = target.teamId
+		} else {
+			teamId = await resolveOwnTeamId(actor)
+		}
+
 		const now = new Date()
 		const productInterest = input.productInterest?.trim() || null
 		const notes = input.notes?.trim() || null
@@ -829,7 +849,7 @@ export abstract class ImportService {
 			const task = await tx.tasks.create({
 				data: {
 					app_id: actor.appId,
-					assignee_id: actor.userId,
+					assignee_id: assigneeId,
 					team_id: teamId,
 					created_by: actor.userId,
 					contact_id: contactId,

@@ -11,8 +11,9 @@ import {
 	UserCheck,
 	UserRound,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
 import {
 	personalAi,
 	type PersonalTakeoverHistoryItem,
@@ -48,6 +49,8 @@ function formatWaiting(minutes: number) {
 
 function AlihTugasPage() {
 	const navigate = useNavigate()
+	const currentUser = useCurrentUser()
+	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
 	const [items, setItems] = useState<PersonalTakeoverItem[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
@@ -131,11 +134,40 @@ function AlihTugasPage() {
 
 	const overdueCount = items.filter((item) => item.overdue).length
 
+	// The backend already hands a leader the whole team's takeovers (supervisors
+	// skip the owner filter). Sorting by owner turns that flat list into the
+	// per-sales view a leader needs, and the header below is emitted whenever
+	// the owner changes — cheaper than restructuring the row markup.
+	const visibleItems = useMemo(() => {
+		if (!isLeader) return items
+		return [...items].sort((a, b) => {
+			const nameA = a.ownerName || a.ownerUserId
+			const nameB = b.ownerName || b.ownerUserId
+			if (nameA !== nameB) return nameA.localeCompare(nameB)
+			return (b.takenAt || '').localeCompare(a.takenAt || '')
+		})
+	}, [isLeader, items])
+
+	const ownerSummary = useMemo(() => {
+		const map = new Map<string, { total: number; overdue: number }>()
+		for (const item of items) {
+			const entry = map.get(item.ownerUserId) || { total: 0, overdue: 0 }
+			entry.total += 1
+			if (item.overdue) entry.overdue += 1
+			map.set(item.ownerUserId, entry)
+		}
+		return map
+	}, [items])
+
 	return (
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
 				title="Alih Tugas"
-				subtitle="Lead yang sedang ditangani manusia (AI berhenti membalas). Dialihkan otomatis oleh AI atau diambil manual oleh sales."
+				subtitle={
+					isLeader
+						? 'Chat seluruh tim yang sedang ditangani manusia, dikelompokkan per sales.'
+						: 'Lead yang sedang ditangani manusia (AI berhenti membalas). Dialihkan otomatis oleh AI atau diambil manual oleh sales.'
+				}
 				actions={
 					<div className="flex items-center gap-2">
 						{overdueCount > 0 ? (
@@ -178,13 +210,34 @@ function AlihTugasPage() {
 					</div>
 				) : (
 					<ul className="divide-y divide-border">
-						{items.map((item) => {
+						{visibleItems.map((item, index) => {
 							const isBusy = busyId === item.conversationId
 							const isAi = item.source === 'ai'
 							const isExpanded = expandedId === item.conversationId
 							const history = historyById[item.conversationId]
+							const previous = index > 0 ? visibleItems[index - 1] : null
+							const startsOwnerGroup =
+								isLeader && previous?.ownerUserId !== item.ownerUserId
+							const summary = ownerSummary.get(item.ownerUserId)
 							return (
-								<li key={item.conversationId} className="p-4">
+								<Fragment key={item.conversationId}>
+								{startsOwnerGroup ? (
+									<li className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2">
+										<span className="flex items-center gap-2 text-sm font-semibold">
+											<UserRound size={14} className="text-muted-foreground" />
+											{item.ownerName || 'Tanpa pemilik'}
+										</span>
+										<span className="flex items-center gap-2 text-xs">
+											{summary && summary.overdue > 0 ? (
+												<span className="rounded-full bg-red-500/10 px-2 py-0.5 font-semibold text-red-600 dark:text-red-300">
+													{summary.overdue} lewat SLA
+												</span>
+											) : null}
+											<span className="text-muted-foreground">{summary?.total ?? 0} chat</span>
+										</span>
+									</li>
+								) : null}
+								<li className="p-4">
 									<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 										<div className="min-w-0 flex-1">
 											<div className="mb-2 flex flex-wrap items-center gap-2">
@@ -345,6 +398,7 @@ function AlihTugasPage() {
 										</div>
 									) : null}
 								</li>
+								</Fragment>
 							)
 						})}
 					</ul>

@@ -2780,6 +2780,7 @@ export interface Task {
 	id: string
 	appId: string
 	assigneeId: string | null
+	assigneeName: string | null
 	teamId: string | null
 	teamName: string | null
 	conversationId: string | null
@@ -3026,6 +3027,8 @@ export const prospects = {
 		channel?: ProspectChannel
 		notes?: string
 		followUpAt?: string
+		/** Required when a leader creates the prospect — leaders assign, not handle. */
+		assigneeId?: string
 	}) =>
 		apiRequest<{
 			data: {

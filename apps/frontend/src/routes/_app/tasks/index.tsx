@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
 import {
 	tasks,
 	type Task,
@@ -151,8 +152,34 @@ function tomorrowMorningISO(): string {
 	return d.toISOString()
 }
 
+/**
+ * Leader view: one group per sales, busiest first, so "siapa mengerjakan apa"
+ * is answerable at a glance. A leader should hold no tasks of their own — they
+ * assign rather than handle — but any that exist are still grouped under their
+ * name rather than hidden, because a task nobody can see is worse than one
+ * sitting in the wrong place.
+ */
+function groupByAssignee(items: Task[]) {
+	const map = new Map<string, { name: string; items: Task[] }>()
+	for (const task of items) {
+		const key = task.assigneeId || 'unassigned'
+		const existing = map.get(key)
+		if (existing) {
+			existing.items.push(task)
+			continue
+		}
+		map.set(key, { name: task.assigneeName || 'Belum ditugaskan', items: [task] })
+	}
+	return [...map.values()].sort((a, b) => {
+		if (b.items.length !== a.items.length) return b.items.length - a.items.length
+		return a.name.localeCompare(b.name)
+	})
+}
+
 function TasksPage() {
 	const navigate = useNavigate()
+	const currentUser = useCurrentUser()
+	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
 	const [tab, setTab] = useState<TaskTab>('active')
 	const [taskItems, setTaskItems] = useState<Task[]>([])
 	const [loading, setLoading] = useState(true)
@@ -223,6 +250,14 @@ function TasksPage() {
 	)
 
 	const now = useMemo(() => new Date(), [taskItems])
+
+	// The leader's list spans their whole team (the backend already scopes it
+	// that way), so it is grouped by person instead of by deadline — a leader
+	// asks "what is Deska on?", a sales asks "what is due today?".
+	const assigneeGroups = useMemo(
+		() => (isLeader ? groupByAssignee(taskItems) : null),
+		[isLeader, taskItems],
+	)
 
 	// Group active views by due bucket; the "done" view stays a flat list.
 	const grouped = useMemo(() => {
@@ -363,7 +398,11 @@ function TasksPage() {
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
 				title="Daftar Tugas"
-				subtitle="Ceklis tindak lanjut lead & percakapan yang butuh aksi sales."
+				subtitle={
+					isLeader
+						? 'Pantau tugas tiap sales di timmu — siapa mengerjakan apa dan mana yang terlambat.'
+						: 'Ceklis tindak lanjut lead & percakapan yang butuh aksi sales.'
+				}
 				actions={
 					<button
 						type="button"
@@ -424,6 +463,37 @@ function TasksPage() {
 							title="Belum ada tugas"
 							description="Tidak ada tugas pada tampilan ini. Tugas muncul dari lead yang diimpor/di-assign, prospek yang kamu tambahkan, dan percakapan WhatsApp yang butuh aksi."
 						/>
+					</div>
+				) : assigneeGroups ? (
+					<div className="divide-y divide-border">
+						{assigneeGroups.map((group) => {
+							const overdue = group.items.filter(
+								(task) =>
+									task.status !== 'done' &&
+									task.status !== 'cancelled' &&
+									task.dueAt != null &&
+									new Date(task.dueAt).getTime() < now.getTime(),
+							).length
+							return (
+								<div key={group.name}>
+									<div className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2">
+										<span className="flex items-center gap-2 text-sm font-semibold">
+											<UserRound size={14} className="text-muted-foreground" />
+											{group.name}
+										</span>
+										<span className="flex items-center gap-2 text-xs">
+											{overdue > 0 ? (
+												<span className="rounded-full bg-red-500/10 px-2 py-0.5 font-semibold text-red-600 dark:text-red-300">
+													{overdue} terlambat
+												</span>
+											) : null}
+											<span className="text-muted-foreground">{group.items.length} tugas</span>
+										</span>
+									</div>
+									<ul className="divide-y divide-border">{group.items.map(renderRow)}</ul>
+								</div>
+							)
+						})}
 					</div>
 				) : grouped ? (
 					<div className="divide-y divide-border">

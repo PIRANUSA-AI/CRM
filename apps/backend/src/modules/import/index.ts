@@ -117,6 +117,7 @@ export const importLeads = new Elysia({ prefix: '/import', tags: ['Import'] })
 			channel: t.Optional(t.String({ maxLength: 40 })),
 			notes: t.Optional(t.String({ maxLength: 2000 })),
 			followUpAt: t.Optional(t.String({ maxLength: 40 })),
+			assigneeId: t.Optional(t.String({ maxLength: 64 })),
 		}),
 	})
 	.post('/csv/preview', async ({ resolvedAppId, userId, body, set }) => {
