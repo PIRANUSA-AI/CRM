@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
 	BarChart3,
-	Bell,
 	BookOpen,
 	Bot,
 	Code2,
@@ -64,13 +63,6 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/alih-tugas',
 		group: 'operasional',
 		icon: Handshake,
-	},
-	{
-		id: 'notifikasi',
-		label: 'Notifikasi',
-		path: '/notifikasi',
-		group: 'operasional',
-		icon: Bell,
 	},
 	{
 		id: 'customers',
@@ -217,8 +209,14 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 ]
 
 // Reachable but not in the sidebar: /prospek is opened from a button inside
-// Pipeline, and /opportunity only redirects there.
-const CRM_EXTRA_ALLOWED_PATHS = ['/channels/whatsapp', '/prospek', '/opportunity']
+// Pipeline, /opportunity only redirects there, and /notifikasi is reached from
+// "Lihat semua notifikasi" in the bell dropdown (TopBar.tsx).
+const CRM_EXTRA_ALLOWED_PATHS = [
+	'/channels/whatsapp',
+	'/prospek',
+	'/opportunity',
+	'/notifikasi',
+]
 
 export const CRM_ALLOWED_PATHS = [
 	...CRM_NAV_ITEMS.map((item) => item.path),
