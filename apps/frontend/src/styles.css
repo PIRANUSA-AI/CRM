@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+
+/*
+ * Tie `dark:` utilities to the app's own theme switch.
+ *
+ * Without this, Tailwind compiles them under @media (prefers-color-scheme:
+ * dark), so they follow the operating system while the palette below follows
+ * the `.dark` class the theme toggle sets. On a machine whose OS is dark but
+ * whose app theme is light, every dark: utility fired over light surfaces —
+ * dark-mode text colours, chosen to sit on a near-black background, were being
+ * painted onto white. That is why the status chips in the inbox looked washed
+ * out no matter how much their tint was raised.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
 @import "@fontsource-variable/instrument-sans";
 @import "@fontsource-variable/newsreader";
 
