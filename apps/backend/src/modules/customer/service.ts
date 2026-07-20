@@ -1120,12 +1120,13 @@ export abstract class CustomerService {
 				identifier: phone ? `wa:${appId}:${phone}` : null,
 				email,
 				company: String(data.company || '').trim() || null,
+				// city and company are real columns; only notes has nowhere else to go.
+				// The prospect path writes them the same way, and a city hidden in
+				// custom_attributes would be invisible to anything querying the column.
+				city: city || null,
 				source: 'manual',
 				first_contact_at: new Date(),
-				custom_attributes: {
-					...(city ? { city } : {}),
-					...(notes ? { notes } : {}),
-				} as Prisma.InputJsonValue,
+				custom_attributes: (notes ? { notes } : {}) as Prisma.InputJsonValue,
 			},
 			select: { id: true, name: true, phone_number: true, email: true },
 		})
