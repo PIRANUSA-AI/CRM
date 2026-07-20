@@ -237,7 +237,14 @@ function ImportPage() {
 						<FileSpreadsheet size={40} className="text-primary" />
 						<div>
 							<p className="font-semibold">{loading ? 'Membaca CSV...' : 'Klik untuk pilih file CSV'}</p>
+							{/* The picker filters to .csv, so an .xlsx simply appears greyed out
+							    with no explanation. Saying it here is the difference between a
+							    one-step Save As and assuming the import is broken. */}
 							<p className="text-sm text-muted-foreground">
+								<strong>Format CSV saja.</strong> Kalau datamu masih Excel (.xlsx),
+								buka di Excel/Sheets lalu <em>Save As / Download</em> sebagai CSV dulu.
+							</p>
+							<p className="mt-1 text-sm text-muted-foreground">
 								Kolom wajib: name, phone. Assignee memakai email sales di tim Anda.
 							</p>
 						</div>
