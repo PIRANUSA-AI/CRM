@@ -4,18 +4,30 @@ import {
 	AlertTriangle,
 	CheckCircle2,
 	FileText,
+	Loader2,
 	Plus,
 	Search,
 	ShieldCheck,
 	Trash2,
+	Upload,
 } from 'lucide-react'
 import {
 	sakti as saktiApi,
+	type LetterTemplate,
 	type SaktiCheckResult,
+	type SaktiImportResult,
 	type SaktiRecord,
 	type SuratSakti,
 } from '@/lib/api'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_app/sakti')({
@@ -68,11 +80,22 @@ function SaktiPage() {
 // Database Sakti — license records + the check tool.
 // ---------------------------------------------------------------------------
 
+const RECORDS_PAGE_SIZE = 25
+
 function DatabaseTab() {
 	const [records, setRecords] = useState<SaktiRecord[]>([])
 	const [search, setSearch] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [busy, setBusy] = useState<string | null>(null)
+	// The licence database grows into thousands of rows from vendor sheets, so
+	// the table pages against a real total instead of loading everything.
+	const [total, setTotal] = useState(0)
+	const [offset, setOffset] = useState(0)
+
+	const [importOpen, setImportOpen] = useState(false)
+	const [importBusy, setImportBusy] = useState(false)
+	const [importContent, setImportContent] = useState('')
+	const [importPreview, setImportPreview] = useState<SaktiImportResult | null>(null)
 
 	// Check tool.
 	const [checkName, setCheckName] = useState('')
@@ -91,11 +114,17 @@ function DatabaseTab() {
 	})
 	const [creating, setCreating] = useState(false)
 
-	const load = useCallback(async (q?: string) => {
+	const load = useCallback(async (q?: string, nextOffset = 0) => {
 		setLoading(true)
 		try {
-			const res = await saktiApi.records.list(q ? { search: q } : {})
+			const res = await saktiApi.records.list({
+				...(q ? { search: q } : {}),
+				limit: RECORDS_PAGE_SIZE,
+				offset: nextOffset,
+			})
 			setRecords(res.payload || [])
+			setTotal(res.meta?.total ?? (res.payload || []).length)
+			setOffset(nextOffset)
 		} catch (err: any) {
 			toast.error(err?.message || 'Gagal memuat data')
 		} finally {
@@ -106,6 +135,40 @@ function DatabaseTab() {
 	useEffect(() => {
 		void load()
 	}, [load])
+
+	// Import is CSV: every sheet tool exports it, and these records arrive as
+	// vendor exports. A dry run first so the operator sees what will be skipped.
+	async function readFile(file: File) {
+		setImportBusy(true)
+		try {
+			const content = await file.text()
+			setImportContent(content)
+			const res = await saktiApi.records.importCsv(content, true)
+			setImportPreview(res.payload)
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal membaca file')
+			setImportPreview(null)
+		} finally {
+			setImportBusy(false)
+		}
+	}
+
+	async function commitImport() {
+		if (!importContent) return
+		setImportBusy(true)
+		try {
+			const res = await saktiApi.records.importCsv(importContent, false)
+			toast.success(`${res.payload.imported} data lisensi diimpor`)
+			setImportOpen(false)
+			setImportPreview(null)
+			setImportContent('')
+			await load(search, 0)
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal mengimpor')
+		} finally {
+			setImportBusy(false)
+		}
+	}
 
 	async function runCheck(e: React.FormEvent) {
 		e.preventDefault()
@@ -255,7 +318,7 @@ function DatabaseTab() {
 				>
 					<input
 						className="ocm-input max-w-xs"
-						placeholder="Cari nama / instansi…"
+						placeholder="Cari nama / instansi / no. lisensi…"
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 					/>
@@ -263,13 +326,26 @@ function DatabaseTab() {
 						<Search size={14} /> Cari
 					</button>
 				</form>
-				<button
-					type="button"
-					className="ocm-btn ocm-btn-primary"
-					onClick={() => setShowForm((v) => !v)}
-				>
-					<Plus size={14} /> Tambah Data
-				</button>
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						className="ocm-btn"
+						onClick={() => {
+							setImportPreview(null)
+							setImportContent('')
+							setImportOpen(true)
+						}}
+					>
+						<Upload size={14} /> Impor CSV
+					</button>
+					<button
+						type="button"
+						className="ocm-btn ocm-btn-primary"
+						onClick={() => setShowForm((v) => !v)}
+					>
+						<Plus size={14} /> Tambah Data
+					</button>
+				</div>
 			</div>
 
 			{showForm ? (
@@ -367,8 +443,154 @@ function DatabaseTab() {
 							</tbody>
 						</table>
 					</div>
+
+					{total > RECORDS_PAGE_SIZE ? (
+						<div className="flex items-center justify-between gap-3 border-t border-border p-3 text-xs text-muted-foreground">
+							<span>
+								{offset + 1}–{Math.min(offset + RECORDS_PAGE_SIZE, total)} dari{' '}
+								{total.toLocaleString('id-ID')}
+							</span>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3"
+									disabled={loading || offset === 0}
+									onClick={() => void load(search, Math.max(0, offset - RECORDS_PAGE_SIZE))}
+								>
+									Sebelumnya
+								</button>
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3"
+									disabled={loading || offset + RECORDS_PAGE_SIZE >= total}
+									onClick={() => void load(search, offset + RECORDS_PAGE_SIZE)}
+								>
+									Berikutnya
+								</button>
+							</div>
+						</div>
+					) : null}
 				</div>
 			)}
+
+			<Dialog open={importOpen} onOpenChange={(open) => !importBusy && setImportOpen(open)}>
+				<DialogContent className="sm:max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>Impor Data Lisensi</DialogTitle>
+						<DialogDescription>
+							Unggah file CSV. Kalau sheet-mu masih Excel, simpan sebagai CSV dulu.
+						</DialogDescription>
+					</DialogHeader>
+
+					<input
+						type="file"
+						accept=".csv,text/csv"
+						disabled={importBusy}
+						onChange={(event) => {
+							const file = event.target.files?.[0]
+							if (file) void readFile(file)
+						}}
+						className="ocm-input"
+					/>
+
+					<p className="text-[11px] text-muted-foreground">
+						Kolom yang dikenali: Nama Customer, Perusahaan, Produk, Vendor Asal, No
+						Lisensi, Tanggal Beli, Keterangan. Kolom lain diabaikan.
+					</p>
+
+					{importBusy && !importPreview ? (
+						<div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+							<Loader2 size={16} className="animate-spin" /> Membaca file…
+						</div>
+					) : null}
+
+					{importPreview ? (
+						<div className="space-y-3">
+							<div className="flex flex-wrap gap-2 text-xs">
+								<span className="rounded-full bg-emerald-500/10 px-2 py-1 font-semibold text-emerald-600 dark:text-emerald-300">
+									{importPreview.summary.ok} akan diimpor
+								</span>
+								<span className="rounded-full bg-amber-500/10 px-2 py-1 font-semibold text-amber-700 dark:text-amber-300">
+									{importPreview.summary.skipped} dilewati (sudah ada)
+								</span>
+								<span className="rounded-full bg-red-500/10 px-2 py-1 font-semibold text-red-600 dark:text-red-300">
+									{importPreview.summary.error} bermasalah
+								</span>
+							</div>
+
+							{importPreview.unmapped.length > 0 ? (
+								<p className="text-[11px] text-muted-foreground">
+									Kolom tidak dikenali dan diabaikan: {importPreview.unmapped.join(', ')}
+								</p>
+							) : null}
+
+							<div className="max-h-64 overflow-y-auto rounded-lg border border-border">
+								<table className="w-full text-xs">
+									<tbody className="divide-y divide-border">
+										{importPreview.rows.map((row) => (
+											<tr key={row.line}>
+												<td className="w-10 px-2 py-1.5 text-muted-foreground">{row.line}</td>
+												<td className="px-2 py-1.5">
+													{row.customerName || (
+														<span className="text-muted-foreground">(kosong)</span>
+													)}
+													{row.licenseNo ? (
+														<span className="ml-1 text-muted-foreground">
+															· {row.licenseNo}
+														</span>
+													) : null}
+												</td>
+												<td className="px-2 py-1.5 text-right">
+													<span
+														className={
+															row.status === 'ok'
+																? 'text-emerald-600 dark:text-emerald-300'
+																: row.status === 'skipped'
+																	? 'text-amber-700 dark:text-amber-300'
+																	: 'text-red-600 dark:text-red-300'
+														}
+													>
+														{row.status === 'ok'
+															? 'siap'
+															: row.status === 'skipped'
+																? 'dilewati'
+																: 'error'}
+													</span>
+													{row.messages.length > 0 ? (
+														<span className="ml-1 text-muted-foreground">
+															· {row.messages[0]}
+														</span>
+													) : null}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					) : null}
+
+					<DialogFooter>
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => setImportOpen(false)}
+							disabled={importBusy}
+						>
+							Batal
+						</button>
+						<button
+							type="button"
+							className="ocm-btn ocm-btn-primary"
+							onClick={() => void commitImport()}
+							disabled={importBusy || !importPreview || importPreview.summary.ok === 0}
+						>
+							{importBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+							Impor {importPreview?.summary.ok ?? 0} data
+						</button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	)
 }
@@ -389,6 +611,18 @@ function SuratTab() {
 	const [loading, setLoading] = useState(true)
 	const [busy, setBusy] = useState<string | null>(null)
 
+	// Template catalogue comes from the backend so the field list and the wording
+	// stay in one place — the bodies are still placeholder copy and will change.
+	const [templates, setTemplates] = useState<LetterTemplate[]>([])
+	const [composeOpen, setComposeOpen] = useState(false)
+	const [templateId, setTemplateId] = useState('')
+	const [values, setValues] = useState<Record<string, string>>({})
+	const [preview, setPreview] = useState<string>('')
+	const [missing, setMissing] = useState<string[]>([])
+	const [composing, setComposing] = useState(false)
+
+	const activeTemplate = templates.find((item) => item.id === templateId) || null
+
 	const load = useCallback(async () => {
 		setLoading(true)
 		try {
@@ -404,6 +638,61 @@ function SuratTab() {
 	useEffect(() => {
 		void load()
 	}, [load])
+
+	useEffect(() => {
+		void saktiApi
+			.templates()
+			.then((res) => setTemplates(res.payload || []))
+			.catch(() => undefined)
+	}, [])
+
+	// Re-render on every keystroke so the operator sees the letter take shape.
+	// Debounced because it is a round trip, and the body is long.
+	useEffect(() => {
+		if (!templateId) {
+			setPreview('')
+			setMissing([])
+			return
+		}
+		const timer = setTimeout(() => {
+			void saktiApi
+				.previewLetter(templateId, values)
+				.then((res) => {
+					setPreview(res.payload.body)
+					setMissing(res.payload.missing)
+				})
+				.catch(() => undefined)
+		}, 300)
+		return () => clearTimeout(timer)
+	}, [templateId, values])
+
+	async function saveLetter() {
+		if (!activeTemplate) return
+		const customerName = values.penerima?.trim()
+		if (!customerName) {
+			toast.error('Isi dulu "Ditujukan kepada"')
+			return
+		}
+		setComposing(true)
+		try {
+			await saktiApi.letters.create({
+				customerName,
+				company: values.penerima?.trim() || null,
+				product: values.produk?.trim() || null,
+				template: activeTemplate.id,
+				templateValues: values,
+			})
+			toast.success(`${activeTemplate.name} tersimpan sebagai draf`)
+			setComposeOpen(false)
+			setTemplateId('')
+			setValues({})
+			await load()
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal menyimpan surat')
+		} finally {
+			setComposing(false)
+		}
+	}
 
 	async function toggle(
 		letter: SuratSakti,
@@ -455,17 +744,133 @@ function SuratTab() {
 		)
 	}
 
+	// The compose button lives above the list rather than inside it, so it is
+	// still reachable when there are no letters yet — which is exactly when
+	// someone needs to write the first one.
+	const composeBar = (
+		<div className="flex flex-wrap items-center justify-between gap-2">
+			<p className="text-xs text-muted-foreground">
+				{templates.length} template tersedia · isi surat masih contoh, ganti dengan
+				redaksi resmi sebelum dikirim
+			</p>
+			<button
+				type="button"
+				className="ocm-btn ocm-btn-primary"
+				onClick={() => {
+					setTemplateId('')
+					setValues({})
+					setComposeOpen(true)
+				}}
+			>
+				<FileText size={14} /> Susun Surat
+			</button>
+		</div>
+	)
+
+	const composeDialog = (
+		<Dialog open={composeOpen} onOpenChange={(open) => !composing && setComposeOpen(open)}>
+			<DialogContent className="sm:max-w-3xl">
+				<DialogHeader>
+					<DialogTitle>Susun Surat</DialogTitle>
+					<DialogDescription>
+						Pilih template, isi datanya, lalu simpan sebagai draf.
+					</DialogDescription>
+				</DialogHeader>
+
+				<select
+					className="ocm-input"
+					value={templateId}
+					onChange={(event) => {
+						setTemplateId(event.target.value)
+						setValues({})
+					}}
+				>
+					<option value="">— Pilih template —</option>
+					{templates.map((template) => (
+						<option key={template.id} value={template.id}>
+							{template.name}
+						</option>
+					))}
+				</select>
+
+				{activeTemplate ? (
+					<>
+						<p className="text-[11px] text-muted-foreground">{activeTemplate.description}</p>
+						<div className="grid max-h-[45vh] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+							<div className="space-y-2">
+								{activeTemplate.fields.map((field) => (
+									<label key={field.key} className="block">
+										<span className="mb-1 block text-xs font-medium text-muted-foreground">
+											{field.label}
+											{field.required ? ' *' : ''}
+										</span>
+										<input
+											className="ocm-input"
+											placeholder={field.example}
+											value={values[field.key] || ''}
+											onChange={(event) =>
+												setValues((prev) => ({ ...prev, [field.key]: event.target.value }))
+											}
+										/>
+									</label>
+								))}
+							</div>
+							<div>
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Pratinjau
+								</span>
+								<pre className="h-full whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed">
+									{preview || 'Isi datanya untuk melihat pratinjau.'}
+								</pre>
+							</div>
+						</div>
+						{missing.length > 0 ? (
+							<p className="rounded-md bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+								Belum diisi: {missing.join(', ')}
+							</p>
+						) : null}
+					</>
+				) : null}
+
+				<DialogFooter>
+					<button
+						type="button"
+						className="ocm-btn"
+						onClick={() => setComposeOpen(false)}
+						disabled={composing}
+					>
+						Batal
+					</button>
+					<button
+						type="button"
+						className="ocm-btn ocm-btn-primary"
+						onClick={() => void saveLetter()}
+						disabled={composing || !activeTemplate}
+					>
+						{composing ? <Loader2 size={14} className="animate-spin" /> : null}
+						Simpan draf
+					</button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	)
+
 	if (letters.length === 0) {
 		return (
-			<CrmEmptyState
-				title="Belum ada Surat Sakti"
-				description="Surat Sakti dibuat saat cek lead menemukan lisensi di vendor lain. Buka tab Database Sakti untuk mengecek."
-			/>
+			<div className="space-y-4">
+				{composeBar}
+				<CrmEmptyState
+					title="Belum ada Surat Sakti"
+					description="Susun surat dari template, atau buka tab Database Sakti untuk cek lead yang lisensinya ada di vendor lain."
+				/>
+				{composeDialog}
+			</div>
 		)
 	}
 
 	return (
 		<div className="space-y-4">
+			{composeBar}
 			{letters.map((letter) => {
 				const meta = LETTER_STATUS[letter.status] || LETTER_STATUS.draft
 				const rowBusy = busy === letter.id
@@ -529,6 +934,7 @@ function SuratTab() {
 					</div>
 				)
 			})}
+			{composeDialog}
 		</div>
 	)
 }

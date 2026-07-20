@@ -1656,6 +1656,43 @@ export const opportunities = {
 		apiRequest(`/opportunities/${id}`, { method: 'DELETE' }),
 }
 
+export interface SaktiImportRow {
+	line: number
+	customerName: string
+	company: string | null
+	product: string | null
+	vendor: string | null
+	licenseNo: string | null
+	purchasedAt: string | null
+	notes: string | null
+	status: 'ok' | 'skipped' | 'error'
+	messages: string[]
+}
+
+export interface SaktiImportResult {
+	headers: string[]
+	mapped: string[]
+	unmapped: string[]
+	rows: SaktiImportRow[]
+	summary: { total: number; ok: number; skipped: number; error: number }
+	imported: number
+}
+
+export interface LetterTemplateField {
+	key: string
+	label: string
+	required: boolean
+	example?: string
+}
+
+export interface LetterTemplate {
+	id: string
+	name: string
+	description: string
+	fields: LetterTemplateField[]
+	body: string
+}
+
 // Database Sakti — cross-vendor license records + transfer letters (Surat Sakti).
 export interface SaktiRecord {
 	id: string
@@ -1691,6 +1728,10 @@ export interface SuratSakti {
 	ourApproved: boolean
 	theirApproved: boolean
 	notes: string | null
+	template: string | null
+	templateValues: Record<string, unknown> | null
+	/** Rendered from the template on read, so corrected wording reaches old letters. */
+	renderedBody: string | null
 	createdAt: string | null
 	updatedAt: string | null
 }
@@ -1701,7 +1742,11 @@ export const sakti = {
 			search?: string
 			limit?: number
 			offset?: number
-		}): Promise<{ success: boolean; payload: SaktiRecord[] }> => {
+		}): Promise<{
+			success: boolean
+			payload: SaktiRecord[]
+			meta: { total: number; limit: number; offset: number }
+		}> => {
 			const query = new URLSearchParams()
 			for (const [key, value] of Object.entries(params || {})) {
 				if (value === undefined || value === null || value === '') continue
@@ -1710,6 +1755,15 @@ export const sakti = {
 			const qs = query.toString()
 			return apiRequest(`/sakti/records${qs ? `?${qs}` : ''}`)
 		},
+		/** dryRun previews which rows import and which are skipped, without writing. */
+		importCsv: (
+			content: string,
+			dryRun = false,
+		): Promise<{ success: boolean; payload: SaktiImportResult }> =>
+			apiRequest('/sakti/records/import', {
+				method: 'POST',
+				body: JSON.stringify({ content, dryRun }),
+			}),
 		create: (data: {
 			customerName: string
 			company?: string | null
@@ -1730,6 +1784,22 @@ export const sakti = {
 	}): Promise<{ success: boolean; payload: SaktiCheckResult }> =>
 		apiRequest('/sakti/check', { method: 'POST', body: JSON.stringify(data) }),
 
+	templates: (): Promise<{ success: boolean; payload: LetterTemplate[] }> =>
+		apiRequest('/sakti/templates'),
+
+	/** Fill a template without saving, for the live preview in the form. */
+	previewLetter: (
+		template: string,
+		values: Record<string, string>,
+	): Promise<{
+		success: boolean
+		payload: { template: string; name: string; body: string; missing: string[] }
+	}> =>
+		apiRequest('/sakti/templates/preview', {
+			method: 'POST',
+			body: JSON.stringify({ template, values }),
+		}),
+
 	letters: {
 		list: (params?: {
 			status?: string
@@ -1746,6 +1816,8 @@ export const sakti = {
 			opportunityId?: string | null
 			saktiRecordId?: string | null
 			notes?: string | null
+			template?: string | null
+			templateValues?: Record<string, string> | null
 		}): Promise<{ success: boolean; payload: SuratSakti }> =>
 			apiRequest('/sakti/letters', { method: 'POST', body: JSON.stringify(data) }),
 		update: (
