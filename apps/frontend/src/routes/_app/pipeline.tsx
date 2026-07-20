@@ -11,6 +11,14 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import {
 	opportunities as dealsApi,
@@ -104,6 +112,59 @@ function PipelinePage() {
 	const [loading, setLoading] = useState(true)
 	const [movingId, setMovingId] = useState<string | null>(null)
 	const [error, setError] = useState<string | null>(null)
+
+	// Details a sales fills in as the deal firms up. The stage stays on the row
+	// itself — it is the one thing changed constantly — while these three are
+	// edited occasionally, so they live behind a click instead of cluttering
+	// every row with inputs.
+	const [editing, setEditing] = useState<Opportunity | null>(null)
+	const [draft, setDraft] = useState({ name: '', product: '', value: '', notes: '' })
+	const [saving, setSaving] = useState(false)
+
+	const openEditor = useCallback((deal: Opportunity) => {
+		setEditing(deal)
+		setDraft({
+			name: deal.name,
+			product: deal.product || '',
+			value: deal.value != null ? String(deal.value) : '',
+			notes: deal.notes || '',
+		})
+	}, [])
+
+	const saveDetails = useCallback(async () => {
+		if (!editing) return
+		const name = draft.name.trim()
+		if (!name) {
+			setError('Nama deal wajib diisi.')
+			return
+		}
+		const rawValue = draft.value.trim()
+		// An empty box means "not known yet", which is different from zero.
+		const value = rawValue === '' ? null : Number(rawValue.replace(/[^0-9]/g, ''))
+		if (value !== null && !Number.isFinite(value)) {
+			setError('Nilai deal harus berupa angka.')
+			return
+		}
+		setSaving(true)
+		setError(null)
+		try {
+			const response = await dealsApi.update(editing.id, {
+				name,
+				product: draft.product.trim() || null,
+				value,
+				notes: draft.notes.trim() || null,
+			})
+			const updated = response.payload
+			setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+			setEditing(null)
+			// Totals are money sums, so they shift the moment a value is entered.
+			void dealsApi.stats().then((res) => setStats(res.payload)).catch(() => undefined)
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Deal belum dapat disimpan.')
+		} finally {
+			setSaving(false)
+		}
+	}, [editing, draft])
 
 	const load = useCallback(async () => {
 		setLoading(true)
@@ -302,9 +363,15 @@ function PipelinePage() {
 								{visible.map((deal) => (
 									<tr key={deal.id} className="hover:bg-muted/30">
 										<td className="px-4 py-3">
-											<p className="font-medium">{deal.name}</p>
+											<button
+												type="button"
+												onClick={() => openEditor(deal)}
+												className="text-left font-medium hover:underline"
+											>
+												{deal.name}
+											</button>
 											<span
-												className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${bucketTone(deal.bucket)}`}
+												className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-[11px] font-semibold ${bucketTone(deal.bucket)}`}
 											>
 												{bucketLabel(deal.bucket)}
 											</span>
@@ -370,9 +437,16 @@ function PipelinePage() {
 										<div className="space-y-2">
 											{items.map((deal) => (
 												<div key={deal.id} className="rounded-lg border border-border bg-card p-3">
-													<p className="truncate text-sm font-medium">{deal.name}</p>
+													<button
+														type="button"
+														onClick={() => openEditor(deal)}
+														className="block w-full truncate text-left text-sm font-medium hover:underline"
+													>
+														{deal.name}
+													</button>
 													<p className="truncate text-xs text-muted-foreground">
 														{deal.contactName || '—'}
+														{deal.value ? ` · ${formatValue(deal.value)}` : ''}
 													</p>
 													<div className="mt-2">
 														<ProbabilityBar
@@ -412,6 +486,91 @@ function PipelinePage() {
 					</div>
 				)}
 			</div>
+
+			<Dialog open={Boolean(editing)} onOpenChange={(open) => !saving && !open && setEditing(null)}>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle>Detail Deal</DialogTitle>
+						<DialogDescription>
+							{editing
+								? `${editing.contactName || 'Tanpa kontak'} · ${editing.stageLabel} ${editing.probability}%`
+								: ''}
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-3">
+						<label className="block">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Nama deal *
+							</span>
+							<input
+								className="ocm-input"
+								value={draft.name}
+								onChange={(event) => setDraft((d) => ({ ...d, name: event.target.value }))}
+							/>
+						</label>
+						<div className="grid gap-3 sm:grid-cols-2">
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Produk
+								</span>
+								<input
+									className="ocm-input"
+									value={draft.product}
+									onChange={(event) =>
+										setDraft((d) => ({ ...d, product: event.target.value }))
+									}
+									placeholder="mis. ZWCAD 2025 Professional"
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Nilai (Rp)
+								</span>
+								<input
+									className="ocm-input text-right tabular-nums"
+									inputMode="numeric"
+									value={draft.value}
+									onChange={(event) => setDraft((d) => ({ ...d, value: event.target.value }))}
+									placeholder="Kosongkan bila belum tahu"
+								/>
+							</label>
+						</div>
+						<label className="block">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Catatan
+							</span>
+							<textarea
+								rows={3}
+								className="ocm-input resize-y"
+								value={draft.notes}
+								onChange={(event) => setDraft((d) => ({ ...d, notes: event.target.value }))}
+								placeholder="Konteks negosiasi, kebutuhan khusus, dsb."
+							/>
+						</label>
+					</div>
+
+					<DialogFooter>
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => setEditing(null)}
+							disabled={saving}
+						>
+							Batal
+						</button>
+						<button
+							type="button"
+							className="ocm-btn bg-primary text-primary-foreground hover:bg-primary/90"
+							onClick={() => void saveDetails()}
+							disabled={saving || !draft.name.trim()}
+						>
+							{saving ? <Loader2 size={14} className="animate-spin" /> : null}
+							Simpan
+						</button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</main>
 	)
 }
