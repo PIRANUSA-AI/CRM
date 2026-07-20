@@ -17,6 +17,32 @@ describe('role-access: sales/leader/ceo/superadmin', () => {
 		expect(getAllowedPrimaryPathsForRole('superadmin')).toEqual(SUPERADMIN_PATHS)
 	})
 
+	// Regression: /pipeline was added for leaders only while the sidebar entry
+	// for /opportunity was removed, which left a sales with no route to their own
+	// deals at all — the nav item was gone and /opportunity redirected to a page
+	// they were not allowed on. Asserting the constants against themselves (the
+	// test above) cannot catch a missing path, so name the pages explicitly.
+	test('sales can reach the pages they work in every day', () => {
+		for (const path of [
+			'/chat',
+			'/tasks',
+			'/pipeline',
+			'/opportunity',
+			'/prospek',
+			'/customers',
+			'/alih-tugas',
+			'/notifikasi',
+		]) {
+			expect(isPathAllowedForRole(path, 'sales')).toBe(true)
+		}
+	})
+
+	test('sales stays out of leadership pages', () => {
+		expect(isPathAllowedForRole('/kelola-tim', 'sales')).toBe(false)
+		expect(isPathAllowedForRole('/sales-profiles', 'sales')).toBe(false)
+		expect(isPathAllowedForRole('/broadcast', 'sales')).toBe(false)
+	})
+
 	test('superadmin is restricted, not unrestricted', () => {
 		const allowed = getAllowedPrimaryPathsForRole('superadmin')
 		expect(allowed).not.toBeNull()
