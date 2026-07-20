@@ -28,6 +28,8 @@ export const SaktiRequestModel = {
 		opportunityId: t.Optional(t.Nullable(t.String())),
 		saktiRecordId: t.Optional(t.Nullable(t.String())),
 		notes: t.Optional(t.Nullable(t.String())),
+		template: t.Optional(t.Nullable(t.String({ maxLength: 60 }))),
+		templateValues: t.Optional(t.Nullable(t.Record(t.String(), t.Any()))),
 	}),
 	updateLetter: t.Object({
 		status: t.Optional(t.String()),

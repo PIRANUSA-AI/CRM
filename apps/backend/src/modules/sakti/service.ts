@@ -1,5 +1,7 @@
 import prisma from '../../lib/prisma'
 import { isUuid } from '../../lib/utils'
+import { parseSaktiSheet } from './import'
+import { findTemplate, renderLetter } from './letter-templates'
 
 export type SaktiActor = { appId: string; userId: string | null }
 
@@ -50,6 +52,19 @@ function letterDTO(row: Record<string, any>) {
 		ourApproved: row.our_approved,
 		theirApproved: row.their_approved,
 		notes: row.notes,
+		template: row.template || null,
+		templateValues: (row.template_values as Record<string, unknown> | null) || null,
+		// Rendered on read so a letter picks up corrected wording without a
+		// migration — the template bodies are still placeholder copy.
+		renderedBody: (() => {
+			const template = findTemplate(row.template)
+			if (!template) return null
+			return renderLetter(template, {
+				penerima: row.company || row.customer_name,
+				produk: row.product || '',
+				...((row.template_values as Record<string, unknown> | null) || {}),
+			}).body
+		})(),
 		createdAt: row.created_at ? row.created_at.toISOString() : null,
 		updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
 	}
@@ -62,23 +77,85 @@ export abstract class SaktiService {
 		appId: string,
 		options: { search?: string; limit?: number; offset?: number },
 	) {
-		const rows = await prisma.sakti_records.findMany({
-			where: {
-				app_id: appId,
-				...(options.search
-					? {
-							OR: [
-								{ customer_name: { contains: options.search, mode: 'insensitive' as const } },
-								{ company: { contains: options.search, mode: 'insensitive' as const } },
-							],
-						}
-					: {}),
-			},
-			orderBy: { created_at: 'desc' },
-			skip: Math.max(0, options.offset || 0),
-			take: Math.max(1, Math.min(200, options.limit || 100)),
+		// Searching the licence number too: with thousands of rows imported from
+		// vendor sheets, a serial is what someone actually has in hand.
+		const where = {
+			app_id: appId,
+			...(options.search
+				? {
+						OR: [
+							{ customer_name: { contains: options.search, mode: 'insensitive' as const } },
+							{ company: { contains: options.search, mode: 'insensitive' as const } },
+							{ license_no: { contains: options.search, mode: 'insensitive' as const } },
+							{ product: { contains: options.search, mode: 'insensitive' as const } },
+						],
+					}
+				: {}),
+		}
+		const limit = Math.max(1, Math.min(200, options.limit || 100))
+		const offset = Math.max(0, options.offset || 0)
+		// Total comes back alongside the page so the table can paginate honestly
+		// rather than guessing from how full the current page is.
+		const [rows, total] = await Promise.all([
+			prisma.sakti_records.findMany({
+				where,
+				orderBy: { created_at: 'desc' },
+				skip: offset,
+				take: limit,
+			}),
+			prisma.sakti_records.count({ where }),
+		])
+		return { data: rows.map(recordDTO), meta: { total, limit, offset } }
+	}
+
+	/**
+	 * Import a CSV export of licence records. `dryRun` returns the same preview
+	 * without writing, so the person importing sees what will be skipped before
+	 * committing — these sheets are re-sent often and re-importing one must not
+	 * double the database.
+	 */
+	static async importRecords(
+		actor: SaktiActor,
+		input: { content: string; dryRun?: boolean },
+	) {
+		const content = String(input.content || '')
+		if (!content.trim()) throw new Error('File CSV kosong')
+
+		const existingRows = await prisma.sakti_records.findMany({
+			where: { app_id: actor.appId },
+			select: { license_no: true, customer_name: true, product: true },
 		})
-		return rows.map(recordDTO)
+		const licenseNos = new Set(
+			existingRows
+				.map((r) => (r.license_no || '').toLowerCase())
+				.filter((value) => value.length > 0),
+		)
+		const keys = new Set(
+			existingRows.map(
+				(r) => `${r.customer_name.toLowerCase()}|${(r.product || '').toLowerCase()}`,
+			),
+		)
+
+		const preview = parseSaktiSheet(content, { licenseNos, keys })
+		if (input.dryRun) return { ...preview, imported: 0 }
+
+		const importable = preview.rows.filter((row) => row.status === 'ok')
+		if (importable.length > 0) {
+			await prisma.sakti_records.createMany({
+				data: importable.map((row) => ({
+					app_id: actor.appId,
+					customer_name: row.customerName.slice(0, 255),
+					company: row.company?.slice(0, 255) || null,
+					product: row.product?.slice(0, 120) || null,
+					vendor: row.vendor?.slice(0, 255) || null,
+					license_no: row.licenseNo?.slice(0, 120) || null,
+					purchased_at: row.purchasedAt,
+					notes: row.notes,
+					source: 'import',
+				})),
+			})
+		}
+		return { ...preview, imported: importable.length }
 	}
 
 	static async createRecord(
@@ -186,10 +263,22 @@ export abstract class SaktiService {
 			opportunityId?: string | null
 			saktiRecordId?: string | null
 			notes?: string | null
+			template?: string | null
+			templateValues?: Record<string, unknown> | null
 		},
 	) {
 		const name = input.customerName?.trim()
 		if (!name) throw new Error('Nama customer wajib diisi')
+
+		// An unknown template id is rejected rather than stored: a letter that
+		// silently renders nothing is worse than one that fails to save.
+		let template: string | null = null
+		if (input.template) {
+			const found = findTemplate(input.template)
+			if (!found) throw new Error(`Template surat "${input.template}" tidak dikenal`)
+			template = found.id
+		}
+
 		const row = await prisma.surat_sakti.create({
 			data: {
 				app_id: actor.appId,
@@ -202,10 +291,20 @@ export abstract class SaktiService {
 				from_vendor: input.fromVendor?.slice(0, 255) || null,
 				status: 'draft',
 				notes: input.notes || null,
+				template,
+				template_values: (input.templateValues || undefined) as never,
 				created_by: actor.userId,
 			},
 		})
 		return letterDTO(row)
+	}
+
+	/** Fill a template without saving — used by the live preview in the form. */
+	static previewLetter(templateId: string, values: Record<string, unknown>) {
+		const template = findTemplate(templateId)
+		if (!template) throw new Error('Template surat tidak dikenal')
+		const { body, missing } = renderLetter(template, values)
+		return { template: template.id, name: template.name, body, missing }
 	}
 
 	static async updateLetter(

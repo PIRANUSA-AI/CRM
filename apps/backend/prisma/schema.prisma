@@ -2525,6 +2525,13 @@ model surat_sakti {
   their_approved  Boolean  @default(false)
   notes           String?
 
+  // Which template the letter was written from, and the values filled into it.
+  // Stored rather than only the rendered text so a letter can be re-rendered
+  // when the wording is corrected — the bodies in letter-templates.ts are still
+  // placeholders awaiting official copy.
+  template        String?  @db.VarChar(60)
+  template_values Json?
+
   created_by      String?  @db.Uuid
   created_at      DateTime @default(now()) @db.Timestamptz(6)
   updated_at      DateTime @updatedAt @db.Timestamptz(6)

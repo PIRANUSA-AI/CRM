@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia'
 import { appContext } from '../../plugins'
 import { SaktiService } from './service'
 import { SaktiRequestModel } from './model'
+import { LETTER_TEMPLATES } from './letter-templates'
 
 export const sakti = new Elysia({ prefix: '/sakti', tags: ['Sakti'] })
 	.use(appContext)
@@ -13,14 +14,41 @@ export const sakti = new Elysia({ prefix: '/sakti', tags: ['Sakti'] })
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const data = await SaktiService.listRecords(resolvedAppId, {
+			const result = await SaktiService.listRecords(resolvedAppId, {
 				search: query.search || undefined,
 				limit: query.limit ? Number(query.limit) : undefined,
 				offset: query.offset ? Number(query.offset) : undefined,
 			})
-			return { success: true, payload: data }
+			return { success: true, payload: result.data, meta: result.meta }
 		},
 		{ query: SaktiRequestModel.listQuery },
+	)
+	// CSV import. `dryRun` previews without writing so the operator sees which
+	// rows will be skipped as duplicates before committing.
+	.post(
+		'/records/import',
+		async ({ resolvedAppId, userId, body, set }) => {
+			if (!resolvedAppId) {
+				set.status = 400
+				return { error: 'App ID required' }
+			}
+			try {
+				const result = await SaktiService.importRecords(
+					{ appId: resolvedAppId, userId: userId ?? null },
+					{ content: body.content, dryRun: body.dryRun === true },
+				)
+				return { success: true, payload: result }
+			} catch (error) {
+				set.status = 400
+				return { error: error instanceof Error ? error.message : 'Gagal mengimpor data' }
+			}
+		},
+		{
+			body: t.Object({
+				content: t.String(),
+				dryRun: t.Optional(t.Boolean()),
+			}),
+		},
 	)
 	.post(
 		'/records',
@@ -68,6 +96,29 @@ export const sakti = new Elysia({ prefix: '/sakti', tags: ['Sakti'] })
 		{ body: SaktiRequestModel.check },
 	)
 	// --- Surat Sakti letters ---
+	// Template catalogue. The frontend renders the picker and the per-template
+	// field list from this, so it must not keep its own copy.
+	.get('/templates', () => ({ success: true, payload: LETTER_TEMPLATES }))
+	.post(
+		'/templates/preview',
+		async ({ body, set }) => {
+			try {
+				return {
+					success: true,
+					payload: SaktiService.previewLetter(body.template, body.values || {}),
+				}
+			} catch (error) {
+				set.status = 400
+				return { error: error instanceof Error ? error.message : 'Gagal merender surat' }
+			}
+		},
+		{
+			body: t.Object({
+				template: t.String({ maxLength: 60 }),
+				values: t.Optional(t.Record(t.String(), t.Any())),
+			}),
+		},
+	)
 	.get(
 		'/letters',
 		async ({ resolvedAppId, query, set }) => {
