@@ -31,6 +31,7 @@ type TeamSales = {
 	email: string
 	role: string | null
 	teamId: string | null
+	teamName: string | null
 }
 
 function cleanStringArray(value: unknown, max = 40): string[] {
@@ -57,9 +58,10 @@ function asArray(value: unknown): string[] {
 async function resolveTeamSales(actor: SalesProfileActor): Promise<Map<string, TeamSales>> {
 	const appTeams = await prisma.teams.findMany({
 		where: { app_id: actor.appId, deleted_at: null },
-		select: { id: true },
+		select: { id: true, name: true },
 	})
 	const appTeamIds = appTeams.map((team) => team.id)
+	const teamNameById = new Map(appTeams.map((team) => [team.id, team.name]))
 	const appMembers = appTeamIds.length
 		? await prisma.team_members.findMany({
 				where: { team_id: { in: appTeamIds } },
@@ -103,6 +105,7 @@ async function resolveTeamSales(actor: SalesProfileActor): Promise<Map<string, T
 			email: user.email,
 			role: user.role,
 			teamId,
+			teamName: teamId ? teamNameById.get(teamId) ?? null : null,
 		})
 	}
 	return map
@@ -171,6 +174,7 @@ export abstract class SalesProfileService {
 				email: s.email,
 				role: s.role,
 				teamId: s.teamId,
+				teamName: s.teamName,
 				activeLoad: loadByUser.get(s.userId) || 0,
 				profile: profileShape((profileByUser.get(s.userId) as ProfileRow) || null),
 			}))

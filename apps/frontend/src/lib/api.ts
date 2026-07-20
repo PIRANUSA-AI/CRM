@@ -3044,6 +3044,7 @@ export type SalesProfileRow = {
 	email: string
 	role: string | null
 	teamId: string | null
+	teamName: string | null
 	activeLoad: number
 	profile: SalesProfileData
 }
