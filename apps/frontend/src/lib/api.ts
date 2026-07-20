@@ -1543,7 +1543,13 @@ export interface Opportunity {
 	value: number | null
 	currency: string
 	status: OpportunityStatus | string
-	stage: string | null
+	stage: string
+	stageLabel: string
+	/** 0-100. The single field that decides prospek vs opportunity. */
+	probability: number
+	/** The owning team's threshold, already resolved by the backend. */
+	threshold: number
+	bucket: DealBucket
 	source: string
 	notes: string | null
 	closedAt: string | null
@@ -1551,8 +1557,19 @@ export interface Opportunity {
 	updatedAt: string | null
 }
 
+/** A deal below the team threshold reads as a prospek, at or above as an opportunity. */
+export type DealBucket = 'prospek' | 'opportunity' | 'closed'
+
+export interface DealStage {
+	id: string
+	label: string
+	probability: number
+	status: 'open' | 'won' | 'lost'
+}
+
 export interface OpportunityStats {
-	open: { count: number; value: number }
+	prospek: { count: number; value: number }
+	opportunity: { count: number; value: number }
 	won: { count: number; value: number }
 	lost: { count: number; value: number }
 }
@@ -1569,11 +1586,26 @@ export interface OpportunityInput {
 }
 
 export const opportunities = {
+	stages: (): Promise<{ success: boolean; payload: DealStage[] }> =>
+		apiRequest('/opportunities/stages'),
+
+	/** Move a deal to another stage — this is the whole lifecycle. */
+	moveStage: (
+		id: string,
+		stage: string,
+		probability?: number | null,
+	): Promise<{ success: boolean; payload: Opportunity }> =>
+		apiRequest(`/opportunities/${id}/stage`, {
+			method: 'PATCH',
+			body: JSON.stringify({ stage, probability: probability ?? null }),
+		}),
+
 	list: (params?: {
 		status?: string
 		ownerId?: string
 		contactId?: string
 		search?: string
+		bucket?: DealBucket
 		limit?: number
 		offset?: number
 	}): Promise<{ success: boolean; payload: Opportunity[] }> => {

@@ -18,10 +18,8 @@ import {
 	Radio,
 	Settings,
 	ShieldCheck,
-	Target,
 	Upload,
 	UserCog,
-	UserPlus,
 	Users,
 	UsersRound,
 	WandSparkles,
@@ -61,13 +59,6 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		icon: ListTodo,
 	},
 	{
-		id: 'prospek',
-		label: 'Tambah Prospek',
-		path: '/prospek',
-		group: 'operasional',
-		icon: UserPlus,
-	},
-	{
 		id: 'alih-tugas',
 		label: 'Alih Tugas',
 		path: '/alih-tugas',
@@ -89,11 +80,15 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		icon: Users,
 	},
 	{
-		id: 'opportunity',
-		label: 'Opportunity',
-		path: '/opportunity',
+		// Prospek and Opportunity used to sit here as separate entries. They are
+		// the same deal either side of the team's probability threshold, so both
+		// live in Pipeline now: /prospek is reached from a button on that page,
+		// and /opportunity redirects to it pre-filtered.
+		id: 'pipeline',
+		label: 'Pipeline',
+		path: '/pipeline',
 		group: 'data',
-		icon: Target,
+		icon: Kanban,
 	},
 	{
 		id: 'sakti',
@@ -164,13 +159,6 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		icon: Settings,
 	},
 	{
-		id: 'pipeline',
-		label: 'Pipeline',
-		path: '/pipeline',
-		group: 'data',
-		icon: Kanban,
-	},
-	{
 		id: 'templates',
 		label: 'Templat',
 		path: '/templates',
@@ -228,7 +216,9 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 	},
 ]
 
-const CRM_EXTRA_ALLOWED_PATHS = ['/channels/whatsapp']
+// Reachable but not in the sidebar: /prospek is opened from a button inside
+// Pipeline, and /opportunity only redirects there.
+const CRM_EXTRA_ALLOWED_PATHS = ['/channels/whatsapp', '/prospek', '/opportunity']
 
 export const CRM_ALLOWED_PATHS = [
 	...CRM_NAV_ITEMS.map((item) => item.path),

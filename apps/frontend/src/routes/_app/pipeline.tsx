@@ -1,672 +1,417 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
-	Plus,
-	Settings,
-	GripVertical,
-	DollarSign,
-	User,
-	Target,
-	Clock,
-	BarChart2,
-	KanbanSquare,
+	Columns3,
+	LayoutList,
+	Loader2,
+	RefreshCw,
+	Search,
+	TriangleAlert,
+	UserPlus,
+	UserRound,
 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
 import {
-	DndContext,
-	DragOverlay,
-	closestCorners,
-	KeyboardSensor,
-	PointerSensor,
-	useSensor,
-	useSensors,
-	type DragStartEvent,
-	type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-	SortableContext,
-	sortableKeyboardCoordinates,
-	verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import PageHeader from '@/components/PageHeader'
+	opportunities as dealsApi,
+	type DealBucket,
+	type DealStage,
+	type Opportunity,
+	type OpportunityStats,
+} from '@/lib/api'
 
 export const Route = createFileRoute('/_app/pipeline')({
 	component: PipelinePage,
+	// Optional key (not `string | undefined`) so every other Link to /pipeline
+	// can keep omitting search entirely.
+	validateSearch: (search: Record<string, unknown>) => {
+		const next: { bucket?: string } = {}
+		if (typeof search.bucket === 'string') next.bucket = search.bucket
+		return next
+	},
 })
 
-interface Stage {
-	id: string
-	name: string
-	color: string
-	order: number
-	pipelineId: string
-	createdAt: string
-	updatedAt: string
+type ViewMode = 'table' | 'board'
+
+const BUCKET_FILTERS: Array<{ value: DealBucket | 'all'; label: string }> = [
+	{ value: 'all', label: 'Semua' },
+	{ value: 'prospek', label: 'Prospek' },
+	{ value: 'opportunity', label: 'Opportunity' },
+	{ value: 'closed', label: 'Selesai' },
+]
+
+const IDR = new Intl.NumberFormat('id-ID', {
+	style: 'currency',
+	currency: 'IDR',
+	maximumFractionDigits: 0,
+})
+
+function formatValue(value: number | null) {
+	if (!value) return '—'
+	return IDR.format(value).replace(/ /g, ' ')
 }
 
-interface Pipeline {
-	id: string
-	name: string
-	description: string | null
-	isDefault: boolean
-	userId: string
-	createdAt: string
-	updatedAt: string
-	stages: Stage[]
+function bucketTone(bucket: DealBucket) {
+	if (bucket === 'opportunity') return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+	if (bucket === 'closed') return 'bg-muted text-muted-foreground'
+	return 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
 }
 
-interface Deal {
-	id: string
-	title: string
-	value: number
-	stageId: string
-	pipelineId: string
-	contactId: string
-	contactName: string
-	contactEmail?: string
-	contactPhone?: string
-	expectedCloseDate?: string
-	customFields?: Record<string, any>
-	createdAt: string
-	updatedAt: string
-	// Added for card display if available, but optional
-	contact?: {
-		name: string
-		phone: string
-		email: string
-	}
-	currency?: string
-	status?: 'open' | 'won' | 'lost'
-	priority?: 'low' | 'medium' | 'high'
+function bucketLabel(bucket: DealBucket) {
+	if (bucket === 'opportunity') return 'Opportunity'
+	if (bucket === 'closed') return 'Selesai'
+	return 'Prospek'
 }
 
-interface CustomField {
-	id: string
-	name: string
-	fieldType: 'text' | 'number' | 'date' | 'dropdown' | 'checkbox'
-	options?: string[]
-	required: boolean
-	order: number
+/** A slim progress bar; the threshold is drawn as a notch so the jump from
+ *  prospek to opportunity is visible rather than implied. */
+function ProbabilityBar({ value, threshold }: { value: number; threshold: number }) {
+	return (
+		<div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
+			<div
+				className={`h-full rounded-full ${value >= threshold ? 'bg-emerald-500' : 'bg-amber-500'}`}
+				style={{ width: `${Math.max(2, Math.min(100, value))}%` }}
+			/>
+			<span
+				className="absolute top-0 h-full w-px bg-foreground/40"
+				style={{ left: `${Math.min(100, threshold)}%` }}
+				title={`Ambang opportunity: ${threshold}%`}
+			/>
+		</div>
+	)
 }
 
-type ViewMode = 'board' | 'analytics' | 'settings'
-type SettingsTab = 'pipelines' | 'customFields'
+function isBucket(value: unknown): value is DealBucket {
+	return value === 'prospek' || value === 'opportunity' || value === 'closed'
+}
 
 function PipelinePage() {
-	const [viewMode, setViewMode] = useState<ViewMode>('board')
-	const [settingsTab, setSettingsTab] = useState<SettingsTab>('pipelines')
-	const [pipelines, setPipelines] = useState<Pipeline[]>([])
-	const [activePipeline, setActivePipeline] = useState<Pipeline | null>(null)
-	const [deals, setDeals] = useState<Deal[]>([])
-	const [customFields, setCustomFields] = useState<CustomField[]>([])
+	const navigate = useNavigate()
+	const search = Route.useSearch()
+	const currentUser = useCurrentUser()
+	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+
+	const [stages, setStages] = useState<DealStage[]>([])
+	const [deals, setDeals] = useState<Opportunity[]>([])
+	const [stats, setStats] = useState<OpportunityStats | null>(null)
+	const [view, setView] = useState<ViewMode>('table')
+	// /opportunity redirects here pre-filtered, so the initial bucket comes from
+	// the URL when it names one.
+	const [bucket, setBucket] = useState<DealBucket | 'all'>(
+		isBucket(search.bucket) ? search.bucket : 'all',
+	)
+	const [query, setQuery] = useState('')
 	const [loading, setLoading] = useState(true)
-	const [showCreatePipelineModal, setShowCreatePipelineModal] = useState(false)
-	const [showCreateDealModal, setShowCreateDealModal] = useState(false)
-	const [showCustomFieldModal, setShowCustomFieldModal] = useState(false)
-	const [editingPipeline, setEditingPipeline] = useState<Pipeline | null>(null)
-	const [editingDeal, setEditingDeal] = useState<Deal | null>(null)
-	const [selectedStageId, setSelectedStageId] = useState<string | null>(null)
+	const [movingId, setMovingId] = useState<string | null>(null)
+	const [error, setError] = useState<string | null>(null)
 
-	const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
-	const token = localStorage.getItem('crm_token')
-
-	useEffect(() => {
-		loadInitialData()
+	const load = useCallback(async () => {
+		setLoading(true)
+		setError(null)
+		try {
+			const [stageRes, dealRes, statRes] = await Promise.all([
+				dealsApi.stages(),
+				dealsApi.list({ limit: 200 }),
+				dealsApi.stats(),
+			])
+			setStages(stageRes.payload || [])
+			setDeals(dealRes.payload || [])
+			setStats(statRes.payload || null)
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Pipeline belum dapat dimuat.')
+		} finally {
+			setLoading(false)
+		}
 	}, [])
 
-	const loadInitialData = async () => {
-		setLoading(true)
-		await Promise.all([fetchPipelines(), loadCustomFields()])
-		setLoading(false)
-	}
+	useEffect(() => {
+		void load()
+	}, [load])
 
-	const fetchPipelines = async () => {
+	const moveStage = useCallback(async (deal: Opportunity, stageId: string) => {
+		if (stageId === deal.stage) return
+		setMovingId(deal.id)
+		setError(null)
 		try {
-			const res = await fetch(`${API_URL}/api/v1/crm/pipelines`, {
-				headers: { Authorization: `Bearer ${token}` },
-			})
-			const data = await res.json()
-			const pipelineList = data.pipelines || data.data || []
-
-			if (pipelineList.length > 0) {
-				setPipelines(pipelineList)
-				const defaultP =
-					pipelineList.find((p: Pipeline) => p.isDefault) || pipelineList[0]
-				setActivePipeline(defaultP)
-				await fetchDeals(defaultP.id)
-			} else {
-				setPipelines([])
-			}
-		} catch (error) {
-			console.error('Failed to fetch pipelines:', error)
+			const response = await dealsApi.moveStage(deal.id, stageId)
+			const updated = response.payload
+			setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+			// The buckets in the header shift as soon as a deal crosses the
+			// threshold, so they are refetched rather than patched locally.
+			void dealsApi.stats().then((res) => setStats(res.payload)).catch(() => undefined)
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Tahap belum dapat diubah.')
+		} finally {
+			setMovingId(null)
 		}
-	}
+	}, [])
 
-	const fetchDeals = async (pipelineId: string) => {
-		try {
-			const res = await fetch(
-				`${API_URL}/api/v1/crm/deals?pipelineId=${pipelineId}`,
-				{
-					headers: { Authorization: `Bearer ${token}` },
-				},
-			)
-			const data = await res.json()
-			if (data.data) {
-				setDeals(data.data)
-			} else {
-				setDeals([])
-			}
-		} catch (error) {
-			console.error('Failed to fetch deals:', error)
-			setDeals([])
+	const visible = useMemo(() => {
+		const q = query.trim().toLowerCase()
+		return deals.filter((deal) => {
+			if (bucket !== 'all' && deal.bucket !== bucket) return false
+			if (!q) return true
+			return [deal.name, deal.contactName, deal.product, deal.ownerName, deal.teamName]
+				.filter(Boolean)
+				.join(' ')
+				.toLowerCase()
+				.includes(q)
+		})
+	}, [deals, bucket, query])
+
+	const openStages = useMemo(() => stages.filter((s) => s.status === 'open'), [stages])
+
+	const byStage = useMemo(() => {
+		const map = new Map<string, Opportunity[]>()
+		for (const deal of visible) {
+			const list = map.get(deal.stage) || []
+			list.push(deal)
+			map.set(deal.stage, list)
 		}
-	}
-
-	const loadCustomFields = async () => {
-		try {
-			const response = await fetch(`${API_URL}/api/v1/crm/custom-fields`, {
-				headers: { Authorization: `Bearer ${token}` },
-			})
-			const result = await response.json()
-			setCustomFields(result.data || [])
-		} catch (error) {
-			console.error('Failed to load custom fields:', error)
-			setCustomFields([])
-		}
-	}
-
-	const handleDeletePipeline = async (id: string) => {
-		if (!confirm('Are you sure you want to delete this pipeline?')) return
-		try {
-			await fetch(`${API_URL}/api/v1/crm/pipelines/${id}`, {
-				method: 'DELETE',
-				headers: { Authorization: `Bearer ${token}` },
-			})
-			fetchPipelines()
-		} catch (error) {
-			console.error('Failed to delete pipeline:', error)
-		}
-	}
-
-	const actions = (
-		<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 lg:gap-3 w-full lg:w-auto">
-			<div
-				role="tablist"
-				aria-orientation="horizontal"
-				className="bg-gray-100 text-gray-500 flex h-10 items-center rounded-lg p-1 overflow-x-auto no-scrollbar"
-				style={{ outline: 'none' }}
-			>
-				<button
-					type='button'
-					role='tab'
-					aria-selected={viewMode === 'board'}
-					onClick={() => setViewMode('board')}
-					className={`ring-offset-white focus-visible:ring-gray-950 justify-center rounded-md px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-all focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex items-center gap-2 ${
-						viewMode === 'board'
-							? 'bg-white text-gray-950 shadow-sm'
-							: 'hover:text-gray-900'
-					}`}
-				>
-					<Target size={16} />
-					Pipeline Board
-				</button>
-				<button
-					type='button'
-					role='tab'
-					aria-selected={viewMode === 'analytics'}
-					onClick={() => setViewMode('analytics')}
-					className={`ring-offset-white focus-visible:ring-gray-950 justify-center rounded-md px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-all focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex items-center gap-2 ${
-						viewMode === 'analytics'
-							? 'bg-white text-gray-950 shadow-sm'
-							: 'hover:text-gray-900'
-					}`}
-				>
-					<BarChart2 size={16} />
-					Analytics
-				</button>
-				<button
-					type='button'
-					role='tab'
-					aria-selected={viewMode === 'settings'}
-					onClick={() => setViewMode('settings')}
-					className={`ring-offset-white focus-visible:ring-gray-950 justify-center rounded-md px-4 py-1.5 text-sm font-medium whitespace-nowrap transition-all focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 flex items-center gap-2 ${
-						viewMode === 'settings'
-							? 'bg-white text-gray-950 shadow-sm'
-							: 'hover:text-gray-900'
-					}`}
-				>
-					<Settings size={16} />
-					Settings
-				</button>
-			</div>
-			<button
-				onClick={() => setShowCreateDealModal(true)}
-				className="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors shadow-sm font-bold text-sm flex items-center justify-center gap-2 whitespace-nowrap"
-			>
-				<Plus size={18} />
-				New Deal
-			</button>
-		</div>
-	)
-
-	if (loading) {
-		return (
-			<div className="flex-1 flex items-center justify-center bg-white">
-				<div className="flex flex-col items-center gap-4">
-					<Clock className="animate-spin text-emerald-500" size={32} />
-					<p className="text-gray-500 font-bold tracking-tight">
-						Loading pipeline...
-					</p>
-				</div>
-			</div>
-		)
-	}
+		return map
+	}, [visible])
 
 	return (
-		<div className="flex-1 flex flex-col h-full bg-white overflow-hidden">
-			<PageHeader
-				title="Sales Pipeline"
-				description="Manage your deals, track sales progress, and optimize your conversion pipeline"
-				icon={<KanbanSquare size={24} />}
-				actions={actions}
+		<main className="ocm-page space-y-5">
+			<CrmSectionHeader
+				title="Pipeline"
+				subtitle={
+					isLeader
+						? 'Semua deal tim, dari prospek sampai closing. Prospek naik jadi opportunity saat melewati ambang tim.'
+						: 'Deal kamu, dari prospek sampai closing. Geser tahapnya seiring perkembangan.'
+				}
+				actions={
+					<>
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => navigate({ to: '/prospek' })}
+						>
+							<UserPlus size={14} /> Tambah Prospek
+						</button>
+						<button type="button" className="ocm-btn" onClick={() => void load()} disabled={loading}>
+							<RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Muat ulang
+						</button>
+					</>
+				}
 			/>
 
-			<div className="flex-1 overflow-auto">
-				{viewMode === 'board' && activePipeline && (
-					<PipelineBoard
-						pipelines={pipelines}
-						deals={deals}
-						activePipelineId={activePipeline.id}
-						onPipelineChange={(id) => {
-							const p = pipelines.find((pl) => pl.id === id) || null
-							setActivePipeline(p)
-							if (p) fetchDeals(p.id)
-						}}
-						onCreateDeal={(stageId) => {
-							setSelectedStageId(stageId)
-							setShowCreateDealModal(true)
-						}}
-						onEditDeal={setEditingDeal}
-						onRefreshDeals={() =>
-							activePipeline && fetchDeals(activePipeline.id)
-						}
-						onViewSettings={() => setViewMode('settings')}
-					/>
-				)}
-				{viewMode === 'analytics' && (
-					<PipelineAnalytics pipelines={pipelines} deals={deals} />
-				)}
-				{viewMode === 'settings' && (
-					<PipelineSettings
-						activeTab={settingsTab}
-						setActiveTab={setSettingsTab}
-						pipelines={pipelines}
-						customFields={customFields}
-						onRefreshPipelines={fetchPipelines}
-						onRefreshCustomFields={loadCustomFields}
-						onCreatePipeline={() => setShowCreatePipelineModal(true)}
-						onEditPipeline={setEditingPipeline}
-						onDeletePipeline={handleDeletePipeline}
-						onCreateCustomField={() => setShowCustomFieldModal(true)}
-					/>
-				)}
-			</div>
-
-			{/* Modals */}
-			{(showCreatePipelineModal || editingPipeline) && (
-				<PipelineModal
-					pipeline={editingPipeline}
-					onClose={() => {
-						setShowCreatePipelineModal(false)
-						setEditingPipeline(null)
-					}}
-					onSave={() => {
-						fetchPipelines()
-						setShowCreatePipelineModal(false)
-						setEditingPipeline(null)
-					}}
-				/>
-			)}
-
-			{(showCreateDealModal || editingDeal) && (
-				<DealModal
-					deal={editingDeal}
-					pipelines={pipelines}
-					customFields={customFields}
-					selectedStageId={selectedStageId}
-					onClose={() => {
-						setShowCreateDealModal(false)
-						setEditingDeal(null)
-						setSelectedStageId(null)
-					}}
-					onSave={() => {
-						if (activePipeline) fetchDeals(activePipeline.id)
-						setShowCreateDealModal(false)
-						setEditingDeal(null)
-						setSelectedStageId(null)
-					}}
-				/>
-			)}
-
-			{showCustomFieldModal && (
-				<CustomFieldModal
-					onClose={() => setShowCustomFieldModal(false)}
-					onSave={() => {
-						loadCustomFields()
-						setShowCustomFieldModal(false)
-					}}
-				/>
-			)}
-		</div>
-	)
-}
-
-function DealCard({
-	deal,
-	onEdit,
-}: {
-	deal: Deal
-	onEdit: (deal: Deal) => void
-}) {
-	const {
-		attributes,
-		listeners,
-		setNodeRef,
-		transform,
-		transition,
-		isDragging,
-	} = useSortable({
-		id: deal.id,
-		data: {
-			stageId: deal.stageId,
-		},
-	})
-
-	const style = {
-		transform: CSS.Transform.toString(transform),
-		transition,
-		opacity: isDragging ? 0.5 : 1,
-		zIndex: isDragging ? 50 : 1,
-	}
-
-	return (
-		<div
-			ref={setNodeRef}
-			style={style}
-			className="bg-white rounded-xl border border-gray-200 p-4 mb-3 cursor-pointer hover:shadow-md transition-all group relative shadow-sm"
-			onClick={() => onEdit(deal)}
-		>
-			<div className="flex items-start justify-between mb-2">
-				<h4 className="font-bold text-gray-900 text-sm flex-1 pr-6 leading-tight">
-					{deal.title}
-				</h4>
-				<div
-					{...attributes}
-					{...listeners}
-					className="absolute right-2 top-4 p-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-400"
-					onClick={(e) => e.stopPropagation()}
-				>
-					<GripVertical size={16} />
+			{stats ? (
+				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+					{(
+						[
+							['Prospek', stats.prospek, 'text-amber-600 dark:text-amber-300'],
+							['Opportunity', stats.opportunity, 'text-emerald-600 dark:text-emerald-300'],
+							['Menang', stats.won, 'text-sky-600 dark:text-sky-300'],
+							['Kalah', stats.lost, 'text-muted-foreground'],
+						] as const
+					).map(([label, entry, tone]) => (
+						<div key={label} className="ocm-card p-4">
+							<p className="text-xs font-medium text-muted-foreground">{label}</p>
+							<p className={`mt-1 text-2xl font-semibold ${tone}`}>{entry.count}</p>
+							<p className="text-xs text-muted-foreground">{formatValue(entry.value)}</p>
+						</div>
+					))}
 				</div>
-			</div>
+			) : null}
 
-			<div className="space-y-3">
-				<div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-					<div className="w-5 h-5 rounded-full bg-gray-100 flex items-center justify-center">
-						<User size={12} className="text-gray-400" />
-					</div>
-					<span className="truncate">{deal.contactName || 'No Name'}</span>
+			{error ? (
+				<div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
+					<TriangleAlert size={16} className="mt-0.5 shrink-0" />
+					<span>{error}</span>
 				</div>
+			) : null}
 
-				<div className="flex items-center justify-between pt-3 border-t border-gray-100">
-					<div className="flex items-center gap-1 text-emerald-600 font-bold text-sm">
-						<span className="text-xs">{deal.currency || '$'}</span>
-						<span>{deal.value.toLocaleString()}</span>
-					</div>
-					{deal.status === 'won' ? (
-						<span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase rounded-full">
-							Won
-						</span>
-					) : deal.status === 'lost' ? (
-						<span className="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-black uppercase rounded-full">
-							Lost
-						</span>
-					) : (
-						<span
-							className={`px-2 py-0.5 text-[10px] font-black uppercase rounded-full ${
-								deal.priority === 'high'
-									? 'bg-amber-50 text-amber-600'
-									: 'bg-gray-100 text-gray-500'
-							}`}
-						>
-							{deal.priority || 'medium'}
-						</span>
-					)}
-				</div>
-			</div>
-		</div>
-	)
-}
-
-function PipelineBoard({
-	pipelines,
-	deals,
-	activePipelineId,
-	onPipelineChange,
-	onCreateDeal,
-	onEditDeal,
-	onRefreshDeals,
-	onViewSettings,
-}: {
-	pipelines: Pipeline[]
-	deals: Deal[]
-	activePipelineId: string
-	onPipelineChange: (id: string) => void
-	onCreateDeal: (stageId: string) => void
-	onEditDeal: (deal: Deal) => void
-	onRefreshDeals: () => void
-	onViewSettings: () => void
-}) {
-	const [localDeals, setLocalDeals] = useState(deals)
-	const [activeId, setActiveId] = useState<string | null>(null)
-
-	const sensors = useSensors(
-		useSensor(PointerSensor),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
-	)
-
-	useEffect(() => {
-		setLocalDeals(deals)
-	}, [deals])
-
-	const activePipeline =
-		pipelines.find((p) => p.id === activePipelineId) || pipelines[0]
-
-	if (!activePipeline) return null
-
-	const handleDragStart = (event: DragStartEvent) => {
-		setActiveId(event.active.id as string)
-	}
-
-	const handleDragEnd = async (event: DragEndEvent) => {
-		const { active, over } = event
-		if (!over) {
-			setActiveId(null)
-			return
-		}
-
-		const activeStageId = active.data.current?.stageId as string
-		const overId = over.id as string
-
-		let targetStageId = overId
-		// If dropped on another card, get its stage
-		const overDeal = localDeals.find((d) => d.id === overId)
-		if (overDeal) {
-			targetStageId = overDeal.stageId
-		}
-
-		if (activeStageId !== targetStageId) {
-			setLocalDeals((deals) =>
-				(deals || []).map((deal) =>
-					deal.id === active.id ? { ...deal, stageId: targetStageId } : deal,
-				),
-			)
-
-			try {
-				const token = localStorage.getItem('crm_token')
-				const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3010'
-				await fetch(`${API_URL}/api/v1/crm/deals/${active.id}`, {
-					method: 'PATCH',
-					headers: {
-						'Content-Type': 'application/json',
-						Authorization: `Bearer ${token}`,
-					},
-					body: JSON.stringify({ stageId: targetStageId }),
-				})
-			} catch (error) {
-				console.error('Failed to update deal stage:', error)
-				onRefreshDeals()
-			}
-		}
-
-		setActiveId(null)
-	}
-
-	const getDealsByStage = (stageId: string) => {
-		return localDeals.filter((deal) => deal.stageId === stageId)
-	}
-
-	const activeDeal = activeId ? localDeals.find((d) => d.id === activeId) : null
-
-	return (
-		<div className="p-4 lg:p-8 pt-0 lg:pt-0">
-			{/* Pipeline Selector */}
-			<div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
-				<div>
-					<h2 className="text-xl font-bold text-gray-900 tracking-tight">
-						{activePipeline.name}
-					</h2>
-					{activePipeline.description && (
-						<p className="text-sm text-gray-500 mt-1">
-							{activePipeline.description}
-						</p>
-					)}
-				</div>
-				{pipelines.length > 1 && (
-					<select
-						value={activePipelineId}
-						onChange={(e) => onPipelineChange(e.target.value)}
-						className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm min-w-[200px]"
-					>
-						{pipelines.map((pipeline) => (
-							<option key={pipeline.id} value={pipeline.id}>
-								{pipeline.name}
-							</option>
+			<div className="ocm-card overflow-hidden">
+				<div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-3">
+					<div className="flex flex-wrap items-center gap-1">
+						{BUCKET_FILTERS.map((option) => (
+							<button
+								key={option.value}
+								type="button"
+								onClick={() => setBucket(option.value)}
+								className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+									bucket === option.value
+										? 'bg-primary/15 text-primary'
+										: 'text-muted-foreground hover:text-foreground'
+								}`}
+							>
+								{option.label}
+							</button>
 						))}
-					</select>
-				)}
-			</div>
+					</div>
+					<div className="flex flex-wrap items-center gap-2">
+						<div className="relative">
+							<Search
+								size={15}
+								className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+							/>
+							<input
+								value={query}
+								onChange={(event) => setQuery(event.target.value)}
+								placeholder="Cari deal, kontak, produk..."
+								className="w-56 rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+							/>
+						</div>
+						<div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+							<button
+								type="button"
+								onClick={() => setView('table')}
+								className={`rounded px-2 py-1 ${view === 'table' ? 'bg-primary/15 text-primary' : 'text-muted-foreground'}`}
+								title="Tampilan tabel"
+							>
+								<LayoutList size={15} />
+							</button>
+							<button
+								type="button"
+								onClick={() => setView('board')}
+								className={`rounded px-2 py-1 ${view === 'board' ? 'bg-primary/15 text-primary' : 'text-muted-foreground'}`}
+								title="Tampilan papan"
+							>
+								<Columns3 size={15} />
+							</button>
+						</div>
+					</div>
+				</div>
 
-			<DndContext
-				sensors={sensors}
-				collisionDetection={closestCorners}
-				onDragStart={handleDragStart}
-				onDragEnd={handleDragEnd}
-			>
-				<div className="flex gap-6 overflow-x-auto pb-8 snap-x">
-					{(activePipeline.stages || [])
-						.sort((a, b) => a.order - b.order)
-						.map((stage) => {
-							const stageDeals = getDealsByStage(stage.id)
-							const totalValue = stageDeals.reduce(
-								(sum, deal) => sum + deal.value,
-								0,
-							)
-
-							return (
-								<div
-									key={stage.id}
-									className="flex-shrink-0 w-[320px] bg-gray-50/50 rounded-2xl border border-gray-100 flex flex-col snap-start"
-								>
-									<div className="px-5 py-4 border-b border-gray-100 bg-white rounded-t-2xl">
-										<div className="flex items-center justify-between mb-1">
+				{loading ? (
+					<div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+						<Loader2 size={16} className="animate-spin" /> Memuat pipeline...
+					</div>
+				) : visible.length === 0 ? (
+					<div className="p-4">
+						<CrmEmptyState
+							title="Belum ada deal"
+							description="Deal terbuka sendiri saat lead di-assign atau prospek ditambahkan. Tidak perlu diinput manual."
+						/>
+					</div>
+				) : view === 'table' ? (
+					<div className="overflow-x-auto">
+						<table className="w-full min-w-[860px] text-sm">
+							<thead>
+								<tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+									<th className="px-4 py-2 font-medium">Deal</th>
+									<th className="px-4 py-2 font-medium">Kontak</th>
+									<th className="px-4 py-2 font-medium">Tahap</th>
+									<th className="px-4 py-2 font-medium">Progres</th>
+									<th className="px-4 py-2 font-medium">Pemilik</th>
+									<th className="px-4 py-2 font-medium">Nilai</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-border">
+								{visible.map((deal) => (
+									<tr key={deal.id} className="hover:bg-muted/30">
+										<td className="px-4 py-3">
+											<p className="font-medium">{deal.name}</p>
+											<span
+												className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${bucketTone(deal.bucket)}`}
+											>
+												{bucketLabel(deal.bucket)}
+											</span>
+										</td>
+										<td className="px-4 py-3 text-muted-foreground">
+											{deal.contactName || '—'}
+											{deal.product ? (
+												<span className="block text-xs">{deal.product}</span>
+											) : null}
+										</td>
+										<td className="px-4 py-3">
+											<select
+												value={deal.stage}
+												disabled={movingId === deal.id}
+												onChange={(event) => void moveStage(deal, event.target.value)}
+												className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+											>
+												{stages.map((stage) => (
+													<option key={stage.id} value={stage.id}>
+														{stage.label}
+													</option>
+												))}
+											</select>
+										</td>
+										<td className="w-40 px-4 py-3">
 											<div className="flex items-center gap-2">
-												<div
-													className='w-2.5 h-2.5 rounded-full'
-													style={{ backgroundColor: stage.color }}
-												/>
-												<h3 className="font-bold text-gray-900 text-sm tracking-tight">
-													{stage.name}
-												</h3>
+												<ProbabilityBar value={deal.probability} threshold={deal.threshold} />
+												<span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+													{deal.probability}%
+												</span>
 											</div>
-											<span className="text-[10px] font-black uppercase text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
-												{stageDeals.length}
+										</td>
+										<td className="px-4 py-3 text-muted-foreground">
+											<span className="inline-flex items-center gap-1">
+												<UserRound size={13} />
+												{deal.ownerName || '—'}
+											</span>
+											{deal.teamName ? (
+												<span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[11px]">
+													{deal.teamName}
+												</span>
+											) : null}
+										</td>
+										<td className="px-4 py-3 tabular-nums">{formatValue(deal.value)}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				) : (
+					<div className="overflow-x-auto p-3">
+						<div className="flex gap-3">
+							{openStages.map((stage) => {
+								const items = byStage.get(stage.id) || []
+								return (
+									<div key={stage.id} className="w-64 shrink-0">
+										<div className="mb-2 flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+											<span className="text-xs font-semibold">{stage.label}</span>
+											<span className="text-xs text-muted-foreground">
+												{stage.probability}% · {items.length}
 											</span>
 										</div>
-										<div className="text-xs text-emerald-600 font-bold opacity-80">
-											${totalValue.toLocaleString()}
+										<div className="space-y-2">
+											{items.map((deal) => (
+												<div key={deal.id} className="rounded-lg border border-border bg-card p-3">
+													<p className="truncate text-sm font-medium">{deal.name}</p>
+													<p className="truncate text-xs text-muted-foreground">
+														{deal.contactName || '—'}
+													</p>
+													<div className="mt-2">
+														<ProbabilityBar
+															value={deal.probability}
+															threshold={deal.threshold}
+														/>
+													</div>
+													<div className="mt-2 flex items-center justify-between gap-2">
+														<span className="truncate text-[11px] text-muted-foreground">
+															{deal.ownerName || '—'}
+														</span>
+														<select
+															value={deal.stage}
+															disabled={movingId === deal.id}
+															onChange={(event) => void moveStage(deal, event.target.value)}
+															className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+														>
+															{stages.map((option) => (
+																<option key={option.id} value={option.id}>
+																	{option.label}
+																</option>
+															))}
+														</select>
+													</div>
+												</div>
+											))}
+											{items.length === 0 ? (
+												<p className="rounded-lg border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
+													Kosong
+												</p>
+											) : null}
 										</div>
 									</div>
-
-									<SortableContext
-										items={(stageDeals || []).map((d) => d.id)}
-										strategy={verticalListSortingStrategy}
-										id={stage.id}
-									>
-										<div className="p-4 flex-1 overflow-y-auto min-h-[400px]">
-											{(stageDeals || []).map((deal) => (
-												<DealCard
-													key={deal.id}
-													deal={deal}
-													onEdit={onEditDeal}
-												/>
-											))}
-
-											<button
-												onClick={() => onCreateDeal(stage.id)}
-												className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 hover:border-emerald-500 hover:text-emerald-600 hover:bg-emerald-50/30 text-xs font-bold transition-all group flex items-center justify-center gap-2"
-											>
-												<Plus size={14} />
-												Add New Deal
-											</button>
-										</div>
-									</SortableContext>
-								</div>
-							)
-						})}
-				</div>
-
-				<DragOverlay>
-					{activeDeal ? (
-						<div className="bg-white rounded-xl border border-emerald-500 p-4 shadow-2xl w-[320px] scale-105 rotate-2 cursor-grabbing">
-							<h4 className="font-bold text-gray-900 text-sm mb-2">
-								{activeDeal.title}
-							</h4>
-							<div className="flex items-center gap-1 text-emerald-600 font-bold text-xs">
-								<DollarSign size={14} />
-								<span>{activeDeal.value.toLocaleString()}</span>
-							</div>
+								)
+							})}
 						</div>
-					) : null}
-				</DragOverlay>
-			</DndContext>
-		</div>
+					</div>
+				)}
+			</div>
+		</main>
 	)
 }
-
-// Import additional components
-import {
-	PipelineAnalytics,
-	PipelineSettings,
-} from '@/components/PipelineComponents'
-import {
-	PipelineModal,
-	DealModal,
-	CustomFieldModal,
-} from '@/components/PipelineModals'
-
-// Export all types for use in component files
-export type { Stage, Pipeline, Deal, CustomField, ViewMode, SettingsTab }
