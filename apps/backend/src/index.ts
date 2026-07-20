@@ -16,6 +16,7 @@ import {
 	cannedResponse,
 	chatbot,
 	contact,
+	company,
 	customer,
 	conversation,
 	crm,
@@ -136,6 +137,7 @@ export const app = new Elysia()
 			.use(message)
 			.use(contact)
 			.use(customer)
+			.use(company)
 			.use(opportunities)
 			.use(sakti)
 				.group('/whatsapp-channels', (app) => app.use(whatsapp))
@@ -304,6 +306,7 @@ export const app = new Elysia()
 			.use(message)
 			.use(contact)
 			.use(customer)
+			.use(company)
 			.use(opportunities)
 			.use(sakti)
 				.group('/whatsapp-channels', (app) => app.use(whatsapp))

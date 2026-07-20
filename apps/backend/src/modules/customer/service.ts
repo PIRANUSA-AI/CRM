@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma'
 import { Prisma } from '../../generated/prisma'
 import { isUuid, resolveAppId } from '../../lib/utils'
+import { resolveCompany } from '../../lib/company'
 import { BusinessWebhookDispatchService } from '../business-webhooks/dispatch-service'
 import { normalizePhone } from '../import/parser'
 
@@ -1161,6 +1162,8 @@ export abstract class CustomerService {
 
 		const city = String(data.city || '').trim()
 		const notes = String(data.notes || '').trim()
+		const company = String(data.company || '').trim()
+		const companyId = await resolveCompany(prisma, { appId, name: company, city })
 
 		return prisma.contacts.create({
 			data: {
@@ -1175,7 +1178,8 @@ export abstract class CustomerService {
 				// is matched by the WhatsApp path rather than duplicated by it.
 				identifier: phone ? `wa:${appId}:${phone}` : null,
 				email,
-				company: String(data.company || '').trim() || null,
+				company: company || null,
+				company_id: companyId,
 				// city and company are real columns; only notes has nowhere else to go.
 				// The prospect path writes them the same way, and a city hidden in
 				// custom_attributes would be invisible to anything querying the column.

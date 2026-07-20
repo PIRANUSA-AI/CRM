@@ -1,4 +1,5 @@
 import { setContactOwner } from '../../lib/contact-ownership'
+import { resolveCompany } from '../../lib/company'
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
 import { isMultiTeamRole, type CanonicalRole } from '../../lib/require-role'
@@ -471,12 +472,23 @@ export abstract class ImportService {
 						import_notes: mapped.notes,
 					}
 
+					// One company row per distinct firm in the file. A 500-row import of
+					// twenty firms creates twenty companies, not five hundred, because
+					// resolveCompany matches on the normalised name before creating.
+					const companyName = mapped.company || existing?.company || null
+					const companyId = await resolveCompany(tx, {
+						appId: actor.appId,
+						name: companyName,
+						city: mapped.city,
+					})
+
 					const contactData = {
 						name: mapped.name || existing?.name || mapped.phone || 'Lead',
 						email: mapped.email || existing?.email || null,
 						phone_number: mapped.phone || existing?.phone_number || null,
 						whatsapp_id: mapped.phone || existing?.whatsapp_id || null,
-						company: mapped.company || existing?.company || null,
+						company: companyName,
+						company_id: companyId,
 						city: mapped.city || existing?.city || null,
 						country: mapped.country || existing?.country || null,
 						source: mapped.source || existing?.source || 'import',
@@ -669,12 +681,20 @@ export abstract class ImportService {
 				pipeline_stage: pipelineStage,
 				import_notes: notes,
 			}
+			const companyName = input.company?.trim() || existing?.company || null
+			const companyId = await resolveCompany(tx, {
+				appId: actor.appId,
+				name: companyName,
+				city: input.city,
+			})
+
 			const contactData = {
 				name: name || existing?.name || phone || 'Lead',
 				email: email || existing?.email || null,
 				phone_number: phone || existing?.phone_number || null,
 				whatsapp_id: phone || existing?.whatsapp_id || null,
-				company: input.company?.trim() || existing?.company || null,
+				company: companyName,
+				company_id: companyId,
 				city: input.city?.trim() || existing?.city || null,
 				source: existing?.source || 'manual',
 				custom_attributes: customAttributes as object,
@@ -847,12 +867,20 @@ export abstract class ImportService {
 				prospect_channel: channel,
 				import_notes: notes,
 			}
+			const companyName = input.company?.trim() || existing?.company || null
+			const companyId = await resolveCompany(tx, {
+				appId: actor.appId,
+				name: companyName,
+				city: input.city,
+			})
+
 			const contactData = {
 				name: name || existing?.name || phone || 'Prospek',
 				email: email || existing?.email || null,
 				phone_number: phone || existing?.phone_number || null,
 				whatsapp_id: phone || existing?.whatsapp_id || null,
-				company: input.company?.trim() || existing?.company || null,
+				company: companyName,
+				company_id: companyId,
 				city: input.city?.trim() || existing?.city || null,
 				source: existing?.source || `prospect:${channel}`,
 				custom_attributes: customAttributes as object,

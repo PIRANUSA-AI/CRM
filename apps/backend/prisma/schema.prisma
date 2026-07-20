@@ -1028,7 +1028,12 @@ model contacts {
   consent_status          String?          @default("NOT_CONSENTED") @db.VarChar(50)
   source                  String?          @db.VarChar(100)
   custom_attributes       Json?
+  // Kept as the free-text fallback it has always been. A contact whose company
+  // was typed in but never resolved to a row still shows something useful, and
+  // an import that names a company we have never seen does not have to fail.
+  // company_id is the answer when it is set; see lib/company.ts.
   company                 String?
+  company_id              String?          @db.Uuid
   country                 String?          @db.VarChar(100)
   city                    String?          @db.VarChar(100)
   last_activity_at        DateTime?        @db.Timestamp(6)
@@ -1046,10 +1051,44 @@ model contacts {
 
   broadcast_logs          broadcast_logs[]
   accounts                accounts?        @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies               companies?       @relation(fields: [company_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   conversations           conversations[]
 
   @@index([app_id, owner_id], map: "idx_contacts_app_owner")
   @@index([app_id, team_id], map: "idx_contacts_app_team")
+  @@index([app_id, company_id], map: "idx_contacts_app_company")
+}
+
+/// The organisation a contact buys for. PIRANUSA sells CAD seats to firms, not
+/// to individuals: the architect who asks for a quote, the drafter who trials
+/// it and the purchasing staff who signs off are three contacts against one
+/// budget. Until now "company" was free text on each of them, so nothing joined
+/// those three conversations together and no one could see what a firm was
+/// worth in total.
+///
+/// Deliberately thin. It exists to be the thing contacts and deals hang off;
+/// anything richer (industry, headcount, parent group) can be added once the
+/// sales team has asked for it rather than guessed at now.
+model companies {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id     String     @db.Uuid
+  name       String     @db.VarChar(255)
+  /// Lowercased, legal-form and punctuation stripped — "PT. Maju Jaya" and
+  /// "pt maju jaya" collapse to "maju jaya". Carries the uniqueness constraint
+  /// so the same firm cannot be created twice by two people typing it
+  /// differently. Written only by normalizeCompanyName in lib/company.ts.
+  norm_name  String     @db.VarChar(255)
+  city       String?    @db.VarChar(120)
+  website    String?    @db.VarChar(255)
+  notes      String?
+  created_at DateTime?  @default(now()) @db.Timestamp(6)
+  updated_at DateTime?  @default(now()) @db.Timestamp(6)
+  deleted_at DateTime?  @db.Timestamp(6)
+
+  contacts   contacts[]
+
+  @@unique([app_id, norm_name], map: "uq_companies_app_norm_name")
+  @@index([app_id, name], map: "idx_companies_app_name")
 }
 
 model conversation_activity_log {
