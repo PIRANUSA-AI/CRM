@@ -1,16 +1,20 @@
-// Simulation seeder: 3 sales (Deska, Yoel, Fathur) + 1 team under the leader.
-// Idempotent. Password for all = "123" (override with SIM_PASSWORD).
+// Simulation seeder: 3 sales (Deska, Yoel, Fathur) placed in the real product
+// teams under the leader. Idempotent. Password for all = "123" (override with
+// SIM_PASSWORD).
 import prisma from '../src/lib/prisma'
 import { syncBetterAuthCredentialAccount } from '../src/lib/better-auth-credentials'
 
 const PASSWORD = process.env.SIM_PASSWORD || '123'
-const TEAM_NAME = 'Tim Sales'
 
-// Sales for the simulation. Deska already exists (kept), Yoel & Fathur are new.
+// The business is split by product line, not by a single catch-all sales team:
+// AEC sells Archicad, MFG sells ZWCAD. This seeder used to create its own "Tim
+// Sales" alongside them, which left a third team that routing and the leader's
+// task scope had to work around; it was deleted on 2026-07-20. Seed into the
+// real teams instead so re-running this never resurrects it.
 const SALES = [
-	{ name: 'Deska', email: 'deska@piranusa.com' },
-	{ name: 'Yoel', email: 'yoel@piranusa.com' },
-	{ name: 'Fathur', email: 'fathur@piranusa.com' },
+	{ name: 'Deska', email: 'deska@piranusa.com', team: 'AEC' },
+	{ name: 'Yoel', email: 'yoel@piranusa.com', team: 'MFG' },
+	{ name: 'Fathur', email: 'fathur@piranusa.com', team: 'MFG' },
 ]
 const LEADER_EMAIL = 'benny@piranusa.com'
 
@@ -59,26 +63,29 @@ async function main() {
 
 	const salesUsers = []
 	for (const s of SALES) {
-		salesUsers.push(await ensureUser(s.name, s.email, 'sales', app.id, org.id))
+		const user = await ensureUser(s.name, s.email, 'sales', app.id, org.id)
+		salesUsers.push({ ...s, id: user.id })
 	}
 
-	// Ensure one team, with leader + the 3 sales as members.
-	let team = await prisma.teams.findFirst({ where: { app_id: app.id, name: TEAM_NAME, deleted_at: null } })
-	if (!team) {
-		team = await prisma.teams.create({
-			data: { app_id: app.id, name: TEAM_NAME, description: 'Tim simulasi sales', allow_auto_assign: true },
+	// Put each sales in their product team, and the leader in both — the leader
+	// has to be a member of every team they oversee for routing to resolve the
+	// team at all. Teams are expected to exist already; this seeder no longer
+	// creates them, so a missing one is a real setup problem worth failing on.
+	const memberships: Array<{ team_id: string; user_id: string }> = []
+	for (const teamName of ['AEC', 'MFG']) {
+		const team = await prisma.teams.findFirst({
+			where: { app_id: app.id, name: teamName, deleted_at: null },
 		})
-		console.log(`created team: ${TEAM_NAME} (${team.id})`)
-	} else {
-		console.log(`team exists: ${TEAM_NAME} (${team.id})`)
+		if (!team) throw new Error(`Team ${teamName} not found — create it in Kelola Tim first`)
+		memberships.push({ team_id: team.id, user_id: leader.id })
+		for (const s of salesUsers.filter((u) => u.team === teamName)) {
+			memberships.push({ team_id: team.id, user_id: s.id })
+		}
+		console.log(`team: ${teamName} (${team.id})`)
 	}
 
-	const memberIds = [leader.id, ...salesUsers.map((u) => u.id)]
-	await prisma.team_members.createMany({
-		data: memberIds.map((user_id) => ({ team_id: team!.id, user_id })),
-		skipDuplicates: true,
-	})
-	console.log(`team_members ensured: ${memberIds.length} (leader + ${salesUsers.length} sales)`)
+	await prisma.team_members.createMany({ data: memberships, skipDuplicates: true })
+	console.log(`team_members ensured: ${memberships.length}`)
 
 	console.log(`\nDone. Password semua akun: ${PASSWORD}`)
 	console.log('Sales login: deska@piranusa.com, yoel@piranusa.com, fathur@piranusa.com')
