@@ -29,5 +29,7 @@ export const TeamRequestModel = {
 		name: t.Optional(t.String()),
 		description: t.Optional(t.String()),
 		allow_auto_assign: t.Optional(t.Boolean()),
+		// Probability at which this team's deals become opportunities.
+		deal_threshold: t.Optional(t.Integer({ minimum: 0, maximum: 100 })),
 	}),
 } as const

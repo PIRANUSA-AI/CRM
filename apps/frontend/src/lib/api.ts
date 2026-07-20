@@ -661,6 +661,8 @@ export interface Team {
 	name: string
 	description?: string
 	allow_auto_assign: boolean
+	/** Probability at which this team's deals read as opportunities. */
+	deal_threshold?: number
 	created_at: string
 	members?: TeamMember[]
 }
@@ -687,6 +689,8 @@ export interface TeamWithMembers {
 	name: string
 	description?: string | null
 	allow_auto_assign?: boolean
+	/** Probability at which this team's deals read as opportunities. */
+	deal_threshold?: number
 	created_at?: string
 	team_members?: TeamMembershipRow[]
 }
@@ -722,7 +726,13 @@ export const teams = {
 
 	update: (
 		id: string,
-		data: { name?: string; description?: string; allow_auto_assign?: boolean },
+		data: {
+			name?: string
+			description?: string
+			allow_auto_assign?: boolean
+			/** Probability at which this team's deals become opportunities (0-100). */
+			deal_threshold?: number
+		},
 	) =>
 		treatyApi.api
 			.teams({ id })

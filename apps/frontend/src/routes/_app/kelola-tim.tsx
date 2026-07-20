@@ -172,6 +172,26 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 		}
 	}
 
+	/**
+	 * The probability at which this team's deals stop reading as prospek and
+	 * start reading as opportunity. Per team because AEC and MFG qualify
+	 * differently — an Archicad tender is committed later than a ZWCAD seat top-up.
+	 */
+	async function handleThreshold(team: TeamWithMembers, value: number) {
+		const next = Math.max(0, Math.min(100, Math.round(value)))
+		if (next === (team.deal_threshold ?? 50)) return
+		setBusyTeam(team.id)
+		try {
+			await teamsApi.update(team.id, { deal_threshold: next })
+			await loadTeams()
+			toast.success(`Ambang opportunity ${team.name} jadi ${next}%`)
+		} catch (err: any) {
+			toast.error(err?.message || 'Gagal mengubah ambang')
+		} finally {
+			setBusyTeam(null)
+		}
+	}
+
 	async function handleRename(team: TeamWithMembers) {
 		const next = editName.trim()
 		if (!next || next === team.name) {
@@ -343,6 +363,24 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 										)}
 									</div>
 									<div className="flex shrink-0 items-center gap-2">
+										<label
+											className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+											title="Deal di bawah angka ini masih prospek; di atasnya jadi opportunity."
+										>
+											<span>Ambang opportunity</span>
+											<input
+												type="number"
+												min={0}
+												max={100}
+												defaultValue={team.deal_threshold ?? 50}
+												disabled={busy}
+												onBlur={(event) =>
+													void handleThreshold(team, Number(event.target.value))
+												}
+												className="w-14 rounded border border-border bg-background px-1.5 py-0.5 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+											/>
+											<span>%</span>
+										</label>
 										<button
 											type="button"
 											onClick={() => void handleToggleAuto(team)}
