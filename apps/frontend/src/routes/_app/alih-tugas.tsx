@@ -14,6 +14,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
 import {
 	personalAi,
 	type PersonalTakeoverHistoryItem,
@@ -50,7 +51,7 @@ function formatWaiting(minutes: number) {
 function AlihTugasPage() {
 	const navigate = useNavigate()
 	const currentUser = useCurrentUser()
-	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const isLeader = isSupervisorRole(currentUser?.role)
 	const [items, setItems] = useState<PersonalTakeoverItem[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)

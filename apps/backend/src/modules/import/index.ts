@@ -10,9 +10,9 @@ import {
 } from './service'
 
 // Import is a management action: it distributes leads to multiple sales.
-const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'ceo', 'superadmin']
+const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'administrator', 'ceo', 'superadmin']
 // Prospecting is sales-owned: a sales logs their own sourced leads.
-const PROSPECT_ROLES: CanonicalRole[] = ['sales', 'leader', 'ceo', 'superadmin']
+const PROSPECT_ROLES: CanonicalRole[] = ['sales', 'leader', 'administrator', 'ceo', 'superadmin']
 
 async function resolveActorFor(
 	roles: CanonicalRole[],

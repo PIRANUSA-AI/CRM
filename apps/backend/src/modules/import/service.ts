@@ -1,6 +1,6 @@
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
-import type { CanonicalRole } from '../../lib/require-role'
+import { isMultiTeamRole, type CanonicalRole } from '../../lib/require-role'
 import { DEFAULT_STAGE_ID, resolveStage } from '../opportunities/stages'
 import {
 	isClosedStage,
@@ -775,18 +775,24 @@ export abstract class ImportService {
 		// one actually following it up (same rule the lead router enforces).
 		let assigneeId = actor.userId
 		let teamId: string | null
-		if (actor.role === 'leader') {
-			const chosen = String(input.assigneeId || '').trim()
-			if (!chosen) throw new ImportError('Pilih sales yang akan menangani prospek ini')
+		const chosen = String(input.assigneeId || '').trim()
+		// An administrator oversees every team and carries no leads of their own,
+		// so a prospect they enter must name who will work it — a sales or a
+		// leader, both of whom sell. A leader or sales keeps their own prospect
+		// unless they explicitly hand it to someone in their team.
+		if (isMultiTeamRole(actor.role) && !chosen) {
+			throw new ImportError('Pilih sales atau leader yang akan menangani prospek ini')
+		}
+		if (chosen && chosen !== actor.userId) {
 			const assignables = await resolveAssignables(actor)
 			const target = [...assignables.values()].find((a) => a.userId === chosen)
-			if (!target) throw new ImportError('Sales tidak ditemukan atau di luar tim Anda')
-			if (target.userId === actor.userId) {
-				throw new ImportError('Prospek harus ditugaskan ke sales, bukan ke leader')
-			}
+			if (!target) throw new ImportError('Penerima tidak ditemukan atau di luar tim Anda')
 			assigneeId = target.userId
 			teamId = target.teamId
 		} else {
+			if (isMultiTeamRole(actor.role)) {
+				throw new ImportError('Prospek harus ditugaskan ke sales atau leader')
+			}
 			teamId = await resolveOwnTeamId(actor)
 		}
 

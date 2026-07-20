@@ -9,7 +9,7 @@ import {
 } from './service'
 
 // Distributing leads to sales is a leadership action.
-const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'ceo', 'superadmin']
+const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'administrator', 'ceo', 'superadmin']
 
 async function resolveActor(
 	resolvedAppId: string | null,

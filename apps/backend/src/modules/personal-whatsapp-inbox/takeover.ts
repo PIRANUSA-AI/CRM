@@ -25,7 +25,12 @@ const TAKEOVER_SLA_MINUTES = Math.max(
 
 function isSupervisor(role: string) {
 	const normalized = String(role || '').toLowerCase()
-	return normalized === 'leader' || normalized === 'ceo' || normalized === 'superadmin'
+	return (
+		normalized === 'leader' ||
+		normalized === 'administrator' ||
+		normalized === 'ceo' ||
+		normalized === 'superadmin'
+	)
 }
 
 function emit(appId: string, conversationId: string, aiHandling: boolean) {

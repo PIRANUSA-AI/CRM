@@ -279,7 +279,11 @@ export abstract class HandoverService {
 			throw new Error('Conversation not found')
 		}
 
-		const isSupervisorOrAdmin = userRole === 'leader' || userRole === 'ceo' || userRole === 'superadmin'
+		const isSupervisorOrAdmin =
+			userRole === 'leader' ||
+			userRole === 'administrator' ||
+			userRole === 'ceo' ||
+			userRole === 'superadmin'
 		const status = isSupervisorOrAdmin ? 'approved' : 'pending'
 
 		const aiReason = await this.generateAiReason(data.conversationId)

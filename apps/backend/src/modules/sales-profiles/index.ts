@@ -9,7 +9,7 @@ import {
 } from './service'
 
 // Managing sales routing profiles is a leadership action.
-const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'ceo', 'superadmin']
+const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'administrator', 'ceo', 'superadmin']
 
 async function resolveActor(
 	resolvedAppId: string | null,

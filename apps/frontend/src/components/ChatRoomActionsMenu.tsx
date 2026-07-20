@@ -18,6 +18,7 @@ import {
 	AlertCircle,
 	X,
 } from 'lucide-react'
+import { isSupervisorRole } from '@/lib/role-access'
 
 interface Agent {
 	id: string
@@ -86,7 +87,7 @@ export function ChatRoomActionsMenu({
 	const [isLoading, setIsLoading] = useState(false)
 
 	const canManageAgents =
-		currentUserRole === 'leader' || currentUserRole === 'ceo' || currentUserRole === 'superadmin'
+		isSupervisorRole(currentUserRole)
 	const canResolve = isAssignedToMe || canManageAgents
 
 	// Filter unassigned agents

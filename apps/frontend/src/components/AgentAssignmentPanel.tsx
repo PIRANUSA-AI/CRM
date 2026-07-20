@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { UserPlus, User, X, UserMinus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { isSupervisorRole } from '@/lib/role-access'
 
 interface Agent {
 	id: string
@@ -40,7 +41,7 @@ export function AgentAssignmentPanel({
 	const [isRemoving, setIsRemoving] = useState(false)
 
 	const canManageAgents =
-		currentUserRole === 'leader' || currentUserRole === 'ceo' || currentUserRole === 'superadmin'
+		isSupervisorRole(currentUserRole)
 	const isAssigned = assignedAgents.some((a) => a.id === currentUserId)
 
 	const confirmRemoveAgent = (agent: Agent) => {

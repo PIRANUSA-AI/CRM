@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
 import {
 	tasks,
 	type Task,
@@ -179,7 +180,7 @@ function groupByAssignee(items: Task[]) {
 function TasksPage() {
 	const navigate = useNavigate()
 	const currentUser = useCurrentUser()
-	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const isLeader = isSupervisorRole(currentUser?.role)
 	const [tab, setTab] = useState<TaskTab>('active')
 	const [taskItems, setTaskItems] = useState<Task[]>([])
 	const [loading, setLoading] = useState(true)

@@ -5,7 +5,7 @@ import { TaskRequestModel } from './model'
 import { TaskAccessError, parseFutureDate, type TaskActor } from './policy'
 import { TaskConflictError, TaskNotFoundError, TaskService } from './service'
 
-const ALLOWED_ROLES: CanonicalRole[] = ['sales', 'leader', 'ceo', 'superadmin']
+const ALLOWED_ROLES: CanonicalRole[] = ['sales', 'leader', 'administrator', 'ceo', 'superadmin']
 
 async function resolveActor(
 	resolvedAppId: string | null,

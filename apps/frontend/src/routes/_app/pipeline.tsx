@@ -20,6 +20,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
 import {
 	opportunities as dealsApi,
 	type DealBucket,
@@ -97,7 +98,7 @@ function PipelinePage() {
 	const navigate = useNavigate()
 	const search = Route.useSearch()
 	const currentUser = useCurrentUser()
-	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const isLeader = isSupervisorRole(currentUser?.role)
 
 	const [stages, setStages] = useState<DealStage[]>([])
 	const [deals, setDeals] = useState<Opportunity[]>([])

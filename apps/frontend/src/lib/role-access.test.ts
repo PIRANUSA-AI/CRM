@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest'
 import {
 	getAllowedPrimaryPathsForRole,
 	isPathAllowedForRole,
+	isSupervisorRole,
+	isMultiTeamRole,
 	SALES_PATHS,
 	LEADER_PATHS,
 	CEO_PATHS,
@@ -41,6 +43,23 @@ describe('role-access: sales/leader/ceo/superadmin', () => {
 		expect(isPathAllowedForRole('/kelola-tim', 'sales')).toBe(false)
 		expect(isPathAllowedForRole('/sales-profiles', 'sales')).toBe(false)
 		expect(isPathAllowedForRole('/broadcast', 'sales')).toBe(false)
+	})
+
+	test('administrator reaches every page a leader does', () => {
+		for (const path of LEADER_PATHS) {
+			expect(isPathAllowedForRole(path, 'administrator')).toBe(true)
+		}
+	})
+
+	test('supervisor vs multi-team is the difference between leader and administrator', () => {
+		// Both see more than their own work…
+		expect(isSupervisorRole('leader')).toBe(true)
+		expect(isSupervisorRole('administrator')).toBe(true)
+		expect(isSupervisorRole('sales')).toBe(false)
+		// …but only the administrator tier spans every team.
+		expect(isMultiTeamRole('administrator')).toBe(true)
+		expect(isMultiTeamRole('leader')).toBe(false)
+		expect(isMultiTeamRole('sales')).toBe(false)
 	})
 
 	test('superadmin is restricted, not unrestricted', () => {

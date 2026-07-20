@@ -827,6 +827,7 @@ function isSupervisorRole(role: unknown) {
 	const normalized = String(role || '').toLowerCase()
 	return (
 		normalized === 'leader' ||
+		normalized === 'administrator' ||
 		normalized === 'ceo' ||
 		normalized === 'superadmin'
 	)

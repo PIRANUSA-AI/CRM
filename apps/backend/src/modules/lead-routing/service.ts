@@ -233,16 +233,20 @@ async function blockedAutoAssignTeamIds(appId: string): Promise<Set<string>> {
 	return new Set(rows.map((row) => row.id))
 }
 
-// Only sales receive leads. listWithProfiles also returns leaders, because a
-// leader is a member of their sales' teams so routing can resolve the team at
-// all — but that also made the leader a candidate for the leads they are
-// sharing. Fairness ranks whoever went longest without a task, and a leader
-// works intake rather than tasks, so they kept surfacing above the sales whose
-// skills actually matched. Leaders hand leads over; they don't receive them.
+// Who may be handed a lead: the people who sell it. A team leader runs a team
+// and carries leads themselves, so they are eligible alongside their sales.
+//
+// The exclusion is the other way up. An administrator sits over every team and
+// works intake rather than deals, but they appear in listWithProfiles because
+// they share teams with everyone. Fairness ranks whoever went longest without a
+// task, and someone who never takes tasks always looks starved — so left in,
+// the administrator would outrank the sales whose skills actually match the
+// lead they are trying to hand out.
 function leadRecipients(candidates: Candidate[]): Candidate[] {
-	return candidates.filter(
-		(candidate) => String(candidate.role || '').trim().toLowerCase() === 'sales',
-	)
+	return candidates.filter((candidate) => {
+		const role = String(candidate.role || '').trim().toLowerCase()
+		return role === 'sales' || role === 'leader'
+	})
 }
 
 export abstract class LeadRoutingService {

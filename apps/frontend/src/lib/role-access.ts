@@ -34,6 +34,32 @@ export function extractNormalizedRole(source: AnyRecord): string {
 	return ''
 }
 
+/**
+ * Sees more than their own work: a leader across their team, an administrator
+ * across every team. Pages use this to decide between the personal view and the
+ * grouped one — spelling the roles out inline is how a newly added role ends up
+ * silently rendering the sales view to a manager.
+ */
+export function isSupervisorRole(role: string | null | undefined): boolean {
+	const normalized = normalizeAppRole(role)
+	return (
+		normalized === 'leader' ||
+		normalized === 'administrator' ||
+		normalized === 'ceo' ||
+		normalized === 'superadmin'
+	)
+}
+
+/** Oversees every team rather than one — the administrator tier and above. */
+export function isMultiTeamRole(role: string | null | undefined): boolean {
+	const normalized = normalizeAppRole(role)
+	return (
+		normalized === 'administrator' ||
+		normalized === 'ceo' ||
+		normalized === 'superadmin'
+	)
+}
+
 export const SALES_PATHS = [
 	'/dashboard',
 	'/chat',
@@ -86,6 +112,13 @@ export const LEADER_PATHS = [
 	'/help',
 ]
 
+/**
+ * An administrator does everything a leader does, but across every team. The
+ * pages are therefore the same set — what differs is the scope of the rows
+ * inside them, which the backend decides, not this list.
+ */
+export const ADMINISTRATOR_PATHS = [...LEADER_PATHS]
+
 export const CEO_PATHS = ['/dashboard', '/kelola-tim', '/notifikasi', '/analytics', '/metrics', '/settings', '/help']
 
 export const SUPERADMIN_PATHS = ['/kelola-tim', '/developers', '/import', '/channels/whatsapp', '/settings', '/help']
@@ -109,6 +142,7 @@ export function getAllowedPrimaryPathsForRole(
 
 	if (normalizedRole === 'superadmin') return SUPERADMIN_PATHS
 	if (normalizedRole === 'ceo') return CEO_PATHS
+	if (normalizedRole === 'administrator') return ADMINISTRATOR_PATHS
 	if (normalizedRole === 'leader') return LEADER_PATHS
 	if (normalizedRole === 'sales') return SALES_PATHS
 

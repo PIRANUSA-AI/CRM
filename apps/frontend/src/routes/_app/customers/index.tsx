@@ -16,6 +16,7 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
 import {
 	customers as customersApi,
 	leadImport,
@@ -249,7 +250,7 @@ const EMPTY_NEW_CUSTOMER = {
 function CustomersPage() {
 	const navigate = useNavigate()
 	const currentUser = useCurrentUser()
-	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const isLeader = isSupervisorRole(currentUser?.role)
 	const openDetail = (id: string) =>
 		navigate({ to: '/customers/$customerId', params: { customerId: id } })
 	const [addOpen, setAddOpen] = useState(false)
