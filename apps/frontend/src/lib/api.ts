@@ -1453,6 +1453,10 @@ export const customers = {
 		channel?: string
 		sort?: string
 		order?: 'asc' | 'desc'
+		/** belum_beli | sering_beli | idle_90d | prospek */
+		segment?: string
+		team_id?: string
+		owner_id?: string
 	}) => {
 		const queryParams = new URLSearchParams()
 

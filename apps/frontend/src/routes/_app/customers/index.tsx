@@ -15,7 +15,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog'
-import { customers as customersApi } from '@/lib/api'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
+import {
+	customers as customersApi,
+	leadImport,
+	teams as teamsApi,
+} from '@/lib/api'
 
 export const Route = createFileRoute('/_app/customers/')({
 	component: CustomersPage,
@@ -45,15 +50,11 @@ type CustomerListMeta = {
 	total: number
 }
 
-type SegmentId =
-	| 'all'
-	| 'vip'
-	| 'repeat_buyer'
-	| 'never_buy'
-	| 'cart_abandon_48h'
-	| 'komplain_open'
-	| 'idle_90d'
-	| 'high_churn_risk'
+// Segments the business actually asks for. The previous set (VIP by LTV, cart
+// abandon, komplain, churn risk) came from an e-commerce template and had no
+// meaning for a CAD reseller — and none of it was filtered server-side, so the
+// chip counts only ever described the ten rows on screen.
+type SegmentId = 'all' | 'belum_beli' | 'sering_beli' | 'idle_90d' | 'prospek'
 
 type SegmentChip = {
 	id: SegmentId
@@ -62,13 +63,10 @@ type SegmentChip = {
 
 const SEGMENT_CHIPS: SegmentChip[] = [
 	{ id: 'all', label: 'Semua' },
-	{ id: 'vip', label: 'VIP (LTV > Rp 10jt)' },
-	{ id: 'repeat_buyer', label: 'Repeat buyer' },
-	{ id: 'never_buy', label: 'Belum pernah beli' },
-	{ id: 'cart_abandon_48h', label: 'Cart abandon 48h' },
-	{ id: 'komplain_open', label: 'Komplain open' },
-	{ id: 'idle_90d', label: 'Idle 90d' },
-	{ id: 'high_churn_risk', label: 'High churn risk' },
+	{ id: 'prospek', label: 'Masih prospek' },
+	{ id: 'belum_beli', label: 'Belum pernah beli' },
+	{ id: 'sering_beli', label: 'Sering beli' },
+	{ id: 'idle_90d', label: 'Idle 90 hari' },
 ]
 
 const IDR_FORMATTER = new Intl.NumberFormat('id-ID', {
@@ -174,37 +172,6 @@ function formatStageLabel(stage: string) {
 	return stage.replaceAll('_', ' ')
 }
 
-function matchesSegment(row: CustomerRow, segment: SegmentId) {
-	const tags = row.tags.map((tag) => tag.toLowerCase())
-
-	switch (segment) {
-		case 'all':
-			return true
-		case 'vip':
-			return row.ltvAmount >= 10_000_000
-		case 'repeat_buyer':
-			return row.orders >= 2
-		case 'never_buy':
-			return row.orders === 0
-		case 'cart_abandon_48h':
-			return (
-				tags.some((tag) => tag.includes('cart')) ||
-				(row.stage === 'inquiry' && row.orders === 0)
-			)
-		case 'komplain_open':
-			return tags.includes('komplain') || row.stage === 'retention'
-		case 'idle_90d':
-			return (
-				typeof row.lastSeenMinutes === 'number' &&
-				row.lastSeenMinutes >= 90 * 24 * 60
-			)
-		case 'high_churn_risk':
-			return row.stage === 'retention'
-		default:
-			return true
-	}
-}
-
 function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 	const id = toText(input.id, '')
 	if (!id) return null
@@ -281,6 +248,8 @@ const EMPTY_NEW_CUSTOMER = {
 
 function CustomersPage() {
 	const navigate = useNavigate()
+	const currentUser = useCurrentUser()
+	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
 	const openDetail = (id: string) =>
 		navigate({ to: '/customers/$customerId', params: { customerId: id } })
 	const [addOpen, setAddOpen] = useState(false)
@@ -292,6 +261,12 @@ function CustomersPage() {
 	const [rows, setRows] = useState<CustomerRow[]>([])
 	const [stats, setStats] = useState<CustomerStats>({ total: 0 })
 	const [activeSegment, setActiveSegment] = useState<SegmentId>('all')
+	const [teamFilter, setTeamFilter] = useState('')
+	const [ownerFilter, setOwnerFilter] = useState('')
+	const [teamOptions, setTeamOptions] = useState<Array<{ id: string; name: string }>>([])
+	const [salesOptions, setSalesOptions] = useState<
+		Array<{ userId: string; name: string | null; email: string }>
+	>([])
 	const [currentPage, setCurrentPage] = useState(1)
 	const [paginationMeta, setPaginationMeta] = useState<CustomerListMeta>({
 		page: 1,
@@ -309,17 +284,33 @@ function CustomersPage() {
 
 	const loadPage = async (
 		page: number,
-		options?: { includeStats?: boolean },
+		options?: {
+			includeStats?: boolean
+			segment?: SegmentId
+			teamId?: string
+			ownerId?: string
+		},
 	) => {
 		const includeStats = options?.includeStats === true
 		const nextPage = Math.max(1, page)
+		// Filters are read from the arguments rather than state so a chip click
+		// can load with its own value immediately, instead of one render late.
+		const segment = options?.segment ?? activeSegment
+		const teamId = options?.teamId ?? teamFilter
+		const ownerId = options?.ownerId ?? ownerFilter
 
 		setLoading(true)
 		setLoadError(null)
 
 		try {
 			const [listResult, statsResult] = await Promise.allSettled([
-				customersApi.list({ page: nextPage, per_page: CUSTOMER_PAGE_SIZE }),
+				customersApi.list({
+					page: nextPage,
+					per_page: CUSTOMER_PAGE_SIZE,
+					segment: segment === 'all' ? undefined : segment,
+					team_id: teamId || undefined,
+					owner_id: ownerId || undefined,
+				}),
 				includeStats ? customersApi.stats() : Promise.resolve(null),
 			])
 
@@ -374,6 +365,35 @@ function CustomersPage() {
 		void loadPage(1, { includeStats: true })
 	}, [])
 
+	// Team and sales pickers are a leader's tool — a sales only ever sees their
+	// own contacts, so the dropdowns would filter a list of one person's rows by
+	// that same person.
+	useEffect(() => {
+		if (!isLeader) return
+		let active = true
+		void teamsApi
+			.list()
+			.then((response) => {
+				if (!active) return
+				setTeamOptions(
+					(response.payload || []).map((team: { id: string; name: string }) => ({
+						id: team.id,
+						name: team.name,
+					})),
+				)
+			})
+			.catch(() => undefined)
+		void leadImport
+			.assignables()
+			.then((response) => {
+				if (active) setSalesOptions(response.data || [])
+			})
+			.catch(() => undefined)
+		return () => {
+			active = false
+		}
+	}, [isLeader])
+
 	const submitNewCustomer = async () => {
 		setAddSaving(true)
 		setAddError(null)
@@ -399,34 +419,30 @@ function CustomersPage() {
 		}
 	}
 
-	const chips = useMemo(
-		() =>
-			SEGMENT_CHIPS.map((chip) => ({
-				...chip,
-				count:
-					chip.id === 'all'
-						? stats.total
-						: rows.filter((row) => matchesSegment(row, chip.id)).length,
-				isPartial: false,
-			})),
-		[rows, stats.total],
-	)
+	// Filtering happens on the server now, so what came back is what matches.
+	const filteredRows = rows
 
-	const filteredRows = useMemo(() => {
-		return rows.filter((row) => matchesSegment(row, activeSegment))
-	}, [activeSegment, rows])
+	const applyFilters = (next: {
+		segment?: SegmentId
+		teamId?: string
+		ownerId?: string
+	}) => {
+		if (next.segment !== undefined) setActiveSegment(next.segment)
+		if (next.teamId !== undefined) setTeamFilter(next.teamId)
+		if (next.ownerId !== undefined) setOwnerFilter(next.ownerId)
+		void loadPage(1, next)
+	}
 
 	const listStatusLabel = useMemo(() => {
 		if (loading) return 'Sinkronisasi data...'
-
-		const visibleCount = filteredRows.length.toLocaleString('id-ID')
-		const loadedCount = rows.length.toLocaleString('id-ID')
+		const matching = paginationMeta.total.toLocaleString('id-ID')
 		const totalCount = stats.total.toLocaleString('id-ID')
-
-		if (activeSegment === 'all') return `${visibleCount} dari ${totalCount} kontak`
-
-		return `${visibleCount} kontak cocok di halaman ini · ${loadedCount} data dimuat`
-	}, [activeSegment, filteredRows.length, loading, rows.length, stats.total])
+		const filtered =
+			activeSegment !== 'all' || teamFilter !== '' || ownerFilter !== ''
+		return filtered
+			? `${matching} kontak cocok · dari ${totalCount} total`
+			: `${totalCount} kontak`
+	}, [activeSegment, teamFilter, ownerFilter, loading, paginationMeta.total, stats.total])
 
 	const totalPages = Math.max(
 		1,
@@ -507,12 +523,12 @@ function CustomersPage() {
 				}
 			/>
 
-			<div className="flex flex-wrap gap-2">
-				{chips.map((chip) => (
+			<div className="flex flex-wrap items-center gap-2">
+				{SEGMENT_CHIPS.map((chip) => (
 					<button
 						type="button"
 						key={chip.id}
-						onClick={() => setActiveSegment(chip.id)}
+						onClick={() => applyFilters({ segment: chip.id })}
 						className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
 							activeSegment === chip.id
 								? 'border-primary/40 bg-primary/15 text-primary'
@@ -520,12 +536,47 @@ function CustomersPage() {
 						}`}
 						>
 							<span>{chip.label}</span>
-							<span className="font-mono text-[10px] opacity-70">
-								· {chip.count.toLocaleString('id-ID')}
-								{chip.isPartial ? '+' : ''}
-							</span>
 						</button>
 				))}
+
+				{isLeader ? (
+					<>
+						<select
+							value={teamFilter}
+							onChange={(event) => applyFilters({ teamId: event.target.value })}
+							className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+						>
+							<option value="">Semua tim</option>
+							{teamOptions.map((team) => (
+								<option key={team.id} value={team.id}>
+									{team.name}
+								</option>
+							))}
+						</select>
+						<select
+							value={ownerFilter}
+							onChange={(event) => applyFilters({ ownerId: event.target.value })}
+							className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+						>
+							<option value="">Semua sales</option>
+							{salesOptions.map((option) => (
+								<option key={option.userId} value={option.userId}>
+									{option.name || option.email}
+								</option>
+							))}
+						</select>
+					</>
+				) : null}
+
+				{activeSegment !== 'all' || teamFilter || ownerFilter ? (
+					<button
+						type="button"
+						onClick={() => applyFilters({ segment: 'all', teamId: '', ownerId: '' })}
+						className="rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted-foreground underline hover:text-foreground"
+					>
+						Reset
+					</button>
+				) : null}
 			</div>
 
 			<section className="ocm-card overflow-hidden">

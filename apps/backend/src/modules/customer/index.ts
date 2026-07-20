@@ -54,6 +54,9 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				order: query.order,
 				viewerRole: viewerScope.viewerRole ?? undefined,
 				viewerUserId: userId ?? undefined,
+				segment: query.segment,
+				teamId: query.team_id,
+				ownerId: query.owner_id,
 			})
 
 			return {
@@ -74,6 +77,9 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				channel: t.Optional(t.String()),
 				sort: t.Optional(t.String()),
 				order: t.Optional(t.String()),
+				segment: t.Optional(t.String()),
+				team_id: t.Optional(t.String()),
+				owner_id: t.Optional(t.String()),
 			}),
 		},
 	)

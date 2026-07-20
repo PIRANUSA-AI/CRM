@@ -450,6 +450,10 @@ export abstract class CustomerService {
 		order?: string
 		viewerRole?: string
 		viewerUserId?: string
+		/** belum_beli | sering_beli | idle_90d | prospek — see CUSTOMER_SEGMENTS. */
+		segment?: string
+		teamId?: string
+		ownerId?: string
 	}) {
 		const targetAppId = await resolveAppId(params.appId)
 		if (!targetAppId)
@@ -500,6 +504,70 @@ export abstract class CustomerService {
 					OR c.phone_number ILIKE ${pattern}
 				)`,
 			)
+		}
+
+		// Filter by the team working the contact. A contact belongs to a team
+		// through the conversation assigned to it or through its deal, so both
+		// count — a lead handed to MFG shows under MFG before any deal is won.
+		if (params.teamId) {
+			whereParts.push(
+				Prisma.sql`(
+					EXISTS (SELECT 1 FROM conversations conv
+						WHERE conv.contact_id = c.id AND conv.team_id = ${params.teamId}::uuid)
+					OR EXISTS (SELECT 1 FROM opportunities o
+						WHERE o.contact_id = c.id AND o.team_id = ${params.teamId}::uuid)
+				)`,
+			)
+		}
+
+		// Filter by the sales working the contact — same ownership definition the
+		// sales scope above uses, so "sales: Deska" and Deska's own view agree.
+		if (params.ownerId) {
+			whereParts.push(
+				Prisma.sql`(
+					EXISTS (SELECT 1 FROM conversations conv
+						WHERE conv.contact_id = c.id AND conv.assignee_id = ${params.ownerId}::uuid)
+					OR EXISTS (SELECT 1 FROM tasks t
+						WHERE t.contact_id = c.id AND t.assignee_id = ${params.ownerId}::uuid)
+					OR EXISTS (SELECT 1 FROM opportunities o
+						WHERE o.contact_id = c.id AND o.owner_id = ${params.ownerId}::uuid)
+					OR c.custom_attributes->>'assigned_user_id' = ${params.ownerId}
+				)`,
+			)
+		}
+
+		// A purchase is a won deal or a paid order. Won deals carry the weight
+		// here: the orders table is not populated in this deployment, so keying
+		// "sudah pernah beli" on orders alone would mark every contact as never
+		// having bought.
+		const purchaseCount = Prisma.sql`(
+			(SELECT COUNT(*) FROM opportunities o WHERE o.contact_id = c.id AND o.status = 'won')
+			+ (SELECT COUNT(*) FROM orders ord WHERE ord.contact_id = c.id
+				AND (LOWER(COALESCE(ord.journey_phase,'')) IN ('paid')
+					OR LOWER(COALESCE(ord.order_status,'')) IN ('paid','completed')))
+		)`
+
+		switch (params.segment) {
+			case 'belum_beli':
+				whereParts.push(Prisma.sql`${purchaseCount} = 0`)
+				break
+			case 'sering_beli':
+				whereParts.push(Prisma.sql`${purchaseCount} >= 2`)
+				break
+			case 'idle_90d':
+				whereParts.push(
+					Prisma.sql`COALESCE(c.last_message_at, c.updated_at, c.created_at) < NOW() - INTERVAL '90 days'`,
+				)
+				break
+			case 'prospek':
+				// Has an open deal that has not crossed into opportunity territory.
+				whereParts.push(
+					Prisma.sql`EXISTS (SELECT 1 FROM opportunities o
+						WHERE o.contact_id = c.id AND o.status = 'open' AND o.probability < 50)`,
+				)
+				break
+			default:
+				break
 		}
 
 		const whereClause = Prisma.sql`${Prisma.join(whereParts, ' AND ')}`
