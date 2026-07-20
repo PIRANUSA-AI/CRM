@@ -67,13 +67,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 	},
 	{
 		id: 'customers',
-		label: 'Pelanggan',
+		label: 'Kontak',
 		path: '/customers',
 		group: 'data',
 		icon: Users,
 	},
 	{
-		// The firm a contact buys for. Sits next to Pelanggan because it is the
+		// The firm a contact buys for. Sits next to Kontak because it is the
 		// same data seen the other way round — one company, several PIC.
 		id: 'companies',
 		label: 'Perusahaan',

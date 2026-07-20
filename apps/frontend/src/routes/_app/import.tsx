@@ -216,7 +216,7 @@ function ImportPage() {
 					) : null}
 					<div className="mt-4 flex gap-2">
 						<button type="button" className="ocm-btn" onClick={() => navigate({ to: '/customers' })}>
-							Lihat Pelanggan
+							Lihat Kontak
 						</button>
 						<button type="button" className="ocm-btn" onClick={reset}>
 							Import lagi

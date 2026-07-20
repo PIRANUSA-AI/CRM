@@ -478,7 +478,7 @@ const PALETTE_GROUPS: PaletteGroup[] = [
 				icon: 'tag',
 				tone: 'blue',
 				label: 'Update Contact',
-				sub: 'Perbarui atribut pelanggan',
+				sub: 'Perbarui atribut kontak',
 			},
 			{
 				type: 'action',

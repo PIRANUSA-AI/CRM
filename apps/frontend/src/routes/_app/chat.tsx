@@ -1401,7 +1401,7 @@ function PersonalWhatsappInbox() {
 						</footer>
 					</>
 				) : (
-					<State icon={MessageCircle} title="Buka sebuah percakapan" body="Pilih pelanggan di sebelah kiri untuk membaca riwayat pesannya." />
+					<State icon={MessageCircle} title="Buka sebuah percakapan" body="Pilih kontak di sebelah kiri untuk membaca riwayat pesannya." />
 				)}
 				{dragActive && (
 					<div className="pointer-events-none absolute inset-3 z-40 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-background/90 p-6 text-center shadow-lg backdrop-blur-sm">

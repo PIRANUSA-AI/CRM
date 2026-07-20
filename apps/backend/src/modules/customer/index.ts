@@ -191,7 +191,7 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				}
 				set.status = 400
 				return {
-					error: error instanceof Error ? error.message : 'Gagal menambah pelanggan',
+					error: error instanceof Error ? error.message : 'Gagal menambah kontak',
 				}
 			}
 		},

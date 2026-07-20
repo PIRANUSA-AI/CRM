@@ -225,7 +225,7 @@ function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 
 	return {
 		id,
-		name: toText(input.name, 'Pelanggan'),
+		name: toText(input.name, 'Kontak'),
 		phone: toText(input.phone_number, toText(input.phone, '-')),
 		city,
 		stage,
@@ -355,7 +355,7 @@ function CustomersPage() {
 			const message =
 				error instanceof Error && error.message
 					? error.message
-					: 'Data pelanggan gagal dimuat.'
+					: 'Data kontak gagal dimuat.'
 			setLoadError(message)
 		} finally {
 			setLoading(false)
@@ -413,7 +413,7 @@ function CustomersPage() {
 			await loadPage(1, { includeStats: true })
 		} catch (error) {
 			setAddError(
-				error instanceof Error ? error.message : 'Pelanggan gagal ditambahkan.',
+				error instanceof Error ? error.message : 'Kontak gagal ditambahkan.',
 			)
 		} finally {
 			setAddSaving(false)
@@ -493,7 +493,7 @@ function CustomersPage() {
 	return (
 		<main className="ocm-page">
 			<CrmSectionHeader
-				title="Pelanggan 360"
+				title="Kontak 360"
 				subtitle={`${stats.total.toLocaleString('id-ID')} kontak · unified dari WA Meta + Baileys + marketplace`}
 				actions={
 					<>
@@ -582,18 +582,18 @@ function CustomersPage() {
 
 			<section className="ocm-card overflow-hidden">
 				<div className="ocm-card-header">
-					<h2 className="ocm-card-title">Daftar Pelanggan</h2>
+					<h2 className="ocm-card-title">Daftar Kontak</h2>
 					<div className="text-xs text-muted-foreground">{listStatusLabel}</div>
 				</div>
 
 				{loading && rows.length === 0 ? (
 					<div className="p-4 text-sm text-muted-foreground">
-						Memuat pelanggan...
+						Memuat kontak...
 					</div>
 				) : loadError && rows.length === 0 ? (
 					<div className="p-3">
 						<CrmEmptyState
-							title="Gagal memuat pelanggan"
+							title="Gagal memuat kontak"
 							description={loadError}
 							action={
 								<button
@@ -611,8 +611,8 @@ function CustomersPage() {
 				) : filteredRows.length === 0 ? (
 					<div className="p-3">
 						<CrmEmptyState
-							title="Tidak ada pelanggan"
-							description="Data pelanggan belum tersedia untuk filter ini."
+							title="Tidak ada kontak"
+							description="Data kontak belum tersedia untuk filter ini."
 						/>
 					</div>
 				) : (
@@ -697,7 +697,7 @@ function CustomersPage() {
 									<div className="flex justify-end">
 										<button
 											type="button"
-											aria-label="Buka detail pelanggan"
+											aria-label="Buka detail kontak"
 											title="Buka detail"
 											onClick={(event) => {
 												event.stopPropagation()
@@ -721,7 +721,7 @@ function CustomersPage() {
 								{loadError
 									? 'Gagal memuat halaman. Coba pindah halaman atau refresh.'
 									: loading
-										? 'Memuat halaman pelanggan...'
+										? 'Memuat halaman kontak...'
 										: paginationMeta.total === 0
 											? 'Tidak ada kontak'
 											: `Menampilkan ${pageStart.toLocaleString('id-ID')}-${pageEnd.toLocaleString('id-ID')} dari ${paginationMeta.total.toLocaleString('id-ID')} kontak`}
@@ -827,7 +827,7 @@ function CustomersPage() {
 			<Dialog open={addOpen} onOpenChange={(open) => !addSaving && setAddOpen(open)}>
 				<DialogContent className="sm:max-w-lg">
 					<DialogHeader>
-						<DialogTitle>Tambah Pelanggan</DialogTitle>
+						<DialogTitle>Tambah Kontak</DialogTitle>
 						<DialogDescription>
 							Catat kontak yang belum pernah masuk lewat WhatsApp atau import.
 						</DialogDescription>

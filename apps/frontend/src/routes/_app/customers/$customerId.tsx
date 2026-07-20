@@ -387,7 +387,7 @@ function CustomerDetail() {
 							</button>
 						) : (
 							<Link to="/customers" className="ocm-btn">
-								<ArrowLeft size={14} /> Pelanggan
+								<ArrowLeft size={14} /> Kontak
 							</Link>
 						)}
 						<button

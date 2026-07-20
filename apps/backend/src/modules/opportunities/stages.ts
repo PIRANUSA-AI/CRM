@@ -10,7 +10,7 @@
  *
  * Stages live in code rather than in `pipeline_stages` on purpose: that table
  * is `pipeline_type = 'contact'` and drives the contact lifecycle shown on the
- * Pelanggan page, which is a different axis (who someone is) from this one (how
+ * Kontak page, which is a different axis (who someone is) from this one (how
  * far along a specific sale is).
  */
 

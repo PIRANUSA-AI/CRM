@@ -1113,7 +1113,7 @@ export abstract class CustomerService {
 	}
 
 	/**
-	 * Add a contact by hand from the Pelanggan page. The other two ways contacts
+	 * Add a contact by hand from the Kontak page. The other two ways contacts
 	 * appear — spreadsheet import and the WhatsApp webhook — both normalise the
 	 * phone the same way, so this does too; a number stored in a different shape
 	 * would never match an incoming message.
@@ -1130,7 +1130,7 @@ export abstract class CustomerService {
 		},
 	) {
 		const name = String(data.name || '').trim()
-		if (!name) throw new Error('Nama pelanggan wajib diisi')
+		if (!name) throw new Error('Nama kontak wajib diisi')
 
 		const phoneInput = String(data.phone_number || '').trim()
 		const phone = phoneInput ? normalizePhone(phoneInput) : null
