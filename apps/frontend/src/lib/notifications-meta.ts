@@ -1,5 +1,6 @@
 import { Bell, Bot, Clock8, ListTodo, Smartphone, Sparkles, UserPlus } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { useNavigate } from '@tanstack/react-router'
 import type { NotificationItem } from '@/lib/api'
 
 // Shared notification presentation + routing, used by both the TopBar bell
@@ -31,20 +32,49 @@ export function notifLabel(type: string): string {
 	return NOTIF_LABEL[type] || 'Notifikasi'
 }
 
-// Where clicking a notification takes the user.
-export function notifDestination(item: Pick<NotificationItem, 'type' | 'taskId'>): string {
+type NotifTarget = Pick<NotificationItem, 'type' | 'taskId' | 'conversationId'>
+
+// Where clicking a notification takes the user. This navigates rather than
+// returning a path because the interesting destinations are parameterised —
+// a lead notification has to carry its conversation id through as a search
+// param, and building those by hand at each call site is how the bell ended up
+// dropping them and landing everyone on an empty inbox.
+export function notifNavigate(
+	navigate: ReturnType<typeof useNavigate>,
+	item: NotifTarget,
+): void {
 	switch (item.type) {
 		case 'takeover':
-			return '/alih-tugas'
+			void navigate({ to: '/alih-tugas' })
+			return
 		case 'task_urgent':
 		case 'task_due':
-			return item.taskId ? `/tasks/${item.taskId}` : '/tasks'
+			void (item.taskId
+				? navigate({ to: '/tasks/$taskId', params: { taskId: item.taskId } })
+				: navigate({ to: '/tasks' }))
+			return
 		case 'wa_disconnected':
-			return '/whatsapp/connect'
+			void navigate({ to: '/whatsapp/connect' })
+			return
 		case 'lead_pending':
 		case 'ai_draft':
-			return '/chat'
+			// A lead notification comes in two shapes. The leader's ("perlu
+			// keputusan") carries a conversation in their own inbox, so open it —
+			// without `c` the inbox opens with nothing selected, which is the
+			// complaint this fixes. The sales' ("di-assign ke kamu") deliberately
+			// has no conversation, because the lead's chat lives in the leader's
+			// inbox and the personal inbox is scoped per owner; that one carries a
+			// task, which is where the sales reads the briefing and starts their
+			// own chat.
+			if (item.conversationId) {
+				void navigate({ to: '/chat', search: { c: item.conversationId } })
+				return
+			}
+			void (item.taskId
+				? navigate({ to: '/tasks/$taskId', params: { taskId: item.taskId } })
+				: navigate({ to: '/chat', search: {} }))
+			return
 		default:
-			return '/dashboard'
+			void navigate({ to: '/dashboard' })
 	}
 }

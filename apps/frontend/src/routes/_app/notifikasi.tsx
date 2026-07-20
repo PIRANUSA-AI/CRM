@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CheckCheck, RefreshCw } from 'lucide-react'
 import { notifications as notificationsApi, type NotificationItem } from '@/lib/api'
 import { CrmSectionHeader, CrmEmptyState } from '@/components/crm/shared'
-import { notifDestination, notifIcon, notifLabel } from '@/lib/notifications-meta'
+import { notifNavigate, notifIcon, notifLabel } from '@/lib/notifications-meta'
 import { connectSocket } from '@/lib/socket'
 
 export const Route = createFileRoute('/_app/notifikasi')({
@@ -139,7 +139,7 @@ function NotificationsPage() {
 			)
 			void notificationsApi.markRead(item.id).catch(() => undefined)
 		}
-		navigate({ to: notifDestination(item) })
+		notifNavigate(navigate, item)
 	}
 
 	const markAllRead = async () => {

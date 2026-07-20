@@ -443,6 +443,11 @@ export abstract class LeadRoutingService {
 			type: 'lead_pending',
 			title: 'Lead baru di-assign ke kamu',
 			body: `${context.contactName}${context.productInterest ? ` — ${context.productInterest}` : ''}`,
+			// Deliberately null, for the same reason the task above is not linked to
+			// it: this conversation lives in the leader's inbox, and the personal
+			// inbox is scoped to the owner's own channel. The sales cannot open it.
+			// The notification carries taskId instead, which is where they pick the
+			// lead up and start their own chat.
 			conversationId: null,
 			taskId,
 			dedupKey: `lead_assign:${taskId}`,

@@ -6,7 +6,7 @@ import { CrmAvatar } from '@/components/crm/shared'
 import ThemeToggle from '@/components/ThemeToggle'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { notifications as notificationsApi, type NotificationItem } from '@/lib/api'
-import { notifDestination, notifIcon } from '@/lib/notifications-meta'
+import { notifNavigate, notifIcon } from '@/lib/notifications-meta'
 import { connectSocket } from '@/lib/socket'
 import { CRM_NAV_ITEMS } from '@/lib/crm-navigation'
 import { useAppContext } from '@/routes/_app'
@@ -128,7 +128,7 @@ export default function TopBar() {
 			)
 			void notificationsApi.markRead(item.id).catch(() => undefined)
 		}
-		navigate({ to: notifDestination(item) })
+		notifNavigate(navigate, item)
 	}
 
 	const markAllRead = () => {
