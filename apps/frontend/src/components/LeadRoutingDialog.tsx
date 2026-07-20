@@ -155,11 +155,11 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 				<span className="text-xs font-semibold text-foreground">Kebutuhan Lead</span>
 				<div className="flex items-center gap-2">
 					{need.ready ? (
-						<span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
+						<span className="flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-200">
 							<CheckCircle2 size={11} /> Siap di-assign
 						</span>
 					) : (
-						<span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-300">
+						<span className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-900 dark:border-amber-400/40 dark:text-amber-200">
 							<TriangleAlert size={11} /> Belum lengkap
 						</span>
 					)}
@@ -407,7 +407,10 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 						dulu.
 					</p>
 				) : suggestion ? (
-					<div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+					// No inner max-height: the dialog itself scrolls now, and a second
+					// scroll region inside it means two scrollbars fighting over the
+					// same gesture.
+					<div className="space-y-2">
 						{suggestion.candidates.map((candidate, index) => {
 							const isSelected = selected === candidate.userId
 							return (
@@ -415,10 +418,15 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 									key={candidate.userId}
 									type="button"
 									onClick={() => setSelected(candidate.userId)}
-									className={`w-full rounded-lg border p-3 text-left transition-colors ${
+									// Selected stacked a border AND a ring in the same colour,
+									// which read as one thick smudged outline. A single 2px
+									// border with a tinted fill says "chosen" more clearly, and
+									// giving the unselected rows a transparent border of the
+									// same width stops the list shifting on click.
+									className={`w-full rounded-lg border-2 p-3 text-left transition-colors ${
 										isSelected
-											? 'border-primary bg-primary/5 ring-1 ring-primary'
-											: 'border-border hover:bg-muted/50'
+											? 'border-primary bg-primary/10'
+											: 'border-transparent bg-muted/40 hover:bg-muted/70'
 									}`}
 								>
 									<div className="flex items-center justify-between gap-2">
@@ -427,7 +435,7 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 												{candidate.name || candidate.email}
 											</span>
 											{index === 0 ? (
-												<span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+												<span className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
 													<Sparkles size={10} /> Rekomendasi
 												</span>
 											) : null}
@@ -437,20 +445,24 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 										</div>
 										<div className="flex items-center gap-2">
 											<span
-												className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+												// Same 10%-tint-without-an-edge problem as the chat
+												// badges: invisible against the row.
+												className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
 													candidate.overloaded
-														? 'bg-red-500/10 text-red-600 dark:text-red-300'
-														: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+														? 'border-red-500/40 bg-red-500/15 text-red-700 dark:border-red-400/40 dark:text-red-200'
+														: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-200'
 												}`}
 											>
 												{candidate.activeLoad}/{candidate.maxActive}
 											</span>
-											<span className="text-xs font-semibold text-muted-foreground">
+											{/* The score is the number a leader compares between
+											    candidates, so it should not be the faintest text. */}
+											<span className="text-sm font-bold tabular-nums text-foreground">
 												{candidate.score}
 											</span>
 										</div>
 									</div>
-									<p className="mt-1 text-xs text-muted-foreground">
+									<p className="mt-1 text-xs text-foreground/70">
 										{candidate.reasons.join(' · ')}
 									</p>
 								</button>

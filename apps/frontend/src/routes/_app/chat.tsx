@@ -1236,7 +1236,7 @@ function PersonalWhatsappInbox() {
 											type="button"
 											onClick={() => void toggleTakeover(active.id, false)}
 											disabled={takeoverBusy}
-											className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:text-sky-300"
+											className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/45 bg-sky-500/15 px-3 text-xs font-semibold text-sky-800 transition-colors hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 dark:border-sky-400/45 dark:text-sky-200"
 											title="Kembalikan percakapan ini ke AI"
 										>
 											<Bot className="size-4" />
@@ -1313,7 +1313,7 @@ function PersonalWhatsappInbox() {
 									</div>
 								)}
 								{aiInControl ? (
-									<div className="mb-2 flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-700 dark:text-sky-300">
+									<div className="mb-2 flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/15 px-3 py-2 text-xs font-medium text-sky-800 dark:border-sky-400/40 dark:text-sky-200">
 										<Bot className="size-4 shrink-0" />
 										<span>AI sedang menangani percakapan ini. Klik <b>Ambil Alih</b> di atas untuk membalas sendiri.</span>
 									</div>
@@ -1557,11 +1557,17 @@ function Avatar({ conversation, size = 'md' }: { conversation: Conversation; siz
 function WorkflowBadge({ workflow }: { workflow: Conversation['workflow'] }) {
 	const label = workflow === 'ai' ? 'AI' : workflow === 'handover' ? 'Handover' : 'Sales'
 	return (
+		// A 10% tint with no edge disappears against the row background, which is
+		// what these were. Matches .ocm-tag in crm.css instead: a stronger fill,
+		// a visible border, and text dark enough to read at 11px.
 		<span className={cn(
-			'shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium',
-			workflow === 'ai' && 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
-			workflow === 'handover' && 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
-			workflow === 'human' && 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
+			'shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold',
+			workflow === 'ai' &&
+				'border-violet-500/35 bg-violet-500/15 text-violet-800 dark:border-violet-400/35 dark:text-violet-200',
+			workflow === 'handover' &&
+				'border-amber-500/40 bg-amber-500/20 text-amber-900 dark:border-amber-400/40 dark:text-amber-200',
+			workflow === 'human' &&
+				'border-sky-500/35 bg-sky-500/15 text-sky-800 dark:border-sky-400/35 dark:text-sky-200',
 		)}>
 			{label}
 		</span>
