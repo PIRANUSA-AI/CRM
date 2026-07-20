@@ -1916,6 +1916,11 @@ model teams {
   updated_at        DateTime?       @default(now()) @db.Timestamp(6)
   deleted_at        DateTime?       @db.Timestamp(6)
   app_id            String?         @db.Uuid
+
+  // Probability at which a deal stops reading as a prospek and starts reading
+  // as an opportunity. Per team because AEC and MFG qualify differently.
+  deal_threshold    Int             @default(50)
+
   conversations     conversations[]
   team_members      team_members[]
   accounts          accounts?       @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -2461,6 +2466,13 @@ model opportunities {
   currency   String    @default("IDR") @db.VarChar(8)
   status     String    @default("open") @db.VarChar(20)
   stage      String?   @db.VarChar(60)
+
+  // How far along the deal is, 0-100. Derived from `stage` by default but the
+  // sales may override it. This is the single field that decides whether the
+  // deal reads as a prospek or an opportunity — see DEAL_STAGES in
+  // modules/opportunities/stages.ts.
+  probability Int      @default(10)
+
   source     String    @default("manual") @db.VarChar(40)
   notes      String?
 

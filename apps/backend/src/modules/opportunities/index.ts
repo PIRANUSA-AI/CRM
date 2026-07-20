@@ -1,22 +1,52 @@
-import { Elysia } from 'elysia'
+import { Elysia, t } from 'elysia'
 import { appContext } from '../../plugins'
-import { OpportunityService } from './service'
+import prisma from '../../lib/prisma'
+import { OpportunityService, type OpportunityActor } from './service'
 import { OpportunityRequestModel } from './model'
+import { DEAL_STAGES, type DealBucket } from './stages'
+
+/**
+ * Deals are visible per role (sales sees their own, leader their team), so
+ * every handler needs the caller's role — not just their id.
+ */
+async function resolveActor(
+	resolvedAppId: string | null,
+	userId: string | null,
+): Promise<OpportunityActor | null> {
+	if (!resolvedAppId) return null
+	const user = userId
+		? await prisma.users.findFirst({
+				where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+				select: { role: true },
+			})
+		: null
+	return { appId: resolvedAppId, userId: userId ?? null, role: user?.role ?? null }
+}
+
+function asBucket(value: unknown): DealBucket | undefined {
+	const v = String(value ?? '').toLowerCase()
+	return v === 'prospek' || v === 'opportunity' || v === 'closed' ? v : undefined
+}
 
 export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Opportunities'] })
 	.use(appContext)
+	// Stage catalogue for the Pipeline board — the frontend renders one column
+	// per stage, so it must not hardcode its own copy of this list.
+	.get('/stages', () => ({ success: true, payload: DEAL_STAGES }))
 	.get(
 		'/',
-		async ({ resolvedAppId, query, set }) => {
-			if (!resolvedAppId) {
+		async ({ resolvedAppId, userId, query, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId)
+			if (!actor) {
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const data = await OpportunityService.list(resolvedAppId, {
+			const data = await OpportunityService.list(actor, {
 				status: query.status || undefined,
 				ownerId: query.ownerId || undefined,
 				contactId: query.contactId || undefined,
 				search: query.search || undefined,
+				bucket: asBucket((query as Record<string, unknown>).bucket),
 				limit: query.limit ? Number(query.limit) : undefined,
 				offset: query.offset ? Number(query.offset) : undefined,
 			})
@@ -24,19 +54,21 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 		},
 		{ query: OpportunityRequestModel.listQuery },
 	)
-	.get('/stats', async ({ resolvedAppId, set }) => {
-		if (!resolvedAppId) {
+	.get('/stats', async ({ resolvedAppId, userId, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId)
+		if (!actor) {
 			set.status = 400
 			return { error: 'App ID required' }
 		}
-		return { success: true, payload: await OpportunityService.stats(resolvedAppId) }
+		return { success: true, payload: await OpportunityService.stats(actor) }
 	})
-	.get('/:id', async ({ resolvedAppId, params, set }) => {
-		if (!resolvedAppId) {
+	.get('/:id', async ({ resolvedAppId, userId, params, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId)
+		if (!actor) {
 			set.status = 400
 			return { error: 'App ID required' }
 		}
-		const opportunity = await OpportunityService.getById(resolvedAppId, params.id)
+		const opportunity = await OpportunityService.getById(actor, params.id)
 		if (!opportunity) {
 			set.status = 404
 			return { error: 'Opportunity not found' }
@@ -46,31 +78,58 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 	.post(
 		'/',
 		async ({ resolvedAppId, userId, body, set }) => {
-			if (!resolvedAppId) {
+			const actor = await resolveActor(resolvedAppId, userId)
+			if (!actor) {
 				set.status = 400
 				return { error: 'App ID required' }
 			}
 			try {
-				const opportunity = await OpportunityService.create(
-					{ appId: resolvedAppId, userId: userId ?? null },
-					body,
-				)
-				return { success: true, payload: opportunity }
+				return { success: true, payload: await OpportunityService.create(actor, body) }
 			} catch (error) {
 				set.status = 400
-				return { error: error instanceof Error ? error.message : 'Gagal membuat opportunity' }
+				return { error: error instanceof Error ? error.message : 'Gagal membuat deal' }
 			}
 		},
 		{ body: OpportunityRequestModel.create },
 	)
+	// Moving the stage is the whole lifecycle: it sets probability, status and
+	// close time together, and is what turns a prospek into an opportunity.
 	.patch(
-		'/:id',
-		async ({ resolvedAppId, params, body, set }) => {
-			if (!resolvedAppId) {
+		'/:id/stage',
+		async ({ resolvedAppId, userId, params, body, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId)
+			if (!actor) {
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const opportunity = await OpportunityService.update(resolvedAppId, params.id, body)
+			const deal = await OpportunityService.moveStage(
+				actor,
+				params.id,
+				body.stage,
+				body.probability ?? null,
+			)
+			if (!deal) {
+				set.status = 404
+				return { error: 'Deal tidak ditemukan atau di luar akses Anda' }
+			}
+			return { success: true, payload: deal }
+		},
+		{
+			body: t.Object({
+				stage: t.String({ maxLength: 60 }),
+				probability: t.Optional(t.Union([t.Number(), t.Null()])),
+			}),
+		},
+	)
+	.patch(
+		'/:id',
+		async ({ resolvedAppId, userId, params, body, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId)
+			if (!actor) {
+				set.status = 400
+				return { error: 'App ID required' }
+			}
+			const opportunity = await OpportunityService.update(actor, params.id, body)
 			if (!opportunity) {
 				set.status = 404
 				return { error: 'Opportunity not found' }
@@ -79,12 +138,13 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 		},
 		{ body: OpportunityRequestModel.update },
 	)
-	.delete('/:id', async ({ resolvedAppId, params, set }) => {
-		if (!resolvedAppId) {
+	.delete('/:id', async ({ resolvedAppId, userId, params, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId)
+		if (!actor) {
 			set.status = 400
 			return { error: 'App ID required' }
 		}
-		const ok = await OpportunityService.remove(resolvedAppId, params.id)
+		const ok = await OpportunityService.remove(actor, params.id)
 		if (!ok) {
 			set.status = 404
 			return { error: 'Opportunity not found' }

@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
 import type { CanonicalRole } from '../../lib/require-role'
+import { DEFAULT_STAGE_ID, resolveStage } from '../opportunities/stages'
 import {
 	isClosedStage,
 	isValidEmail,
@@ -872,12 +873,45 @@ export abstract class ImportService {
 				},
 			})
 
-			return { contactId, taskId: task.id, wasUpdate }
+			// Open a deal so the prospect shows up in Pipeline without anyone
+			// re-typing it. Created in the same transaction as the contact and task
+			// because a prospect that exists without its deal is invisible on the
+			// page meant to track it. Skipped when the contact already has an open
+			// deal — re-adding a prospect should not fork their pipeline.
+			const openDeal = await tx.opportunities.findFirst({
+				where: { app_id: actor.appId, contact_id: contactId, status: 'open' },
+				select: { id: true },
+			})
+			let dealId: string | null = openDeal?.id ?? null
+			if (!openDeal) {
+				const stage = resolveStage(DEFAULT_STAGE_ID)
+				const deal = await tx.opportunities.create({
+					data: {
+						app_id: actor.appId,
+						contact_id: contactId,
+						owner_id: assigneeId,
+						team_id: teamId,
+						name: productInterest ? `${name} — ${productInterest}` : name,
+						product: productInterest,
+						currency: 'IDR',
+						status: stage.status,
+						stage: stage.id,
+						probability: stage.probability,
+						source: `prospect:${channel}`,
+						created_by: actor.userId,
+					},
+					select: { id: true },
+				})
+				dealId = deal.id
+			}
+
+			return { contactId, taskId: task.id, dealId, wasUpdate }
 		})
 
 		return {
 			contactId: result.contactId,
 			taskId: result.taskId,
+			dealId: result.dealId,
 			updated: result.wasUpdate,
 			dueAt: dueAt.toISOString(),
 			channel,

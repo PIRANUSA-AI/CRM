@@ -14,7 +14,9 @@ export const OpportunityRequestModel = {
 		currency: t.Optional(t.String()),
 		ownerId: t.Optional(t.Nullable(t.String())),
 		stage: t.Optional(t.Nullable(t.String())),
+		probability: t.Optional(t.Nullable(t.Number())),
 		status: t.Optional(t.String()),
+		source: t.Optional(t.Nullable(t.String())),
 		notes: t.Optional(t.Nullable(t.String())),
 	}),
 	update: t.Object({
@@ -24,6 +26,7 @@ export const OpportunityRequestModel = {
 		currency: t.Optional(t.String()),
 		ownerId: t.Optional(t.Nullable(t.String())),
 		stage: t.Optional(t.Nullable(t.String())),
+		probability: t.Optional(t.Nullable(t.Number())),
 		status: t.Optional(t.String()),
 		notes: t.Optional(t.Nullable(t.String())),
 	}),
@@ -32,6 +35,8 @@ export const OpportunityRequestModel = {
 		ownerId: t.Optional(t.String()),
 		contactId: t.Optional(t.String()),
 		search: t.Optional(t.String()),
+		// prospek | opportunity | closed
+		bucket: t.Optional(t.String()),
 		limit: t.Optional(t.String()),
 		offset: t.Optional(t.String()),
 	}),

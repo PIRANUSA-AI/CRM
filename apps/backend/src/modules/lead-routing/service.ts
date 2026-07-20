@@ -2,6 +2,7 @@ import prisma from '../../lib/prisma'
 import type { CanonicalRole } from '../../lib/require-role'
 import { getRealtimeIO } from '../../lib/realtime'
 import { NotificationService } from '../notifications/service'
+import { OpportunityService } from '../opportunities/service'
 import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
 import { PersonalTakeoverService } from '../personal-whatsapp-inbox/takeover'
 import { SalesProfileService } from '../sales-profiles/service'
@@ -438,6 +439,26 @@ export abstract class LeadRoutingService {
 					metadata: { source: 'routing', assignee_id: target.userId, score: target.score },
 				},
 			})
+		}
+
+		// Open a deal for the lead so it enters Pipeline at stage "baru". Nothing
+		// is entered by hand any more: a deal exists because a lead exists, and it
+		// becomes an opportunity when the sales moves it past the team threshold.
+		// Best-effort — a failure here must not undo an assignment that already
+		// changed the conversation, the task and the notification.
+		if (context.contactId) {
+			await OpportunityService.openForContact(
+				{ appId: actor.appId, userId: actor.userId, role: actor.role },
+				{
+					contactId: context.contactId,
+					name: context.productInterest
+						? `${context.contactName} — ${context.productInterest}`
+						: context.contactName,
+					product: context.productInterest || null,
+					ownerId: target.userId,
+					source: 'routing',
+				},
+			).catch(() => null)
 		}
 
 		await NotificationService.notify({
