@@ -1,5 +1,6 @@
 import prisma from '../../lib/prisma'
 import { getAllowedChannelTypesForUser } from '../../lib/agent-channel-access'
+import { setContactOwner } from '../../lib/contact-ownership'
 import { isUuid, resolveAppId } from '../../lib/utils'
 import { BusinessWebhookDispatchService } from '../business-webhooks/dispatch-service'
 import {
@@ -991,6 +992,11 @@ export abstract class ConversationService {
 				updated_at: new Date(),
 			},
 		})
+
+		// Handing the conversation over hands the contact over with it. No team is
+		// passed, so it follows the new assignee's own team — unlike lead routing,
+		// this is a person-to-person move, not a team decision.
+		await setContactOwner(prisma, { contactId: updatedConv.contact_id, ownerId: agentId })
 
 		const { app } = await import('../../index')
 		const io = (app as any).io as any

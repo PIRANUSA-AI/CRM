@@ -45,6 +45,18 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				return { error: 'Not authorized' }
 			}
 
+			// Only a leader needs their teams resolved; a sales is scoped by owner
+			// and the administrator tier is not scoped at all, so skip the query.
+			const viewerTeamIds =
+				viewerScope.viewerRole === 'leader' && userId
+					? (
+							await prisma.team_members.findMany({
+								where: { user_id: userId },
+								select: { team_id: true },
+							})
+						).map((row) => row.team_id)
+					: undefined
+
 			const result = await CustomerService.listCustomers({
 				appId: resolvedAppId,
 				search: query.search || query.q,
@@ -54,6 +66,7 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				order: query.order,
 				viewerRole: viewerScope.viewerRole ?? undefined,
 				viewerUserId: userId ?? undefined,
+				viewerTeamIds,
 				segment: query.segment,
 				teamId: query.team_id,
 				ownerId: query.owner_id,

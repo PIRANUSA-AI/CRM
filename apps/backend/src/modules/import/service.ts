@@ -1,3 +1,4 @@
+import { setContactOwner } from '../../lib/contact-ownership'
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
 import { isMultiTeamRole, type CanonicalRole } from '../../lib/require-role'
@@ -443,9 +444,15 @@ export abstract class ImportService {
 							})
 						: null
 
+					// `assigned_user_id` is dropped rather than carried forward: ownership
+					// now lives in contacts.owner_id, and leaving a stale copy in the
+					// JSON would recreate the two-sources-of-truth problem the column
+					// was added to end. See lib/contact-ownership.ts.
+					const { assigned_user_id: _legacyOwner, ...priorAttributes } =
+						(existing?.custom_attributes as Record<string, unknown>) || {}
+
 					const customAttributes = {
-						...((existing?.custom_attributes as Record<string, unknown>) || {}),
-						assigned_user_id: row.resolved_assignee_id || null,
+						...priorAttributes,
 						contact_title: mapped.contact_title,
 						industry: mapped.industry,
 						company_size: mapped.company_size,
@@ -497,6 +504,14 @@ export abstract class ImportService {
 						})
 						contactId = created.id
 					}
+
+					// An imported row names its sales, so the contact arrives already
+					// owned. Rows with no assignee stay in the intake pool.
+					await setContactOwner(tx, {
+						contactId,
+						ownerId: row.resolved_assignee_id || null,
+						teamId: mapped._team_id || undefined,
+					})
 
 					let taskId: string | null = null
 					const closed = isClosedStage(mapped.pipeline_stage)
@@ -644,9 +659,12 @@ export abstract class ImportService {
 					})
 				: null
 
+			// See the note on the bulk path above: ownership moved to contacts.owner_id.
+			const { assigned_user_id: _legacyOwner, ...priorAttributes } =
+				(existing?.custom_attributes as Record<string, unknown>) || {}
+
 			const customAttributes = {
-				...((existing?.custom_attributes as Record<string, unknown>) || {}),
-				assigned_user_id: assignee.userId,
+				...priorAttributes,
 				product_interest: productInterest,
 				pipeline_stage: pipelineStage,
 				import_notes: notes,
@@ -682,6 +700,12 @@ export abstract class ImportService {
 				})
 				contactId = created.id
 			}
+
+			await setContactOwner(tx, {
+				contactId,
+				ownerId: assignee.userId,
+				teamId: assignee.teamId || undefined,
+			})
 
 			let taskId: string | null = null
 			if (!isClosedStage(pipelineStage)) {
@@ -813,9 +837,12 @@ export abstract class ImportService {
 					})
 				: null
 
+			// See the note on the bulk path above: ownership moved to contacts.owner_id.
+			const { assigned_user_id: _legacyOwner, ...priorAttributes } =
+				(existing?.custom_attributes as Record<string, unknown>) || {}
+
 			const customAttributes = {
-				...((existing?.custom_attributes as Record<string, unknown>) || {}),
-				assigned_user_id: actor.userId,
+				...priorAttributes,
 				product_interest: productInterest,
 				prospect_channel: channel,
 				import_notes: notes,
@@ -851,6 +878,13 @@ export abstract class ImportService {
 				})
 				contactId = created.id
 			}
+
+			// The owner is the assignee, not the creator. The old JSON key recorded
+			// `actor.userId`, so a prospect an administrator entered on someone
+			// else's behalf was owned by the administrator while the follow-up task
+			// sat with the sales — the contact list and the task list disagreed
+			// about whose prospect it was.
+			await setContactOwner(tx, { contactId, ownerId: assigneeId, teamId: teamId || undefined })
 
 			const title = `Follow-up prospek ${PROSPECT_CHANNEL_LABEL[channel]} — ${name}`.slice(0, 255)
 			const task = await tx.tasks.create({

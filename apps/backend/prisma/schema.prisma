@@ -1034,9 +1034,22 @@ model contacts {
   last_activity_at        DateTime?        @db.Timestamp(6)
   pubsub_token            String?          @db.VarChar(255)
   meta                    Json?
+
+  // Who works this contact, and which team it belongs to. Both used to be
+  // derived per query by OR-ing three sources (an assigned conversation, an
+  // assigned task, and custom_attributes.assigned_user_id), which meant a
+  // contact could silently change hands when an unrelated task was reassigned,
+  // and left leaders unscoped entirely. Materialised here so ownership is a
+  // fact that is written when it changes — see lib/contact-ownership.ts.
+  owner_id                String?          @db.Uuid
+  team_id                 String?          @db.Uuid
+
   broadcast_logs          broadcast_logs[]
   accounts                accounts?        @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   conversations           conversations[]
+
+  @@index([app_id, owner_id], map: "idx_contacts_app_owner")
+  @@index([app_id, team_id], map: "idx_contacts_app_team")
 }
 
 model conversation_activity_log {

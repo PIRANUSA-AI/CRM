@@ -1,3 +1,4 @@
+import { setContactOwner } from '../../lib/contact-ownership'
 import prisma from '../../lib/prisma'
 import type { CanonicalRole } from '../../lib/require-role'
 import { getRealtimeIO } from '../../lib/realtime'
@@ -326,6 +327,15 @@ export abstract class LeadRoutingService {
 		await prisma.conversations.update({
 			where: { id: context.id },
 			data: { assignee_id: target.userId, team_id: target.teamId, updated_at: now },
+		})
+
+		// Routing a lead is the moment it stops being the intake pool's and
+		// becomes someone's. The team comes from the routing decision rather than
+		// the assignee's membership — that is the whole point of the decision.
+		await setContactOwner(prisma, {
+			conversationId: context.id,
+			ownerId: target.userId,
+			teamId: target.teamId,
 		})
 
 		// Stop the leader-number AI for this lead. In Model B the assigned sales
