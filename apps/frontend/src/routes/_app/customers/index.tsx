@@ -259,6 +259,10 @@ function CustomersPage() {
 	const [activeSegment, setActiveSegment] = useState<SegmentId>('all')
 	const [teamFilter, setTeamFilter] = useState('')
 	const [ownerFilter, setOwnerFilter] = useState('')
+	const [stageFilter, setStageFilter] = useState('')
+	const [stageOptions, setStageOptions] = useState<
+		Array<{ id: string; name: string; color: string | null }>
+	>([])
 	const [teamOptions, setTeamOptions] = useState<Array<{ id: string; name: string }>>([])
 	const [salesOptions, setSalesOptions] = useState<
 		Array<{ userId: string; name: string | null; email: string }>
@@ -285,6 +289,7 @@ function CustomersPage() {
 			segment?: SegmentId
 			teamId?: string
 			ownerId?: string
+			stageId?: string
 		},
 	) => {
 		const includeStats = options?.includeStats === true
@@ -294,6 +299,7 @@ function CustomersPage() {
 		const segment = options?.segment ?? activeSegment
 		const teamId = options?.teamId ?? teamFilter
 		const ownerId = options?.ownerId ?? ownerFilter
+		const stageId = options?.stageId ?? stageFilter
 
 		setLoading(true)
 		setLoadError(null)
@@ -306,6 +312,7 @@ function CustomersPage() {
 					segment: segment === 'all' ? undefined : segment,
 					team_id: teamId || undefined,
 					owner_id: ownerId || undefined,
+					stage_id: stageId || undefined,
 				}),
 				includeStats ? customersApi.stats() : Promise.resolve(null),
 			])
@@ -418,14 +425,23 @@ function CustomersPage() {
 	// Filtering happens on the server now, so what came back is what matches.
 	const filteredRows = rows
 
+	useEffect(() => {
+		void customersApi
+			.stages()
+			.then((response) => setStageOptions(response.payload || []))
+			.catch(() => undefined)
+	}, [])
+
 	const applyFilters = (next: {
 		segment?: SegmentId
 		teamId?: string
 		ownerId?: string
+		stageId?: string
 	}) => {
 		if (next.segment !== undefined) setActiveSegment(next.segment)
 		if (next.teamId !== undefined) setTeamFilter(next.teamId)
 		if (next.ownerId !== undefined) setOwnerFilter(next.ownerId)
+		if (next.stageId !== undefined) setStageFilter(next.stageId)
 		void loadPage(1, next)
 	}
 
@@ -434,11 +450,19 @@ function CustomersPage() {
 		const matching = paginationMeta.total.toLocaleString('id-ID')
 		const totalCount = stats.total.toLocaleString('id-ID')
 		const filtered =
-			activeSegment !== 'all' || teamFilter !== '' || ownerFilter !== ''
+			activeSegment !== 'all' || teamFilter !== '' || ownerFilter !== '' || stageFilter !== ''
 		return filtered
 			? `${matching} kontak cocok · dari ${totalCount} total`
 			: `${totalCount} kontak`
-	}, [activeSegment, teamFilter, ownerFilter, loading, paginationMeta.total, stats.total])
+	}, [
+		activeSegment,
+		teamFilter,
+		ownerFilter,
+		stageFilter,
+		loading,
+		paginationMeta.total,
+		stats.total,
+	])
 
 	const totalPages = Math.max(
 		1,
@@ -535,6 +559,20 @@ function CustomersPage() {
 						</button>
 				))}
 
+				<select
+					value={stageFilter}
+					onChange={(event) => applyFilters({ stageId: event.target.value })}
+					className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+				>
+					<option value="">Semua status</option>
+					{stageOptions.map((stage) => (
+						<option key={stage.id} value={stage.id}>
+							{stage.name}
+						</option>
+					))}
+					<option value="none">Belum ada status</option>
+				</select>
+
 				{isLeader ? (
 					<>
 						<select
@@ -564,10 +602,12 @@ function CustomersPage() {
 					</>
 				) : null}
 
-				{activeSegment !== 'all' || teamFilter || ownerFilter ? (
+				{activeSegment !== 'all' || teamFilter || ownerFilter || stageFilter ? (
 					<button
 						type="button"
-						onClick={() => applyFilters({ segment: 'all', teamId: '', ownerId: '' })}
+						onClick={() =>
+							applyFilters({ segment: 'all', teamId: '', ownerId: '', stageId: '' })
+						}
 						className="rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted-foreground underline hover:text-foreground"
 					>
 						Reset

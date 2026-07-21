@@ -1049,6 +1049,16 @@ model contacts {
   owner_id                String?          @db.Uuid
   team_id                 String?          @db.Uuid
 
+  /// Where this person sits in the contact lifecycle — who they are to us,
+  /// which is a different axis from how far along any one sale is (that is
+  /// opportunities.stage). Points at pipeline_stages of a contact pipeline.
+  ///
+  /// A column rather than the custom_attributes JSON key it replaces, for the
+  /// same reason owner_id stopped being derived: a value inside a blob cannot
+  /// be indexed, cannot be filtered in SQL, and gives the counter and the list
+  /// two places to disagree.
+  pipeline_stage_id       String?          @db.Uuid
+
   broadcast_logs          broadcast_logs[]
   accounts                accounts?        @relation(fields: [account_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   companies               companies?       @relation(fields: [company_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -1057,6 +1067,7 @@ model contacts {
   @@index([app_id, owner_id], map: "idx_contacts_app_owner")
   @@index([app_id, team_id], map: "idx_contacts_app_team")
   @@index([app_id, company_id], map: "idx_contacts_app_company")
+  @@index([app_id, pipeline_stage_id], map: "idx_contacts_app_stage")
 }
 
 /// The organisation a contact buys for. PIRANUSA sells CAD seats to firms, not

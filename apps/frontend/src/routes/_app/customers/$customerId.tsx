@@ -240,6 +240,28 @@ function CustomerDetail() {
 		}
 	}
 
+	// The lifecycle stages, for the status picker in the rail.
+	const [stageOptions, setStageOptions] = useState<
+		Array<{ id: string; name: string; color: string | null }>
+	>([])
+	const [savingStage, setSavingStage] = useState(false)
+
+	useEffect(() => {
+		void customers
+			.stages()
+			.then((response) => setStageOptions(response.payload || []))
+			.catch(() => undefined)
+	}, [])
+
+	const changeStage = async (stageId: string) => {
+		setSavingStage(true)
+		try {
+			await handleUpdate({ pipeline_stage_id: stageId } as Partial<Customer>)
+		} finally {
+			setSavingStage(false)
+		}
+	}
+
 	const [promoting, setPromoting] = useState(false)
 	const promoteToOpportunity = async () => {
 		if (!customer) return
@@ -501,6 +523,26 @@ function CustomerDetail() {
 							<div className="font-mono text-[11px] text-muted-foreground">
 								ID {customer.id.slice(0, 8).toUpperCase()}
 							</div>
+						</div>
+						<div className="border-b border-border px-4 py-3">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Status
+							</span>
+							{/* Editable here rather than only in the edit modal: status is the
+							    one field that changes as a conversation goes on. */}
+							<select
+								className="ocm-input"
+								value={customer.pipeline_stage_id || ''}
+								disabled={savingStage || stageOptions.length === 0}
+								onChange={(event) => void changeStage(event.target.value)}
+							>
+								<option value="">Belum ada status</option>
+								{stageOptions.map((stage) => (
+									<option key={stage.id} value={stage.id}>
+										{stage.name}
+									</option>
+								))}
+							</select>
 						</div>
 						<dl className="divide-y divide-border text-sm">
 							{(

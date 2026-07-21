@@ -1467,6 +1467,8 @@ export const customers = {
 		segment?: string
 		team_id?: string
 		owner_id?: string
+		/** A contact-stage id, or 'none' for contacts with no status yet. */
+		stage_id?: string
 	}) => {
 		const queryParams = new URLSearchParams()
 
@@ -1489,6 +1491,12 @@ export const customers = {
 	},
 
 	stats: () => apiRequest('/customers/stats'),
+
+	/** The contact lifecycle stages, in funnel order. */
+	stages: (): Promise<{
+		success: boolean
+		payload: Array<{ id: string; name: string; color: string | null; stage_order: number }>
+	}> => apiRequest('/customers/meta/stages'),
 
 	create: (data: {
 		name: string

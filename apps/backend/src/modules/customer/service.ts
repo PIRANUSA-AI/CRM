@@ -322,6 +322,7 @@ function mapContactToCustomer(
 		window_expires_at: Date | null
 		consent_status: string | null
 		custom_attributes: unknown
+		pipeline_stage_id?: string | null
 		city?: string | null
 		owner_id?: string | null
 		updated_at?: Date | null
@@ -336,10 +337,13 @@ function mapContactToCustomer(
 	extras?: { ownerName?: string | null; dealCount?: number },
 ): CustomerDTO {
 	const customAttributes = parseJsonObject(contact.custom_attributes)
+	// The column is the answer; the JSON key is only consulted for rows written
+	// before it existed, and is not written to any more.
 	const stageId =
-		typeof customAttributes.pipeline_stage_id === 'string'
+		contact.pipeline_stage_id ||
+		(typeof customAttributes.pipeline_stage_id === 'string'
 			? customAttributes.pipeline_stage_id
-			: null
+			: null)
 	const stageMeta = stageId && stageMap ? stageMap.get(stageId) : undefined
 
 	return {
@@ -489,6 +493,8 @@ export abstract class CustomerService {
 		segment?: string
 		teamId?: string
 		ownerId?: string
+		/** A contact-pipeline stage id, or 'none' for contacts with no status. */
+		stageId?: string
 	}) {
 		const targetAppId = await resolveAppId(params.appId)
 		if (!targetAppId)
@@ -527,6 +533,14 @@ export abstract class CustomerService {
 				teamIds.length
 					? Prisma.sql`c.team_id IN (${Prisma.join(teamIds.map((id) => Prisma.sql`${id}::uuid`))})`
 					: Prisma.sql`FALSE`,
+			)
+		}
+
+		if (params.stageId) {
+			whereParts.push(
+				params.stageId === 'none'
+					? Prisma.sql`c.pipeline_stage_id IS NULL`
+					: Prisma.sql`c.pipeline_stage_id = ${params.stageId}::uuid`,
 			)
 		}
 
@@ -655,6 +669,7 @@ export abstract class CustomerService {
 					window_expires_at: true,
 					consent_status: true,
 					custom_attributes: true,
+					pipeline_stage_id: true,
 					city: true,
 					owner_id: true,
 					updated_at: true,
@@ -823,6 +838,7 @@ export abstract class CustomerService {
 				window_expires_at: true,
 				consent_status: true,
 				custom_attributes: true,
+				pipeline_stage_id: true,
 				owner_id: true,
 				city: true,
 				companies: { select: { id: true, name: true } },
@@ -842,12 +858,14 @@ export abstract class CustomerService {
 			prisma.opportunities.count({ where: { contact_id: contact.id } }),
 		])
 
+		// Same precedence as the mapper: the column first, the JSON key only for
+		// rows written before it existed. Reading these two differently is how the
+		// detail page would name a stage the list did not.
 		const stageId =
-			typeof parseJsonObject(contact.custom_attributes).pipeline_stage_id ===
-			'string'
-				? (parseJsonObject(contact.custom_attributes)
-						.pipeline_stage_id as string)
-				: null
+			contact.pipeline_stage_id ||
+			(typeof parseJsonObject(contact.custom_attributes).pipeline_stage_id === 'string'
+				? (parseJsonObject(contact.custom_attributes).pipeline_stage_id as string)
+				: null)
 		const stageMeta =
 			stageId &&
 			(await prisma.pipeline_stages.findUnique({
@@ -1309,19 +1327,21 @@ export abstract class CustomerService {
 
 		const existingCustom = parseJsonObject(existing.custom_attributes)
 		const dynamicCustom = parseJsonObject(data.custom_attributes)
-		let stagePayload: {
-			pipeline_stage_id?: string | null
-			pipeline_stage_name?: string | null
-			pipeline_stage_color?: string | null
-		} = {}
+
+		// The stage goes to contacts.pipeline_stage_id. The three JSON keys it
+		// used to live in are cleared rather than kept in step: two copies of one
+		// fact is what this change exists to remove, and a stale name left behind
+		// would still be read by anything that falls back to the blob.
+		let stageColumn: string | null | undefined
+		const clearedStageKeys = {
+			pipeline_stage_id: undefined,
+			pipeline_stage_name: undefined,
+			pipeline_stage_color: undefined,
+		}
 
 		if (data.pipeline_stage_id !== undefined) {
 			if (!data.pipeline_stage_id) {
-				stagePayload = {
-					pipeline_stage_id: null,
-					pipeline_stage_name: null,
-					pipeline_stage_color: null,
-				}
+				stageColumn = null
 			} else {
 				const appId = existing.app_id || existing.account_id
 				if (!appId) {
@@ -1344,11 +1364,7 @@ export abstract class CustomerService {
 				if (!stage) {
 					throw new Error('Invalid contact stage')
 				}
-				stagePayload = {
-					pipeline_stage_id: stage.id,
-					pipeline_stage_name: stage.name,
-					pipeline_stage_color: stage.color || '#3B82F6',
-				}
+				stageColumn = stage.id
 			}
 		}
 
@@ -1357,7 +1373,7 @@ export abstract class CustomerService {
 			...dynamicCustom,
 			...(data.notes !== undefined ? { notes: data.notes } : {}),
 			...(data.lead_score !== undefined ? { lead_score: data.lead_score } : {}),
-			...stagePayload,
+			...(stageColumn !== undefined ? clearedStageKeys : {}),
 			...(data.consent_purpose !== undefined
 				? { consent_purpose: data.consent_purpose }
 				: {}),
@@ -1377,6 +1393,7 @@ export abstract class CustomerService {
 				...(data.consent_status !== undefined
 					? { consent_status: data.consent_status }
 					: {}),
+				...(stageColumn !== undefined ? { pipeline_stage_id: stageColumn } : {}),
 				custom_attributes: mergedCustom,
 				updated_at: new Date(),
 			},

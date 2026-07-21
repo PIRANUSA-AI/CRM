@@ -70,6 +70,7 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				segment: query.segment,
 				teamId: query.team_id,
 				ownerId: query.owner_id,
+				stageId: query.stage_id,
 			})
 
 			return {
@@ -93,6 +94,7 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 				segment: t.Optional(t.String()),
 				team_id: t.Optional(t.String()),
 				owner_id: t.Optional(t.String()),
+				stage_id: t.Optional(t.String()),
 			}),
 		},
 	)
@@ -254,3 +256,15 @@ export const customer = new Elysia({ prefix: '/customers', tags: ['Customer'] })
 			params: t.Object({ id: t.String(), tagId: t.String() }),
 		},
 	)
+	.get('/meta/stages', async ({ resolvedAppId, set }) => {
+		if (!resolvedAppId) {
+			set.status = 400
+			return { error: 'App ID required' }
+		}
+		const stages = await prisma.pipeline_stages.findMany({
+			where: { pipelines: { app_id: resolvedAppId, pipeline_type: 'contact' } },
+			select: { id: true, name: true, color: true, stage_order: true },
+			orderBy: { stage_order: 'asc' },
+		})
+		return { success: true, payload: stages }
+	})
