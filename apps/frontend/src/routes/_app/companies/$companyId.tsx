@@ -335,318 +335,328 @@ function CompanyDetailPage() {
 				</div>
 			</section>
 
-			{/* About company — edits in place; Simpan appears in the header once
-			    something differs from what was loaded. */}
-			<section className="ocm-card overflow-hidden">
-				<div className="ocm-card-header">
-					<span className="ocm-card-title">Tentang Perusahaan</span>
-					<div className="font-mono text-[11px] text-muted-foreground">
-						ID {company.id.slice(0, 8).toUpperCase()}
-					</div>
-				</div>
-				<div className="grid gap-3 p-4 sm:grid-cols-2">
-					<label className="block sm:col-span-2">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">
-							Nama perusahaan *
-						</span>
-						<input
-							className="ocm-input"
-							value={draft.name}
-							onChange={(event) => setDraft((d) => ({ ...d, name: event.target.value }))}
-						/>
-					</label>
-					<label className="block">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">Website</span>
-						<input
-							className="ocm-input"
-							value={draft.website}
-							onChange={(event) => setDraft((d) => ({ ...d, website: event.target.value }))}
-							placeholder="https://..."
-						/>
-					</label>
-					<label className="block">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">Kota</span>
-						<input
-							className="ocm-input"
-							value={draft.city}
-							onChange={(event) => setDraft((d) => ({ ...d, city: event.target.value }))}
-							placeholder="mis. Jakarta Selatan"
-						/>
-					</label>
-					<label className="block">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">Tipe</span>
-						<select
-							className="ocm-input"
-							value={draft.type}
-							onChange={(event) => setDraft((d) => ({ ...d, type: event.target.value }))}
-						>
-							<option value="perusahaan">Perusahaan</option>
-							<option value="perorangan">Perorangan</option>
-						</select>
-					</label>
-					<label className="block">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">Industri</span>
-						<select
-							className="ocm-input"
-							value={draft.industry}
-							onChange={(event) => setDraft((d) => ({ ...d, industry: event.target.value }))}
-						>
-							<option value="">Belum ditentukan</option>
-							{industries.map((industry) => (
-								<option key={industry.id} value={industry.id}>
-									{industry.label}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="block sm:col-span-2">
-						<span className="mb-1 block text-xs font-medium text-muted-foreground">Catatan</span>
-						<textarea
-							rows={3}
-							className="ocm-input resize-y"
-							value={draft.notes}
-							onChange={(event) => setDraft((d) => ({ ...d, notes: event.target.value }))}
-							placeholder="Konteks akun, sejarah pembelian, dsb."
-						/>
-					</label>
-					{/* Owner is deliberately absent. A company belongs to whoever works
-					    its contacts; giving it an owner of its own would create a second
-					    answer that can disagree with the first. */}
-					<p className="text-[11px] text-muted-foreground sm:col-span-2">
-						Pemilik perusahaan mengikuti sales yang memegang kontaknya — lihat kolom Sales di
-						tabel bawah. Tidak diatur terpisah supaya tidak ada dua jawaban yang bisa berbeda.
-					</p>
-				</div>
-			</section>
-
-			<section className="ocm-card overflow-hidden">
-				<div className="ocm-card-header">
-					<span className="ocm-card-title">Kontak</span>
-					<div className="flex items-center gap-3">
-						<span className="text-xs text-muted-foreground">
-							{company.contacts.length} orang di perusahaan ini
-						</span>
-						<button
-							type="button"
-							className="ocm-btn h-8 gap-1 px-2.5 text-xs"
-							onClick={() => setLinking((current) => !current)}
-						>
-							<Plus size={13} /> Tautkan kontak
-						</button>
-					</div>
-				</div>
-
-				{linking ? (
-					<div className="border-b border-border bg-muted/30 p-3">
-						<input
-							className="ocm-input"
-							value={contactQuery}
-							onChange={(event) => setContactQuery(event.target.value)}
-							placeholder="Cari kontak berdasarkan nama, email, atau nomor..."
-						/>
-						{contactResults.length > 0 ? (
-							<div className="mt-2 max-h-52 overflow-y-auto rounded-lg border border-border bg-background">
-								{contactResults.map((contact) => {
-									const already = company.contacts.some((row) => row.id === contact.id)
-									return (
-										<button
-											key={contact.id}
-											type="button"
-											disabled={already || busyContactId === contact.id}
-											onClick={() => void setContact(contact.id, true)}
-											className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left last:border-0 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-										>
-											<span className="min-w-0">
-												<span className="block truncate text-sm">
-													{contact.name || 'Tanpa nama'}
-												</span>
-												<span className="block truncate text-xs text-muted-foreground">
-													{contact.email || contact.phone_number || '—'}
-												</span>
-											</span>
-											{/* Moving a contact between firms is a real edit, not an
-											    error, so the current employer is stated rather than
-											    the row being hidden. */}
-											<span className="shrink-0 text-[11px] text-muted-foreground">
-												{already
-													? 'Sudah di sini'
-													: contact.company_name
-														? `Kini di ${contact.company_name}`
-														: 'Belum ada perusahaan'}
-											</span>
-										</button>
-									)
-								})}
+			{/* Narrow form on the left, the wide tables and the feed on the right —
+			    the shape of the page the team already reads. Stacks on small
+			    screens, where two columns would leave both too narrow to use. */}
+			<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+				<div className="space-y-5 lg:sticky lg:top-4">
+					{/* Edits in place; Simpan appears in the header once something
+					    differs from what was loaded. */}
+					<section className="ocm-card overflow-hidden">
+						<div className="ocm-card-header">
+							<span className="ocm-card-title">Tentang Perusahaan</span>
+							<div className="font-mono text-[11px] text-muted-foreground">
+								ID {company.id.slice(0, 8).toUpperCase()}
 							</div>
-						) : contactQuery.trim().length >= 2 ? (
-							<p className="mt-2 text-xs text-muted-foreground">Tidak ada kontak yang cocok.</p>
-						) : (
-							<p className="mt-2 text-xs text-muted-foreground">
-								Ketik minimal 2 huruf. Hanya kontak yang jadi tanggung jawab kamu yang muncul.
-							</p>
-						)}
-					</div>
-				) : null}
-				<div className="overflow-x-auto">
-					<div className="min-w-[640px]">
-						<div
-							className={`grid ${CONTACT_COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
-						>
-							<div>Nama</div>
-							<div>Nomor WA</div>
-							<div>Email</div>
-							<div>Sales</div>
-							<div />
 						</div>
-						{company.contacts.map((contact) => (
-							<div
-								key={contact.id}
-								role="button"
-								tabIndex={0}
-								onClick={() =>
-									navigate({
-										to: '/customers/$customerId',
-										params: { customerId: contact.id },
-									})
-								}
-								onKeyDown={(event) => {
-									if (event.key === 'Enter') {
-										navigate({
-											to: '/customers/$customerId',
-											params: { customerId: contact.id },
-										})
-									}
-								}}
-								className={`grid ${CONTACT_COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40`}
-							>
-								<div className="flex min-w-0 items-center gap-2.5">
-									<CrmAvatar name={contact.name || '?'} size={26} />
-									<p className="truncate font-semibold">{contact.name || 'Tanpa nama'}</p>
-								</div>
-								<div className="font-mono text-xs text-muted-foreground">
-									{contact.phone_number || '-'}
-								</div>
-								<div className="truncate text-sm text-muted-foreground">
-									{contact.email || '-'}
-								</div>
-								<div className="truncate text-sm text-muted-foreground">
-									{contact.owner_name || 'Belum ada'}
-								</div>
+						<div className="grid gap-3 p-4">
+							<label className="block sm:col-span-2">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Nama perusahaan *
+								</span>
+								<input
+									className="ocm-input"
+									value={draft.name}
+									onChange={(event) => setDraft((d) => ({ ...d, name: event.target.value }))}
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">Website</span>
+								<input
+									className="ocm-input"
+									value={draft.website}
+									onChange={(event) => setDraft((d) => ({ ...d, website: event.target.value }))}
+									placeholder="https://..."
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">Kota</span>
+								<input
+									className="ocm-input"
+									value={draft.city}
+									onChange={(event) => setDraft((d) => ({ ...d, city: event.target.value }))}
+									placeholder="mis. Jakarta Selatan"
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">Tipe</span>
+								<select
+									className="ocm-input"
+									value={draft.type}
+									onChange={(event) => setDraft((d) => ({ ...d, type: event.target.value }))}
+								>
+									<option value="perusahaan">Perusahaan</option>
+									<option value="perorangan">Perorangan</option>
+								</select>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">Industri</span>
+								<select
+									className="ocm-input"
+									value={draft.industry}
+									onChange={(event) => setDraft((d) => ({ ...d, industry: event.target.value }))}
+								>
+									<option value="">Belum ditentukan</option>
+									{industries.map((industry) => (
+										<option key={industry.id} value={industry.id}>
+											{industry.label}
+										</option>
+									))}
+								</select>
+							</label>
+							<label className="block sm:col-span-2">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">Catatan</span>
+								<textarea
+									rows={3}
+									className="ocm-input resize-y"
+									value={draft.notes}
+									onChange={(event) => setDraft((d) => ({ ...d, notes: event.target.value }))}
+									placeholder="Konteks akun, sejarah pembelian, dsb."
+								/>
+							</label>
+							{/* Owner is deliberately absent. A company belongs to whoever works
+							    its contacts; giving it an owner of its own would create a second
+							    answer that can disagree with the first. */}
+							<p className="border-t border-border pt-3 text-[11px] text-muted-foreground">
+								Pemilik perusahaan mengikuti sales yang memegang kontaknya — lihat kolom Sales di
+								tabel Kontak. Tidak diatur terpisah supaya tidak ada dua jawaban yang bisa berbeda.
+							</p>
+						</div>
+					</section>
+
+				</div>
+
+				<div className="min-w-0 space-y-5">
+					<section className="ocm-card overflow-hidden">
+						<div className="ocm-card-header">
+							<span className="ocm-card-title">Kontak</span>
+							<div className="flex items-center gap-3">
+								<span className="text-xs text-muted-foreground">
+									{company.contacts.length} orang di perusahaan ini
+								</span>
 								<button
 									type="button"
-									title="Lepas dari perusahaan ini"
-									disabled={busyContactId === contact.id}
-									onClick={(event) => {
-										// The row navigates to the contact; detaching must not.
-										event.stopPropagation()
-										void setContact(contact.id, false)
-									}}
-									className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 disabled:opacity-40"
+									className="ocm-btn h-8 gap-1 px-2.5 text-xs"
+									onClick={() => setLinking((current) => !current)}
 								>
-									<X size={14} />
+									<Plus size={13} /> Tautkan kontak
 								</button>
 							</div>
-						))}
-					</div>
-				</div>
-			</section>
-
-			<section className="ocm-card overflow-hidden">
-				<div className="ocm-card-header">
-					<span className="ocm-card-title">Deal</span>
-					<div className="text-xs text-muted-foreground">
-						{company.deals.length} deal · {formatValue(company.deal_value)}
-					</div>
-				</div>
-				{company.deals.length === 0 ? (
-					<div className="p-3">
-						<CrmEmptyState
-							title="Belum ada deal"
-							description="Deal muncul di sini begitu salah satu PIC perusahaan ini punya deal berjalan."
-						/>
-					</div>
-				) : (
-					<div className="overflow-x-auto">
-						<div className="min-w-[680px]">
-							<div
-								className={`grid ${DEAL_COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
-							>
-								<div>Deal</div>
-								<div>Kontak</div>
-								<div>Stage</div>
-								<div className="text-right">Prob.</div>
-								<div className="text-right">Nilai</div>
-							</div>
-							{company.deals.map((deal) => (
-								<div
-									key={deal.id}
-									className={`grid ${DEAL_COLUMNS} items-center border-b border-border px-4 py-2.5 text-sm last:border-0`}
-								>
-									<div className="truncate font-semibold">{deal.name}</div>
-									<div className="truncate text-sm text-muted-foreground">
-										{deal.contact_name || '-'}
-									</div>
-									<div className="text-sm text-muted-foreground">{deal.stage_label}</div>
-									<div className="text-right font-mono text-sm text-muted-foreground">
-										{deal.probability ?? 0}%
-									</div>
-									<div className="text-right font-mono text-sm">{formatValue(deal.value)}</div>
-								</div>
-							))}
 						</div>
-					</div>
-				)}
-			</section>
 
-			<section className="ocm-card overflow-hidden">
-				<div className="ocm-card-header">
-					<span className="ocm-card-title">Aktivitas</span>
-					<div className="text-xs text-muted-foreground">
-						{timeline.length} kejadian terakhir
-					</div>
-				</div>
-				{timeline.length === 0 ? (
-					<div className="p-3">
-						<CrmEmptyState
-							title="Belum ada aktivitas"
-							description="Perubahan data, kontak yang ditautkan, dan pergerakan deal akan muncul di sini."
-						/>
-					</div>
-				) : (
-					<ol className="p-4">
-						{timeline.map((event, index) => (
-							<li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
-								{/* The rail stops at the last item so the feed does not look
-								    like it continues past what was loaded. */}
-								{index < timeline.length - 1 ? (
-									<span className="absolute left-[5px] top-4 h-full w-px bg-border" />
-								) : null}
-								<span
-									className={`relative mt-1.5 size-2.5 shrink-0 rounded-full ${TONE_DOT[event.tone]}`}
+						{linking ? (
+							<div className="border-b border-border bg-muted/30 p-3">
+								<input
+									className="ocm-input"
+									value={contactQuery}
+									onChange={(event) => setContactQuery(event.target.value)}
+									placeholder="Cari kontak berdasarkan nama, email, atau nomor..."
 								/>
-								<div className="min-w-0 flex-1">
-									<div className="flex flex-wrap items-baseline justify-between gap-x-3">
-										<p className="text-sm font-semibold">{event.title}</p>
-										<time className="shrink-0 text-[11px] text-muted-foreground">
-											{formatMoment(event.at)}
-										</time>
+								{contactResults.length > 0 ? (
+									<div className="mt-2 max-h-52 overflow-y-auto rounded-lg border border-border bg-background">
+										{contactResults.map((contact) => {
+											const already = company.contacts.some((row) => row.id === contact.id)
+											return (
+												<button
+													key={contact.id}
+													type="button"
+													disabled={already || busyContactId === contact.id}
+													onClick={() => void setContact(contact.id, true)}
+													className="flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left last:border-0 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+												>
+													<span className="min-w-0">
+														<span className="block truncate text-sm">
+															{contact.name || 'Tanpa nama'}
+														</span>
+														<span className="block truncate text-xs text-muted-foreground">
+															{contact.email || contact.phone_number || '—'}
+														</span>
+													</span>
+													{/* Moving a contact between firms is a real edit, not an
+													    error, so the current employer is stated rather than
+													    the row being hidden. */}
+													<span className="shrink-0 text-[11px] text-muted-foreground">
+														{already
+															? 'Sudah di sini'
+															: contact.company_name
+																? `Kini di ${contact.company_name}`
+																: 'Belum ada perusahaan'}
+													</span>
+												</button>
+											)
+										})}
 									</div>
-									{event.description ? (
-										<p className="mt-0.5 break-words text-xs text-muted-foreground">
-											{event.description}
-										</p>
-									) : null}
-									{event.actorName ? (
-										<p className="mt-0.5 text-[11px] text-muted-foreground">
-											oleh {event.actorName}
-										</p>
-									) : null}
+								) : contactQuery.trim().length >= 2 ? (
+									<p className="mt-2 text-xs text-muted-foreground">Tidak ada kontak yang cocok.</p>
+								) : (
+									<p className="mt-2 text-xs text-muted-foreground">
+										Ketik minimal 2 huruf. Hanya kontak yang jadi tanggung jawab kamu yang muncul.
+									</p>
+								)}
+							</div>
+						) : null}
+						<div className="overflow-x-auto">
+							<div className="min-w-[640px]">
+								<div
+									className={`grid ${CONTACT_COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
+								>
+									<div>Nama</div>
+									<div>Nomor WA</div>
+									<div>Email</div>
+									<div>Sales</div>
+									<div />
 								</div>
-							</li>
-						))}
-					</ol>
-				)}
-			</section>
+								{company.contacts.map((contact) => (
+									<div
+										key={contact.id}
+										role="button"
+										tabIndex={0}
+										onClick={() =>
+											navigate({
+												to: '/customers/$customerId',
+												params: { customerId: contact.id },
+											})
+										}
+										onKeyDown={(event) => {
+											if (event.key === 'Enter') {
+												navigate({
+													to: '/customers/$customerId',
+													params: { customerId: contact.id },
+												})
+											}
+										}}
+										className={`grid ${CONTACT_COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40`}
+									>
+										<div className="flex min-w-0 items-center gap-2.5">
+											<CrmAvatar name={contact.name || '?'} size={26} />
+											<p className="truncate font-semibold">{contact.name || 'Tanpa nama'}</p>
+										</div>
+										<div className="font-mono text-xs text-muted-foreground">
+											{contact.phone_number || '-'}
+										</div>
+										<div className="truncate text-sm text-muted-foreground">
+											{contact.email || '-'}
+										</div>
+										<div className="truncate text-sm text-muted-foreground">
+											{contact.owner_name || 'Belum ada'}
+										</div>
+										<button
+											type="button"
+											title="Lepas dari perusahaan ini"
+											disabled={busyContactId === contact.id}
+											onClick={(event) => {
+												// The row navigates to the contact; detaching must not.
+												event.stopPropagation()
+												void setContact(contact.id, false)
+											}}
+											className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-600 disabled:opacity-40"
+										>
+											<X size={14} />
+										</button>
+									</div>
+								))}
+							</div>
+						</div>
+					</section>
+
+					<section className="ocm-card overflow-hidden">
+						<div className="ocm-card-header">
+							<span className="ocm-card-title">Deal</span>
+							<div className="text-xs text-muted-foreground">
+								{company.deals.length} deal · {formatValue(company.deal_value)}
+							</div>
+						</div>
+						{company.deals.length === 0 ? (
+							<div className="p-3">
+								<CrmEmptyState
+									title="Belum ada deal"
+									description="Deal muncul di sini begitu salah satu PIC perusahaan ini punya deal berjalan."
+								/>
+							</div>
+						) : (
+							<div className="overflow-x-auto">
+								<div className="min-w-[680px]">
+									<div
+										className={`grid ${DEAL_COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
+									>
+										<div>Deal</div>
+										<div>Kontak</div>
+										<div>Stage</div>
+										<div className="text-right">Prob.</div>
+										<div className="text-right">Nilai</div>
+									</div>
+									{company.deals.map((deal) => (
+										<div
+											key={deal.id}
+											className={`grid ${DEAL_COLUMNS} items-center border-b border-border px-4 py-2.5 text-sm last:border-0`}
+										>
+											<div className="truncate font-semibold">{deal.name}</div>
+											<div className="truncate text-sm text-muted-foreground">
+												{deal.contact_name || '-'}
+											</div>
+											<div className="text-sm text-muted-foreground">{deal.stage_label}</div>
+											<div className="text-right font-mono text-sm text-muted-foreground">
+												{deal.probability ?? 0}%
+											</div>
+											<div className="text-right font-mono text-sm">{formatValue(deal.value)}</div>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+					</section>
+
+					<section className="ocm-card overflow-hidden">
+						<div className="ocm-card-header">
+							<span className="ocm-card-title">Aktivitas</span>
+							<div className="text-xs text-muted-foreground">
+								{timeline.length} kejadian terakhir
+							</div>
+						</div>
+						{timeline.length === 0 ? (
+							<div className="p-3">
+								<CrmEmptyState
+									title="Belum ada aktivitas"
+									description="Perubahan data, kontak yang ditautkan, dan pergerakan deal akan muncul di sini."
+								/>
+							</div>
+						) : (
+							<ol className="p-4">
+								{timeline.map((event, index) => (
+									<li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
+										{/* The rail stops at the last item so the feed does not look
+										    like it continues past what was loaded. */}
+										{index < timeline.length - 1 ? (
+											<span className="absolute left-[5px] top-4 h-full w-px bg-border" />
+										) : null}
+										<span
+											className={`relative mt-1.5 size-2.5 shrink-0 rounded-full ${TONE_DOT[event.tone]}`}
+										/>
+										<div className="min-w-0 flex-1">
+											<div className="flex flex-wrap items-baseline justify-between gap-x-3">
+												<p className="text-sm font-semibold">{event.title}</p>
+												<time className="shrink-0 text-[11px] text-muted-foreground">
+													{formatMoment(event.at)}
+												</time>
+											</div>
+											{event.description ? (
+												<p className="mt-0.5 break-words text-xs text-muted-foreground">
+													{event.description}
+												</p>
+											) : null}
+											{event.actorName ? (
+												<p className="mt-0.5 text-[11px] text-muted-foreground">
+													oleh {event.actorName}
+												</p>
+											) : null}
+										</div>
+									</li>
+								))}
+							</ol>
+						)}
+					</section>
+				</div>
+			</div>
 		</main>
 	)
 }
