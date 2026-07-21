@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Building2, Loader2, Search } from 'lucide-react'
+import { Building2, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { companies as companiesApi, type CompanyRow } from '@/lib/api'
@@ -14,7 +14,8 @@ const IDR_FORMATTER = new Intl.NumberFormat('id-ID', {
 	maximumFractionDigits: 0,
 })
 
-const PAGE_SIZE = 20
+/** Same page size as the Kontak list, so the two read as one product. */
+const COMPANY_PAGE_SIZE = 10
 
 function formatValue(amount: number): string {
 	if (!amount) return '-'
@@ -36,6 +37,8 @@ function formatLastActivity(value: string | null): string {
 	const months = Math.floor(days / 30)
 	return `${months} bulan lalu`
 }
+
+const COLUMNS = 'grid-cols-[30px_1.8fr_150px_90px_90px_160px_170px]'
 
 function CompaniesPage() {
 	const navigate = useNavigate()
@@ -62,7 +65,7 @@ function CompaniesPage() {
 		setLoadError(false)
 
 		companiesApi
-			.list({ page, per_page: PAGE_SIZE, search: appliedSearch || undefined })
+			.list({ page, per_page: COMPANY_PAGE_SIZE, search: appliedSearch || undefined })
 			.then((response) => {
 				if (cancelled) return
 				setRows(Array.isArray(response?.payload) ? response.payload : [])
@@ -82,61 +85,138 @@ function CompaniesPage() {
 		}
 	}, [page, appliedSearch])
 
-	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-	const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-	const pageEnd = Math.min(page * PAGE_SIZE, total)
+	const totalPages = Math.max(1, Math.ceil(total / COMPANY_PAGE_SIZE))
+	const clampedPage = Math.min(page, totalPages)
+	const pageStart = total === 0 ? 0 : (clampedPage - 1) * COMPANY_PAGE_SIZE + 1
+	const pageEnd = Math.min(clampedPage * COMPANY_PAGE_SIZE, total)
 
-	const summary = useMemo(() => {
-		const contacts = rows.reduce((sum, row) => sum + row.contact_count, 0)
-		const value = rows.reduce((sum, row) => sum + row.deal_value, 0)
-		return { contacts, value }
+	// A five-wide window that slides with the current page, same as the Kontak
+	// list: enough to jump a few pages without printing every page number.
+	const pageNumbers = useMemo(() => {
+		const start = Math.max(1, clampedPage - 2)
+		const end = Math.min(totalPages, start + 4)
+		const adjustedStart = Math.max(1, end - 4)
+		return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index)
+	}, [clampedPage, totalPages])
+
+	const goToPage = (target: number) => {
+		const next = Math.min(Math.max(1, target), totalPages)
+		if (next === page && rows.length > 0) return
+		setPage(next)
+	}
+
+	const listStatusLabel = loading
+		? 'Memuat...'
+		: appliedSearch
+			? `${total.toLocaleString('id-ID')} cocok dengan "${appliedSearch}"`
+			: `${total.toLocaleString('id-ID')} perusahaan`
+
+	// Computed from the rows on screen rather than the whole set, so each panel
+	// says "Dari halaman ini" instead of implying it describes every company.
+	const cityDistribution = useMemo(() => {
+		if (rows.length === 0) return []
+		const counts = new Map<string, number>()
+		for (const row of rows) {
+			const city = row.city?.trim() || 'Tanpa kota'
+			counts.set(city, (counts.get(city) || 0) + 1)
+		}
+		return [...counts.entries()]
+			.map(([city, count]) => ({ city, count, share: Math.round((count / rows.length) * 100) }))
+			.sort((a, b) => b.count - a.count)
+			.slice(0, 5)
 	}, [rows])
 
+	const topByValue = useMemo(
+		() =>
+			[...rows]
+				.filter((row) => row.deal_value > 0)
+				.sort((a, b) => b.deal_value - a.deal_value)
+				.slice(0, 5),
+		[rows],
+	)
+
+	const topByContacts = useMemo(
+		() =>
+			[...rows]
+				.filter((row) => row.contact_count > 1)
+				.sort((a, b) => b.contact_count - a.contact_count)
+				.slice(0, 5),
+		[rows],
+	)
+
+	const openDetail = (companyId: string) =>
+		navigate({ to: '/companies/$companyId', params: { companyId } })
+
 	return (
-		<div className="space-y-4">
+		<main className="ocm-page">
 			<CrmSectionHeader
 				title="Perusahaan"
-				subtitle="Firma yang jadi tempat kontak kamu bekerja. Satu perusahaan bisa punya beberapa PIC."
+				subtitle={`${total.toLocaleString('id-ID')} perusahaan · firma tempat kontak bekerja, satu bisa punya beberapa PIC`}
 			/>
 
-			<section className="ocm-card">
-				<div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-					<div className="relative min-w-56 flex-1 max-w-sm">
-						<Search
-							size={14}
-							className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-						/>
-						<input
-							type="search"
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-							placeholder="Cari nama perusahaan..."
-							className="ocm-input h-9 w-full pl-9 text-sm"
-						/>
-					</div>
-					{loading ? (
-						<Loader2 size={16} className="animate-spin text-muted-foreground" />
-					) : null}
+			<div className="flex flex-wrap items-center gap-2">
+				<div className="relative">
+					<Search
+						size={14}
+						className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+					/>
+					<input
+						type="search"
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						placeholder="Cari nama perusahaan..."
+						className="w-64 rounded-full border border-border bg-card py-1.5 pl-9 pr-3 text-[11px] font-semibold placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+					/>
+				</div>
+				{appliedSearch ? (
+					<button
+						type="button"
+						onClick={() => setSearch('')}
+						className="rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted-foreground underline hover:text-foreground"
+					>
+						Reset
+					</button>
+				) : null}
+			</div>
+
+			<section className="ocm-card overflow-hidden">
+				<div className="ocm-card-header">
+					<h2 className="ocm-card-title">Daftar Perusahaan</h2>
+					<div className="text-xs text-muted-foreground">{listStatusLabel}</div>
 				</div>
 
-				{loadError && rows.length === 0 ? (
-					<CrmEmptyState
-						title="Gagal memuat perusahaan"
-						description="Coba refresh halaman. Kalau masih gagal, cek koneksi ke server."
-					/>
-				) : !loading && rows.length === 0 ? (
-					<CrmEmptyState
-						title={appliedSearch ? 'Tidak ada yang cocok' : 'Belum ada perusahaan'}
-						description={
-							appliedSearch
-								? `Tidak ada perusahaan dengan nama "${appliedSearch}".`
-								: 'Perusahaan dibuat otomatis saat kamu mengisi kolom perusahaan di kontak, prospek, atau import.'
-						}
-					/>
+				{loading && rows.length === 0 ? (
+					<div className="p-4 text-sm text-muted-foreground">Memuat perusahaan...</div>
+				) : loadError && rows.length === 0 ? (
+					<div className="p-3">
+						<CrmEmptyState
+							title="Gagal memuat perusahaan"
+							description="Coba refresh halaman. Kalau masih gagal, cek koneksi ke server."
+							action={
+								<button type="button" className="ocm-btn" onClick={() => goToPage(1)}>
+									Coba lagi
+								</button>
+							}
+						/>
+					</div>
+				) : rows.length === 0 ? (
+					<div className="p-3">
+						<CrmEmptyState
+							title={appliedSearch ? 'Tidak ada yang cocok' : 'Belum ada perusahaan'}
+							description={
+								appliedSearch
+									? `Tidak ada perusahaan dengan nama "${appliedSearch}".`
+									: 'Perusahaan dibuat otomatis saat kolom perusahaan diisi di kontak, prospek, atau import.'
+							}
+						/>
+					</div>
 				) : (
 					<div className="overflow-x-auto">
-						<div className="min-w-[820px]">
-							<div className="grid grid-cols-[2fr_120px_90px_80px_150px_160px] items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+						<div className="min-w-[880px]">
+							<div
+								className={`grid ${COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
+							>
+								<div />
 								<div>Perusahaan</div>
 								<div>Kota</div>
 								<div className="text-right">Kontak</div>
@@ -149,28 +229,26 @@ function CompaniesPage() {
 									key={row.id}
 									role="button"
 									tabIndex={0}
-									onClick={() =>
-										navigate({ to: '/companies/$companyId', params: { companyId: row.id } })
-									}
+									onClick={() => openDetail(row.id)}
 									onKeyDown={(event) => {
-										if (event.key === 'Enter') {
-											navigate({
-												to: '/companies/$companyId',
-												params: { companyId: row.id },
-											})
-										}
+										if (event.key === 'Enter') openDetail(row.id)
 									}}
-									className="grid cursor-pointer grid-cols-[2fr_120px_90px_80px_150px_160px] items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40"
+									className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40`}
 								>
-									<div className="flex min-w-0 items-center gap-2.5">
-										<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+									<div>
+										<span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground">
 											<Building2 size={14} />
 										</span>
+									</div>
+									<div className="min-w-0 pr-3">
 										<p className="truncate font-semibold">{row.name}</p>
+										{row.website ? (
+											<p className="truncate text-[11px] text-muted-foreground">
+												{row.website.replace(/^https?:\/\//, '')}
+											</p>
+										) : null}
 									</div>
-									<div className="truncate text-sm text-muted-foreground">
-										{row.city || '-'}
-									</div>
+									<div className="truncate text-sm text-muted-foreground">{row.city || '-'}</div>
 									<div className="text-right font-mono text-sm">{row.contact_count}</div>
 									<div className="text-right font-mono text-sm">{row.deal_count}</div>
 									<div
@@ -189,42 +267,144 @@ function CompaniesPage() {
 					</div>
 				)}
 
-				{rows.length > 0 ? (
+				{!(loading && rows.length === 0) && !(loadError && rows.length === 0) ? (
 					<div className="border-t border-border px-4 py-3">
 						<div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
 							<div>
-								Menampilkan {pageStart.toLocaleString('id-ID')}-
-								{pageEnd.toLocaleString('id-ID')} dari {total.toLocaleString('id-ID')}{' '}
-								perusahaan
-								{summary.contacts > 0
-									? ` · ${summary.contacts.toLocaleString('id-ID')} kontak di halaman ini`
-									: ''}
+								{loadError
+									? 'Gagal memuat halaman. Coba pindah halaman atau refresh.'
+									: loading
+										? 'Memuat halaman perusahaan...'
+										: total === 0
+											? 'Tidak ada perusahaan'
+											: `Menampilkan ${pageStart.toLocaleString('id-ID')}-${pageEnd.toLocaleString('id-ID')} dari ${total.toLocaleString('id-ID')} perusahaan`}
 							</div>
-							<div className="flex items-center gap-1">
+							<div className="flex flex-wrap items-center gap-1">
 								<button
 									type="button"
 									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-									onClick={() => setPage((current) => Math.max(1, current - 1))}
-									disabled={loading || page <= 1}
+									onClick={() => goToPage(1)}
+									disabled={loading || clampedPage <= 1}
+								>
+									Awal
+								</button>
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => goToPage(clampedPage - 1)}
+									disabled={loading || clampedPage <= 1}
 								>
 									Sebelumnya
 								</button>
-								<span className="px-2 font-mono">
-									{page} / {totalPages}
-								</span>
+								{pageNumbers.map((pageNumber) => (
+									<button
+										type="button"
+										key={pageNumber}
+										onClick={() => goToPage(pageNumber)}
+										disabled={loading || pageNumber === clampedPage}
+										className={`h-8 min-w-8 rounded-lg border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+											pageNumber === clampedPage
+												? 'border-primary bg-primary text-primary-foreground'
+												: 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'
+										}`}
+									>
+										{pageNumber.toLocaleString('id-ID')}
+									</button>
+								))}
 								<button
 									type="button"
 									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-									onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-									disabled={loading || page >= totalPages}
+									onClick={() => goToPage(clampedPage + 1)}
+									disabled={loading || clampedPage >= totalPages}
 								>
 									Berikutnya
+								</button>
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => goToPage(totalPages)}
+									disabled={loading || clampedPage >= totalPages}
+								>
+									Akhir
 								</button>
 							</div>
 						</div>
 					</div>
 				) : null}
 			</section>
-		</div>
+
+			<div className="ocm-grid-3">
+				<section className="ocm-card p-4">
+					<h2 className="text-sm font-semibold">Distribusi Kota</h2>
+					<p className="mt-0.5 text-[11px] text-muted-foreground">Dari halaman ini</p>
+					{cityDistribution.length === 0 ? (
+						<p className="mt-3 text-sm text-muted-foreground">Belum ada data kota.</p>
+					) : (
+						<div className="mt-3 space-y-2.5">
+							{cityDistribution.map((item) => (
+								<div key={item.city}>
+									<div className="mb-1 flex items-center justify-between text-xs">
+										<span className="truncate">{item.city}</span>
+										<span className="font-mono text-[11px] text-muted-foreground">
+											{item.share}%
+										</span>
+									</div>
+									<div className="ocm-progress-track">
+										<div
+											className="ocm-progress-bar"
+											style={{ width: `${Math.min(item.share, 100)}%` }}
+										/>
+									</div>
+								</div>
+							))}
+						</div>
+					)}
+				</section>
+
+				<section className="ocm-card p-4">
+					<h2 className="text-sm font-semibold">Nilai Deal Teratas</h2>
+					<p className="mt-0.5 text-[11px] text-muted-foreground">Dari halaman ini</p>
+					{topByValue.length === 0 ? (
+						<p className="mt-3 text-sm text-muted-foreground">
+							Belum ada deal bernilai di halaman ini.
+						</p>
+					) : (
+						<div className="mt-3 space-y-2">
+							{topByValue.map((row) => (
+								<div key={row.id} className="flex items-center justify-between gap-2 text-xs">
+									<span className="truncate">{row.name}</span>
+									<span className="shrink-0 font-mono text-[11px]">
+										{formatValue(row.deal_value)}
+									</span>
+								</div>
+							))}
+						</div>
+					)}
+				</section>
+
+				<section className="ocm-card p-4">
+					<h2 className="text-sm font-semibold">PIC Terbanyak</h2>
+					<p className="mt-0.5 text-[11px] text-muted-foreground">
+						Perusahaan dengan lebih dari satu kontak
+					</p>
+					{topByContacts.length === 0 ? (
+						<p className="mt-3 text-sm text-muted-foreground">
+							Belum ada perusahaan dengan lebih dari satu PIC di halaman ini.
+						</p>
+					) : (
+						<div className="mt-3 space-y-2">
+							{topByContacts.map((row) => (
+								<div key={row.id} className="flex items-center justify-between gap-2 text-xs">
+									<span className="truncate">{row.name}</span>
+									<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+										{row.contact_count} PIC
+									</span>
+								</div>
+							))}
+						</div>
+					)}
+				</section>
+			</div>
+		</main>
 	)
 }
