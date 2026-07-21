@@ -27,6 +27,9 @@ type CustomerDTO = {
 	email: string | null
 	phone_number: string | null
 	avatar_url: string | null
+	company_id: string | null
+	company_name: string | null
+	owner_id: string | null
 	source: string | null
 	created_at: Date | null
 	last_contact_at: Date | null
@@ -315,6 +318,8 @@ function mapContactToCustomer(
 		window_expires_at: Date | null
 		consent_status: string | null
 		custom_attributes: unknown
+		owner_id?: string | null
+		companies?: { id: string; name: string } | null
 	},
 	messageCount: number,
 	lastContactAt: Date | null,
@@ -335,6 +340,11 @@ function mapContactToCustomer(
 		email: contact.email,
 		phone_number: contact.phone_number,
 		avatar_url: contact.avatar_url,
+		// Carried so a picker can show which firm a contact belongs to at the
+		// moment it is chosen, instead of naming a person with no context.
+		company_id: contact.companies?.id ?? null,
+		company_name: contact.companies?.name ?? null,
+		owner_id: contact.owner_id ?? null,
 		source: contact.source || contact.channel_type || 'direct',
 		created_at: contact.created_at,
 		last_contact_at: lastContactAt,
@@ -628,6 +638,8 @@ export abstract class CustomerService {
 					window_expires_at: true,
 					consent_status: true,
 					custom_attributes: true,
+					owner_id: true,
+					companies: { select: { id: true, name: true } },
 				},
 			}),
 			prisma.contact_tag_assignments.findMany({

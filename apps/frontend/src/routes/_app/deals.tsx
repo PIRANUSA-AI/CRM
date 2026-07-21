@@ -6,6 +6,8 @@ import {
 	RefreshCw,
 	Search,
 	TriangleAlert,
+	Building2,
+	Plus,
 	UserPlus,
 	UserRound,
 } from 'lucide-react'
@@ -23,6 +25,7 @@ import {
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { isSupervisorRole } from '@/lib/role-access'
 import {
+	customers as customersApi,
 	opportunities as dealsApi,
 	type DealBucket,
 	type DealColumn,
@@ -43,6 +46,16 @@ export const Route = createFileRoute('/_app/deals')({
 })
 
 type ViewMode = 'table' | 'board'
+
+/** The fields the contact picker needs; the customers list carries more. */
+type ContactOption = {
+	id: string
+	name: string | null
+	email: string | null
+	phone_number: string | null
+	company_name: string | null
+	owner_id: string | null
+}
 
 /** Rows per table page, and cards per board column — the column heading still
  *  reports the real count, so a capped column says how many it is hiding. */
@@ -361,6 +374,92 @@ function DealsPage() {
 		[columns, query, bucket],
 	)
 
+	// Creating a deal by hand. Most deals open themselves when a lead is
+	// assigned, but a deal that started as a phone call has no lead behind it,
+	// and until now there was no way to record one.
+	const [creating, setCreating] = useState(false)
+	const [newDeal, setNewDeal] = useState({
+		name: '',
+		product: '',
+		value: '',
+		stage: '',
+		contactId: '',
+	})
+	const [contactQuery, setContactQuery] = useState('')
+	const [contactResults, setContactResults] = useState<ContactOption[]>([])
+	const [pickedContact, setPickedContact] = useState<ContactOption | null>(null)
+	const [creatingBusy, setCreatingBusy] = useState(false)
+
+	// Searched server-side, so a sales only ever finds contacts that are theirs.
+	useEffect(() => {
+		if (!creating) return
+		const term = contactQuery.trim()
+		if (term.length < 2) {
+			setContactResults([])
+			return
+		}
+		let cancelled = false
+		const timer = setTimeout(() => {
+			void customersApi
+				.list({ search: term, per_page: 8 })
+				.then((response: any) => {
+					if (cancelled) return
+					setContactResults(response?.data || response?.payload || [])
+				})
+				.catch(() => undefined)
+		}, 250)
+		return () => {
+			cancelled = true
+			clearTimeout(timer)
+		}
+	}, [contactQuery, creating])
+
+	const openCreate = useCallback(() => {
+		setNewDeal({ name: '', product: '', value: '', stage: stages[0]?.id || '', contactId: '' })
+		setContactQuery('')
+		setContactResults([])
+		setPickedContact(null)
+		setCreating(true)
+	}, [stages])
+
+	const submitCreate = useCallback(async () => {
+		const name = newDeal.name.trim()
+		if (!name) {
+			setError('Nama deal wajib diisi.')
+			return
+		}
+		if (!pickedContact) {
+			setError('Pilih kontak untuk deal ini.')
+			return
+		}
+		const raw = newDeal.value.trim()
+		const value = raw === '' ? null : Number(raw.replace(/[^0-9]/g, ''))
+		if (value !== null && !Number.isFinite(value)) {
+			setError('Nilai deal harus berupa angka.')
+			return
+		}
+		setCreatingBusy(true)
+		setError(null)
+		try {
+			await dealsApi.create({
+				name,
+				contactId: pickedContact.id,
+				product: newDeal.product.trim() || null,
+				value,
+				stage: newDeal.stage || undefined,
+				// The deal follows whoever already works the contact, so an
+				// administrator filing one does not become its owner by accident.
+				ownerId: pickedContact.owner_id || undefined,
+			})
+			setCreating(false)
+			await load()
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Deal belum dapat dibuat.')
+		} finally {
+			setCreatingBusy(false)
+		}
+	}, [newDeal, pickedContact, load])
+
 	const visible = deals
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -375,7 +474,15 @@ function DealsPage() {
 				}
 				actions={
 					<>
-						<button
+<button
+							type="button"
+							className="ocm-btn bg-primary text-primary-foreground hover:bg-primary/90"
+							onClick={openCreate}
+							disabled={loading || stages.length === 0}
+						>
+							<Plus size={14} /> Tambah Deal
+						</button>
+												<button
 							type='button'
 							className='ocm-btn'
 							onClick={() => navigate({ to: '/prospek' })}
@@ -610,6 +717,173 @@ function DealsPage() {
 					/>
 				)}
 			</div>
+
+			<Dialog
+				open={creating}
+				onOpenChange={(open) => !creatingBusy && !open && setCreating(false)}
+			>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle>Tambah Deal</DialogTitle>
+						<DialogDescription>
+							Untuk deal yang tidak datang dari lead — misalnya hasil telepon atau
+							pertemuan langsung.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-3">
+						<label className="block">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Nama deal *
+							</span>
+							<input
+								className="ocm-input"
+								value={newDeal.name}
+								onChange={(event) => setNewDeal((d) => ({ ...d, name: event.target.value }))}
+								placeholder="mis. ZWCAD 2026 — 10 seat"
+							/>
+						</label>
+
+						<div className="block">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Kontak *
+							</span>
+							{pickedContact ? (
+								<div className="flex items-start justify-between gap-2 rounded-lg border border-border p-2.5">
+									<div className="min-w-0">
+										<p className="truncate text-sm font-semibold">
+											{pickedContact.name || 'Tanpa nama'}
+										</p>
+										<p className="truncate text-xs text-muted-foreground">
+											{pickedContact.email || pickedContact.phone_number || '—'}
+										</p>
+										{/* The firm is shown, not chosen: it follows the contact, which
+										    is the whole reason the two are linked. */}
+										{pickedContact.company_name ? (
+											<p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+												<Building2 size={11} className="shrink-0" />
+												{pickedContact.company_name}
+											</p>
+										) : (
+											<p className="mt-0.5 text-xs text-muted-foreground">
+												Belum terhubung ke perusahaan
+											</p>
+										)}
+									</div>
+									<button
+										type="button"
+										className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+										onClick={() => {
+											setPickedContact(null)
+											setContactQuery('')
+										}}
+									>
+										Ganti
+									</button>
+								</div>
+							) : (
+								<>
+									<input
+										className="ocm-input"
+										value={contactQuery}
+										onChange={(event) => setContactQuery(event.target.value)}
+										placeholder="Cari nama, email, atau nomor..."
+									/>
+									{contactResults.length > 0 ? (
+										<div className="mt-1 max-h-44 overflow-y-auto rounded-lg border border-border">
+											{contactResults.map((contact) => (
+												<button
+													key={contact.id}
+													type="button"
+													onClick={() => setPickedContact(contact)}
+													className="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-muted/50"
+												>
+													<span className="block truncate text-sm">
+														{contact.name || 'Tanpa nama'}
+													</span>
+													<span className="block truncate text-xs text-muted-foreground">
+														{contact.company_name || contact.email || contact.phone_number || '—'}
+													</span>
+												</button>
+											))}
+										</div>
+									) : contactQuery.trim().length >= 2 ? (
+										<p className="mt-1 text-xs text-muted-foreground">
+											Tidak ada kontak yang cocok.
+										</p>
+									) : null}
+								</>
+							)}
+						</div>
+
+						<div className="grid gap-3 sm:grid-cols-2">
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Produk
+								</span>
+								<input
+									className="ocm-input"
+									value={newDeal.product}
+									onChange={(event) =>
+										setNewDeal((d) => ({ ...d, product: event.target.value }))
+									}
+									placeholder="mis. ZWCAD 2026 Professional"
+								/>
+							</label>
+							<label className="block">
+								<span className="mb-1 block text-xs font-medium text-muted-foreground">
+									Nilai (Rp)
+								</span>
+								<input
+									className="ocm-input text-right tabular-nums"
+									inputMode="numeric"
+									value={newDeal.value}
+									onChange={(event) => setNewDeal((d) => ({ ...d, value: event.target.value }))}
+									placeholder="Kosongkan bila belum tahu"
+								/>
+							</label>
+						</div>
+
+						<label className="block">
+							<span className="mb-1 block text-xs font-medium text-muted-foreground">
+								Tahap
+							</span>
+							<select
+								className="ocm-input"
+								value={newDeal.stage}
+								onChange={(event) => setNewDeal((d) => ({ ...d, stage: event.target.value }))}
+							>
+								{stages.map((stage) => (
+									<option key={stage.id} value={stage.id}>
+										{stage.label}
+									</option>
+								))}
+							</select>
+						</label>
+					</div>
+
+					<DialogFooter>
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => setCreating(false)}
+							disabled={creatingBusy}
+						>
+							Batal
+						</button>
+						<button
+							type="button"
+							className="ocm-btn bg-primary text-primary-foreground hover:bg-primary/90"
+							onClick={() => void submitCreate()}
+							disabled={creatingBusy || !newDeal.name.trim() || !pickedContact}
+						>
+							{creatingBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+							Simpan
+						</button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
 
 			<Dialog open={Boolean(editing)} onOpenChange={(open) => !saving && !open && setEditing(null)}>
 				<DialogContent className="sm:max-w-lg">
