@@ -3,7 +3,7 @@ import { CheckCircle2, Sparkles, TriangleAlert, UserPlus } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmSectionHeader } from '@/components/crm/shared'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
-import { isSupervisorRole } from '@/lib/role-access'
+import { isMultiTeamRole } from '@/lib/role-access'
 import { leadImport, prospects, type ProspectChannel } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/prospek')({
@@ -48,16 +48,16 @@ function ProspekPage() {
 	const [saving, setSaving] = useState(false)
 	const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-	// A supervisor hands the prospect to whoever will work it; a sales always
-	// keeps their own, so the picker is only rendered above sales. This is
-	// isSupervisorRole rather than a hand-written list because spelling the
-	// roles out here is exactly how the administrator tier was missed when it
-	// was introduced: the backend requires an assignee from anyone overseeing
-	// more than one team, but this form rendered no picker for them, so an
-	// administrator could only ever be rejected — the form was unusable rather
-	// than merely inconvenient.
+	// Only the administrator tier picks an assignee. A lead entered here is one
+	// the person sourced themselves, and a leader sells alongside their team, so
+	// a leader keeps their own prospect exactly as a sales does. An administrator
+	// oversees every team and carries no leads, so theirs must name an owner.
+	//
+	// isMultiTeamRole rather than a hand-written role list: spelling the roles
+	// out here is how the administrator tier got missed when it was added, which
+	// left the backend demanding an assignee this form never offered.
 	const currentUser = useCurrentUser()
-	const isSupervisor = isSupervisorRole(currentUser?.role)
+	const isMultiTeam = isMultiTeamRole(currentUser?.role)
 	const [salesOptions, setSalesOptions] = useState<
 		Array<{
 			userId: string
@@ -70,16 +70,15 @@ function ProspekPage() {
 	const [assigneeId, setAssigneeId] = useState('')
 
 	useEffect(() => {
-		if (!isSupervisor) return
+		if (!isMultiTeam) return
 		let active = true
 		void leadImport
 			.assignables()
 			.then((response) => {
 				if (!active) return
-				// No self-filter: the backend already lists only who can carry a
-				// lead (sales and leaders), so an administrator is absent from it
-				// by construction, while a leader sells alongside their team and
-				// may legitimately keep the prospect.
+				// No self-filter needed: the backend lists only who can carry a
+				// lead (sales and leaders), so the administrator asking is absent
+				// from their own list by construction.
 				const options = response.data
 				setSalesOptions(options)
 				if (options.length === 1) setAssigneeId(options[0].userId)
@@ -88,7 +87,7 @@ function ProspekPage() {
 		return () => {
 			active = false
 		}
-	}, [isSupervisor])
+	}, [isMultiTeam])
 
 	const set = useCallback(
 		<K extends keyof typeof emptyForm>(key: K, value: (typeof emptyForm)[K]) =>
@@ -105,7 +104,7 @@ function ProspekPage() {
 			setMsg({ ok: false, text: 'Isi minimal nomor WhatsApp atau email.' })
 			return
 		}
-		if (isSupervisor && !assigneeId) {
+		if (isMultiTeam && !assigneeId) {
 			setMsg({ ok: false, text: 'Pilih siapa yang akan menangani prospek ini.' })
 			return
 		}
@@ -122,7 +121,7 @@ function ProspekPage() {
 				productInterest: form.productInterest.trim() || undefined,
 				followUpAt: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
 				notes: form.notes.trim() || undefined,
-				assigneeId: isSupervisor ? assigneeId : undefined,
+				assigneeId: isMultiTeam ? assigneeId : undefined,
 			})
 			const due = new Date(res.data.dueAt)
 			const dueLabel = new Intl.DateTimeFormat('id-ID', {
@@ -131,7 +130,7 @@ function ProspekPage() {
 				hour: '2-digit',
 				minute: '2-digit',
 			}).format(due)
-			const owner = isSupervisor
+			const owner = isMultiTeam
 				? salesOptions.find((item) => item.userId === assigneeId)
 				: null
 			setMsg({
@@ -146,14 +145,14 @@ function ProspekPage() {
 		} finally {
 			setSaving(false)
 		}
-	}, [form, emptyForm, isSupervisor, assigneeId, salesOptions])
+	}, [form, emptyForm, isMultiTeam, assigneeId, salesOptions])
 
 	return (
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
 				title="Tambah Prospek"
 				subtitle={
-					isSupervisor
+					isMultiTeam
 						? 'Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Jadi tugas follow-up untuk orang yang kamu tunjuk.'
 						: 'Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Otomatis jadi tugas follow-up milikmu.'
 				}
@@ -168,7 +167,7 @@ function ProspekPage() {
 				<div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
 					<Sparkles size={16} className="mt-0.5 shrink-0 text-primary" />
 					<span>
-						{isSupervisor ? (
+						{isMultiTeam ? (
 							<>
 								Prospek ini ditugaskan ke orang yang kamu pilih dan muncul di{' '}
 								<strong>Daftar Tugas</strong> mereka pada tanggal follow-up.
@@ -200,7 +199,7 @@ function ProspekPage() {
 				) : null}
 
 				<div className="grid gap-3 sm:grid-cols-2">
-					{isSupervisor ? (
+					{isMultiTeam ? (
 						<Field label="Tugaskan ke *">
 							<select
 								value={assigneeId}

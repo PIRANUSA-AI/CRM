@@ -837,28 +837,37 @@ export abstract class ImportService {
 			dueAt.setHours(9, 0, 0, 0)
 		}
 
-		// A sales keeps their own prospect. A leader hands it to a sales — they
-		// assign leads rather than work them, so a task in a leader's name has no
-		// one actually following it up (same rule the lead router enforces).
+		// A prospect entered here is one the person found themselves, at an event
+		// or on LinkedIn, so it stays theirs — a leader sells alongside their team
+		// and keeps what they source, exactly as a sales does. Handing work over
+		// afterwards is what /alih-tugas is for, and it records the handover.
+		//
+		// The administrator tier is the exception in both directions: they oversee
+		// every team and carry no leads of their own, so a prospect they enter is
+		// meaningless until it names who will work it.
+		//
+		// This is deliberately stricter than resolveAssignables, which stays broad
+		// because the CSV import page genuinely does let a leader spread a
+		// purchased list across their team. Sourcing one lead and distributing a
+		// list of five hundred are different acts.
 		let assigneeId = actor.userId
 		let teamId: string | null
 		const chosen = String(input.assigneeId || '').trim()
-		// An administrator oversees every team and carries no leads of their own,
-		// so a prospect they enter must name who will work it — a sales or a
-		// leader, both of whom sell. A leader or sales keeps their own prospect
-		// unless they explicitly hand it to someone in their team.
-		if (isMultiTeamRole(actor.role) && !chosen) {
-			throw new ImportError('Pilih sales atau leader yang akan menangani prospek ini')
-		}
-		if (chosen && chosen !== actor.userId) {
+
+		if (isMultiTeamRole(actor.role)) {
+			if (!chosen || chosen === actor.userId) {
+				throw new ImportError('Pilih sales atau leader yang akan menangani prospek ini')
+			}
 			const assignables = await resolveAssignables(actor)
 			const target = [...assignables.values()].find((a) => a.userId === chosen)
-			if (!target) throw new ImportError('Penerima tidak ditemukan atau di luar tim Anda')
+			if (!target) throw new ImportError('Penerima tidak ditemukan')
 			assigneeId = target.userId
 			teamId = target.teamId
 		} else {
-			if (isMultiTeamRole(actor.role)) {
-				throw new ImportError('Prospek harus ditugaskan ke sales atau leader')
+			if (chosen && chosen !== actor.userId) {
+				throw new ImportError(
+					'Prospek yang kamu catat sendiri jadi milikmu. Untuk mengalihkannya ke orang lain, gunakan Alih Tugas.',
+				)
 			}
 			teamId = await resolveOwnTeamId(actor)
 		}
