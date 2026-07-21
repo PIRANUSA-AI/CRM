@@ -2,17 +2,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	Bot,
 	CheckCircle2,
-	Clock3,
-	History,
 	MessageCircle,
 	RefreshCw,
 	Sparkles,
 	TriangleAlert,
 	UserCheck,
-	UserRound,
 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CrmAvatar, CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { isSupervisorRole } from '@/lib/role-access'
 import {
@@ -43,10 +40,21 @@ function formatWaiting(minutes: number) {
 	if (minutes < 60) return `${minutes} mnt`
 	const hours = Math.floor(minutes / 60)
 	const rest = minutes % 60
-	if (hours < 24) return rest ? `${hours} jam ${rest} mnt` : `${hours} jam`
+	if (hours < 24) return rest ? `${hours}j ${rest}m` : `${hours} jam`
 	const days = Math.floor(hours / 24)
 	return `${days} hari`
 }
+
+type StatusFilter = 'all' | 'waiting' | 'answered' | 'overdue'
+
+const STATUS_FILTERS: Array<{ id: StatusFilter; label: string }> = [
+	{ id: 'all', label: 'Semua' },
+	{ id: 'waiting', label: 'Perlu dibalas' },
+	{ id: 'overdue', label: 'Lewat SLA' },
+	{ id: 'answered', label: 'Sudah dibalas' },
+]
+
+const COLUMNS = 'grid-cols-[minmax(0,1.7fr)_130px_110px_120px_90px]'
 
 function AlihTugasPage() {
 	const navigate = useNavigate()
@@ -56,8 +64,11 @@ function AlihTugasPage() {
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [busyId, setBusyId] = useState<string | null>(null)
-	const [expandedId, setExpandedId] = useState<string | null>(null)
 	const [historyById, setHistoryById] = useState<Record<string, PersonalTakeoverHistoryItem[]>>({})
+
+	const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+	const [ownerFilter, setOwnerFilter] = useState('')
+	const [selectedId, setSelectedId] = useState<string | null>(null)
 	const [noteDraft, setNoteDraft] = useState('')
 
 	const load = useCallback(async () => {
@@ -78,8 +89,8 @@ function AlihTugasPage() {
 		void load()
 	}, [load])
 
-	// Live-refresh on takeover changes and on new messages (so "sudah dibalas" /
-	// waktu tunggu ikut ter-update begitu sales membalas atau customer mengirim lagi).
+	// Live-refresh on takeover changes and on new messages, so the waiting time
+	// and "sudah dibalas" follow what is actually happening in the chat.
 	useEffect(() => {
 		const socket = connectSocket()
 		let debounce: ReturnType<typeof setTimeout> | null = null
@@ -97,24 +108,28 @@ function AlihTugasPage() {
 		}
 	}, [load])
 
-	const toggleHistory = useCallback(
+	const loadHistory = useCallback(
 		async (conversationId: string) => {
-			if (expandedId === conversationId) {
-				setExpandedId(null)
-				return
-			}
-			setExpandedId(conversationId)
-			setNoteDraft('')
-			if (!historyById[conversationId]) {
-				try {
-					const response = await personalAi.takeoverHistory(conversationId)
-					setHistoryById((current) => ({ ...current, [conversationId]: response.data }))
-				} catch {
-					setHistoryById((current) => ({ ...current, [conversationId]: [] }))
-				}
+			if (historyById[conversationId]) return
+			try {
+				const response = await personalAi.takeoverHistory(conversationId)
+				setHistoryById((current) => ({ ...current, [conversationId]: response.data }))
+			} catch {
+				setHistoryById((current) => ({ ...current, [conversationId]: [] }))
 			}
 		},
-		[expandedId, historyById],
+		[historyById],
+	)
+
+	const select = useCallback(
+		(conversationId: string) => {
+			setSelectedId(conversationId)
+			// Cleared per selection. One shared draft meant a note typed against
+			// one chat would follow you to the next and be sent for that one.
+			setNoteDraft('')
+			void loadHistory(conversationId)
+		},
+		[loadHistory],
 	)
 
 	const releaseToAi = useCallback(
@@ -123,6 +138,8 @@ function AlihTugasPage() {
 			setError(null)
 			try {
 				await personalAi.release(conversationId, note?.trim() || undefined)
+				setSelectedId(null)
+				setNoteDraft('')
 				await load()
 			} catch (reason) {
 				setError(reason instanceof Error ? reason.message : 'Gagal mengembalikan ke AI.')
@@ -134,31 +151,46 @@ function AlihTugasPage() {
 	)
 
 	const overdueCount = items.filter((item) => item.overdue).length
+	const waitingCount = items.filter((item) => item.awaitingResponse).length
 
-	// The backend already hands a leader the whole team's takeovers (supervisors
-	// skip the owner filter). Sorting by owner turns that flat list into the
-	// per-sales view a leader needs, and the header below is emitted whenever
-	// the owner changes — cheaper than restructuring the row markup.
-	const visibleItems = useMemo(() => {
-		if (!isLeader) return items
-		return [...items].sort((a, b) => {
-			const nameA = a.ownerName || a.ownerUserId
-			const nameB = b.ownerName || b.ownerUserId
-			if (nameA !== nameB) return nameA.localeCompare(nameB)
-			return (b.takenAt || '').localeCompare(a.takenAt || '')
-		})
-	}, [isLeader, items])
-
-	const ownerSummary = useMemo(() => {
-		const map = new Map<string, { total: number; overdue: number }>()
+	const owners = useMemo(() => {
+		const map = new Map<string, { name: string; total: number; overdue: number }>()
 		for (const item of items) {
-			const entry = map.get(item.ownerUserId) || { total: 0, overdue: 0 }
+			const entry = map.get(item.ownerUserId) || {
+				name: item.ownerName || 'Tanpa pemilik',
+				total: 0,
+				overdue: 0,
+			}
 			entry.total += 1
 			if (item.overdue) entry.overdue += 1
 			map.set(item.ownerUserId, entry)
 		}
-		return map
+		return [...map.entries()]
+			.map(([id, value]) => ({ id, ...value }))
+			.sort((a, b) => b.overdue - a.overdue || a.name.localeCompare(b.name))
 	}, [items])
+
+	const visibleItems = useMemo(() => {
+		const filtered = items.filter((item) => {
+			if (ownerFilter && item.ownerUserId !== ownerFilter) return false
+			if (statusFilter === 'waiting') return item.awaitingResponse
+			if (statusFilter === 'overdue') return item.overdue
+			if (statusFilter === 'answered') return !item.awaitingResponse
+			return true
+		})
+		// Whoever has waited longest comes first, and anything past SLA above
+		// that — the order the work should actually be done in.
+		return filtered.sort((a, b) => {
+			if (a.overdue !== b.overdue) return a.overdue ? -1 : 1
+			if (a.awaitingResponse !== b.awaitingResponse) return a.awaitingResponse ? -1 : 1
+			return b.waitingMinutes - a.waitingMinutes
+		})
+	}, [items, statusFilter, ownerFilter])
+
+	const selected = useMemo(
+		() => visibleItems.find((item) => item.conversationId === selectedId) ?? null,
+		[visibleItems, selectedId],
+	)
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -166,245 +198,353 @@ function AlihTugasPage() {
 				title="Alih Tugas"
 				subtitle={
 					isLeader
-						? 'Chat seluruh tim yang sedang ditangani manusia, dikelompokkan per sales.'
-						: 'Lead yang sedang ditangani manusia (AI berhenti membalas). Dialihkan otomatis oleh AI atau diambil manual oleh sales.'
+						? 'Chat seluruh tim yang sedang dipegang manusia — AI berhenti membalas sampai dikembalikan.'
+						: 'Chat yang sedang kamu pegang. AI berhenti membalas sampai kamu kembalikan.'
 				}
 				actions={
-					<div className="flex items-center gap-2">
-						{overdueCount > 0 ? (
-							<span className="ocm-tag ocm-tag-danger">{overdueCount} lewat SLA</span>
-						) : null}
-						<span className="ocm-tag">{items.length} aktif</span>
+					<>
 						<button type="button" className="ocm-btn" onClick={() => void load()} disabled={loading}>
 							<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
 							Refresh
 						</button>
-					</div>
+					</>
 				}
 			/>
+
+			<div className="ocm-grid-3">
+				<section className="ocm-card p-4">
+					<p className="text-xs font-medium text-muted-foreground">Sedang dipegang</p>
+					<p className="mt-1 text-2xl font-semibold">{items.length}</p>
+				</section>
+				<section className="ocm-card p-4">
+					<p className="text-xs font-medium text-muted-foreground">Perlu dibalas</p>
+					<p className="mt-1 text-2xl font-semibold text-amber-600 dark:text-amber-300">
+						{waitingCount}
+					</p>
+				</section>
+				<section className="ocm-card p-4">
+					<p className="text-xs font-medium text-muted-foreground">Lewat SLA</p>
+					<p
+						className={`mt-1 text-2xl font-semibold ${
+							overdueCount > 0 ? 'text-red-600 dark:text-red-300' : 'text-muted-foreground'
+						}`}
+					>
+						{overdueCount}
+					</p>
+				</section>
+			</div>
+
+			<div className="flex flex-wrap items-center gap-2">
+				{STATUS_FILTERS.map((chip) => (
+					<button
+						type="button"
+						key={chip.id}
+						onClick={() => setStatusFilter(chip.id)}
+						className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+							statusFilter === chip.id
+								? 'border-primary/40 bg-primary/15 text-primary'
+								: 'border-border bg-card text-muted-foreground hover:border-primary/20 hover:text-foreground'
+						}`}
+					>
+						{chip.label}
+					</button>
+				))}
+
+				{/* Replaces the per-sales group headings the list used to emit. A
+				    picker filters instead of merely labelling, which is what a leader
+				    chasing one person's backlog actually needs. */}
+				{isLeader && owners.length > 1 ? (
+					<select
+						value={ownerFilter}
+						onChange={(event) => setOwnerFilter(event.target.value)}
+						className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+					>
+						<option value="">Semua sales</option>
+						{owners.map((owner) => (
+							<option key={owner.id} value={owner.id}>
+								{owner.name} ({owner.total}
+								{owner.overdue > 0 ? `, ${owner.overdue} lewat SLA` : ''})
+							</option>
+						))}
+					</select>
+				) : null}
+
+				{statusFilter !== 'all' || ownerFilter ? (
+					<button
+						type="button"
+						onClick={() => {
+							setStatusFilter('all')
+							setOwnerFilter('')
+						}}
+						className="rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted-foreground underline hover:text-foreground"
+					>
+						Reset
+					</button>
+				) : null}
+			</div>
 
 			{error ? (
 				<div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
 					<TriangleAlert size={18} className="mt-0.5 shrink-0" />
 					<div>
 						<p>{error}</p>
-						<button type="button" className="mt-1 font-semibold underline" onClick={() => void load()}>
+						<button
+							type="button"
+							className="mt-1 font-semibold underline"
+							onClick={() => void load()}
+						>
 							Coba lagi
 						</button>
 					</div>
 				</div>
 			) : null}
 
-			<section className="ocm-card overflow-hidden">
-				{loading ? (
-					<div className="space-y-3 p-4">
-						{Array.from({ length: 3 }).map((_, index) => (
-							<div key={index} className="h-24 animate-pulse rounded-lg bg-muted/60" />
-						))}
+			{/* List on the left, one chat's detail on the right. The detail used to
+			    live inside every row at once, which is why a screen held four chats
+			    and no sense of which needed answering first. */}
+			<div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+				<section className="ocm-card overflow-hidden">
+					<div className="ocm-card-header">
+						<span className="ocm-card-title">Daftar Chat</span>
+						<span className="text-xs text-muted-foreground">
+							{loading ? 'Memuat...' : `${visibleItems.length} chat`}
+						</span>
 					</div>
-				) : items.length === 0 ? (
-					<div className="p-4">
-						<CrmEmptyState
-							title="Belum ada alih tugas"
-							description="Saat AI menyerahkan lead atau kamu klik Ambil Alih di chat, lead-nya akan muncul di sini."
-						/>
-					</div>
-				) : (
-					<ul className="divide-y divide-border">
-						{visibleItems.map((item, index) => {
-							const isBusy = busyId === item.conversationId
-							const isAi = item.source === 'ai'
-							const isExpanded = expandedId === item.conversationId
-							const history = historyById[item.conversationId]
-							const previous = index > 0 ? visibleItems[index - 1] : null
-							const startsOwnerGroup =
-								isLeader && previous?.ownerUserId !== item.ownerUserId
-							const summary = ownerSummary.get(item.ownerUserId)
-							return (
-								<Fragment key={item.conversationId}>
-								{startsOwnerGroup ? (
-									<li className="flex items-center justify-between gap-3 bg-muted/30 px-4 py-2">
-										<span className="flex items-center gap-2 text-sm font-semibold">
-											<UserRound size={14} className="text-muted-foreground" />
-											{item.ownerName || 'Tanpa pemilik'}
-										</span>
-										<span className="flex items-center gap-2 text-xs">
-											{summary && summary.overdue > 0 ? (
-												<span className="rounded-full bg-red-500/10 px-2 py-0.5 font-semibold text-red-600 dark:text-red-300">
-													{summary.overdue} lewat SLA
-												</span>
-											) : null}
-											<span className="text-muted-foreground">{summary?.total ?? 0} chat</span>
-										</span>
-									</li>
-								) : null}
-								<li className="p-4">
-									<div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-										<div className="min-w-0 flex-1">
-											<div className="mb-2 flex flex-wrap items-center gap-2">
+
+					{loading && items.length === 0 ? (
+						<div className="space-y-2 p-4">
+							{Array.from({ length: 4 }).map((_, index) => (
+								<div key={index} className="h-12 animate-pulse rounded-lg bg-muted/60" />
+							))}
+						</div>
+					) : visibleItems.length === 0 ? (
+						<div className="p-3">
+							<CrmEmptyState
+								title={items.length === 0 ? 'Belum ada alih tugas' : 'Tidak ada yang cocok'}
+								description={
+									items.length === 0
+										? 'Saat AI menyerahkan lead atau kamu klik Ambil Alih di chat, lead-nya muncul di sini.'
+										: 'Coba longgarkan filternya.'
+								}
+							/>
+						</div>
+					) : (
+						<div className="overflow-x-auto">
+							<div className="min-w-[720px]">
+								<div
+									className={`grid ${COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
+								>
+									<div>Kontak</div>
+									<div>Status</div>
+									<div>Menunggu</div>
+									<div>Sales</div>
+									<div>Sumber</div>
+								</div>
+								{visibleItems.map((item) => {
+									const isSelected = item.conversationId === selectedId
+									return (
+										<div
+											key={item.conversationId}
+											role="button"
+											tabIndex={0}
+											onClick={() => select(item.conversationId)}
+											onKeyDown={(event) => {
+												if (event.key === 'Enter') select(item.conversationId)
+											}}
+											className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 ${
+												isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+											}`}
+										>
+											<div className="flex min-w-0 items-center gap-2.5 pr-3">
+												<CrmAvatar name={item.contactName || '?'} size={28} />
+												<div className="min-w-0">
+													<p className="truncate font-semibold">{item.contactName}</p>
+													{item.preview ? (
+														<p className="truncate text-[11px] italic text-muted-foreground">
+															{item.preview}
+														</p>
+													) : null}
+												</div>
+											</div>
+											<div>
+												{item.awaitingResponse ? (
+													<span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+														<span className="size-1.5 rounded-full bg-amber-500" /> Belum dibalas
+													</span>
+												) : (
+													<span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
+														<CheckCircle2 size={12} /> Sudah dibalas
+													</span>
+												)}
+											</div>
+											<div
+												className={`text-xs tabular-nums ${
+													item.overdue
+														? 'font-semibold text-red-600 dark:text-red-300'
+														: 'text-muted-foreground'
+												}`}
+											>
+												{item.awaitingResponse ? formatWaiting(item.waitingMinutes) : '—'}
+												{item.overdue ? ' ⚠' : ''}
+											</div>
+											<div className="truncate text-xs text-muted-foreground">
+												{item.ownerName || '—'}
+											</div>
+											<div>
 												<span
-													className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-														isAi
+													className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+														item.source === 'ai'
 															? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
 															: 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
 													}`}
 												>
-													{isAi ? <Bot size={12} /> : <UserCheck size={12} />}
-													{isAi ? 'Dialihkan AI' : 'Diambil sales'}
+													{item.source === 'ai' ? <Bot size={11} /> : <UserCheck size={11} />}
+													{item.source === 'ai' ? 'AI' : 'Sales'}
 												</span>
-												{item.awaitingResponse ? (
-													<span
-														className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-															item.overdue
-																? 'bg-red-500/15 text-red-700 dark:text-red-300'
-																: 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-														}`}
-													>
-														<Clock3 size={11} /> Menunggu dibalas {formatWaiting(item.waitingMinutes)}
-														{item.overdue ? ' · lewat SLA' : ''}
-													</span>
-												) : (
-													<span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
-														<CheckCircle2 size={11} /> Sudah dibalas
-														{item.respondedAt ? ` · ${formatDateTime(item.respondedAt)}` : ''}
-													</span>
-												)}
-												{item.takenByName ? (
-													<span className="text-xs text-muted-foreground">oleh {item.takenByName}</span>
-												) : item.ownerName ? (
-													<span className="text-xs text-muted-foreground">pemilik {item.ownerName}</span>
-												) : null}
-											</div>
-											<h3 className="text-base font-semibold">{item.contactName}</h3>
-											{item.aiReason ? (
-												<p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-													Alasan: {item.aiReason}
-												</p>
-											) : null}
-											{item.aiSuggestedReply ? (
-												<div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
-													<p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
-														<Sparkles size={12} /> Draf balasan dari AI
-													</p>
-													<p className="text-sm text-foreground">{item.aiSuggestedReply}</p>
-												</div>
-											) : null}
-											{item.note ? (
-												<p className="mt-2 rounded-md bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
-													Catatan: {item.note}
-												</p>
-											) : null}
-											{item.preview ? (
-												<p className="mt-1 line-clamp-1 text-sm italic text-muted-foreground/80">
-													&ldquo;{item.preview}&rdquo;
-												</p>
-											) : null}
-											<div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-												<span className="inline-flex items-center gap-1">
-													<UserRound size={14} />
-													{item.contactPhone || 'Nomor tidak tersedia'}
-												</span>
-												<span className="inline-flex items-center gap-1">
-													<Clock3 size={14} />
-													{formatDateTime(item.takenAt)}
-												</span>
-												<button
-													type="button"
-													className="inline-flex items-center gap-1 font-medium hover:text-foreground"
-													onClick={() => void toggleHistory(item.conversationId)}
-												>
-													<History size={14} /> {isExpanded ? 'Tutup riwayat' : 'Riwayat'}
-												</button>
 											</div>
 										</div>
+									)
+								})}
+							</div>
+						</div>
+					)}
+				</section>
 
-										<div className="flex shrink-0 flex-wrap gap-2">
-											<button
-												type="button"
-												className="ocm-btn"
-												onClick={() =>
-													navigate({ to: '/chat', search: { c: item.conversationId } })
-												}
-											>
-												<MessageCircle size={15} />
-												Buka Chat
-											</button>
-											<button
-												type="button"
-												className="ocm-btn bg-sky-600 text-white hover:bg-sky-700"
-												onClick={() => void releaseToAi(item.conversationId)}
-												disabled={isBusy}
-											>
-												<Bot size={15} />
-												{isBusy ? '...' : 'Kembalikan ke AI'}
-											</button>
+				<section className="ocm-card overflow-hidden xl:sticky xl:top-4">
+					{!selected ? (
+						<div className="p-6 text-center text-sm text-muted-foreground">
+							Pilih satu chat untuk melihat alasan AI, draf balasan, dan riwayatnya.
+						</div>
+					) : (
+						<>
+							<div className="ocm-card-header">
+								<span className="ocm-card-title truncate">{selected.contactName}</span>
+								<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+									{selected.contactPhone || '—'}
+								</span>
+							</div>
+
+							<div className="space-y-3 p-4">
+								{/* Replying is the job; returning it to the AI is what you do
+								    afterwards. The old page styled those the other way round. */}
+								<button
+									type="button"
+									className="ocm-btn ocm-btn-primary w-full justify-center"
+									onClick={() =>
+										navigate({ to: '/chat', search: { c: selected.conversationId } })
+									}
+								>
+									<MessageCircle size={15} /> Balas di Chat
+								</button>
+
+								<dl className="divide-y divide-border rounded-lg border border-border text-sm">
+									{(
+										[
+											['Sales', selected.ownerName || '—'],
+											['Diambil oleh', selected.takenByName || (selected.source === 'ai' ? 'AI' : '—')],
+											['Sejak', formatDateTime(selected.takenAt)],
+											[
+												'Status',
+												selected.awaitingResponse
+													? `Menunggu dibalas ${formatWaiting(selected.waitingMinutes)}${selected.overdue ? ' · lewat SLA' : ''}`
+													: `Sudah dibalas${selected.respondedAt ? ` · ${formatDateTime(selected.respondedAt)}` : ''}`,
+											],
+										] as Array<[string, string]>
+									).map(([label, value]) => (
+										<div key={label} className="flex items-baseline justify-between gap-3 px-3 py-2">
+											<dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+											<dd className="min-w-0 break-words text-right text-xs">{value}</dd>
 										</div>
+									))}
+								</dl>
+
+								{selected.aiReason ? (
+									<div>
+										<p className="mb-1 text-xs font-semibold text-muted-foreground">Alasan AI</p>
+										<p className="text-sm text-muted-foreground">{selected.aiReason}</p>
 									</div>
+								) : null}
 
-									{isExpanded ? (
-										<div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/20 p-3">
-											<div>
-												<label className="mb-1 block text-xs font-semibold text-muted-foreground">
-													Catatan saat kembalikan ke AI (opsional)
-												</label>
-												<div className="flex gap-2">
-													<input
-														value={noteDraft}
-														onChange={(event) => setNoteDraft(event.target.value)}
-														placeholder="mis. sudah dijawab, tinggal follow-up"
-														className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+								{selected.aiSuggestedReply ? (
+									<div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+										<p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
+											<Sparkles size={12} /> Draf balasan dari AI
+										</p>
+										<p className="text-sm">{selected.aiSuggestedReply}</p>
+									</div>
+								) : null}
+
+								{selected.note ? (
+									<p className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+										Catatan: {selected.note}
+									</p>
+								) : null}
+
+								<div className="border-t border-border pt-3">
+									<label className="mb-1 block text-xs font-semibold text-muted-foreground">
+										Catatan saat dikembalikan (opsional)
+									</label>
+									{/* Out in the open. It used to sit behind a button labelled
+									    "Riwayat", so adding a note meant opening a history panel. */}
+									<input
+										value={noteDraft}
+										onChange={(event) => setNoteDraft(event.target.value)}
+										placeholder="mis. sudah dijawab, tinggal follow-up"
+										className="ocm-input"
+									/>
+									<button
+										type="button"
+										className="ocm-btn mt-2 w-full justify-center"
+										onClick={() => void releaseToAi(selected.conversationId, noteDraft)}
+										disabled={busyId === selected.conversationId}
+									>
+										<Bot size={15} />
+										{busyId === selected.conversationId
+											? 'Mengembalikan...'
+											: 'Selesai, kembalikan ke AI'}
+									</button>
+								</div>
+
+								<div className="border-t border-border pt-3">
+									<p className="mb-1.5 text-xs font-semibold text-muted-foreground">Riwayat</p>
+									{historyById[selected.conversationId] === undefined ? (
+										<p className="text-xs text-muted-foreground">Memuat...</p>
+									) : historyById[selected.conversationId].length === 0 ? (
+										<p className="text-xs text-muted-foreground">Belum ada riwayat.</p>
+									) : (
+										<ol className="space-y-1.5">
+											{historyById[selected.conversationId].map((event) => (
+												<li key={event.id} className="flex items-start gap-2 text-xs">
+													<span
+														className={`mt-1 inline-block size-2 shrink-0 rounded-full ${
+															event.action === 'personal_release' ? 'bg-sky-500' : 'bg-amber-500'
+														}`}
 													/>
-													<button
-														type="button"
-														className="ocm-btn shrink-0"
-														onClick={() => void releaseToAi(item.conversationId, noteDraft)}
-														disabled={isBusy}
-													>
-														Kembalikan + catatan
-													</button>
-												</div>
-											</div>
-											<div>
-												<p className="mb-1 text-xs font-semibold text-muted-foreground">Riwayat alih tugas</p>
-												{history === undefined ? (
-													<p className="text-xs text-muted-foreground">Memuat...</p>
-												) : history.length === 0 ? (
-													<p className="text-xs text-muted-foreground">Belum ada riwayat.</p>
-												) : (
-													<ol className="space-y-1.5">
-														{history.map((event) => (
-															<li key={event.id} className="flex items-start gap-2 text-xs">
-																<span
-																	className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
-																		event.action === 'personal_release' ? 'bg-sky-500' : 'bg-amber-500'
-																	}`}
-																/>
-																<span className="min-w-0">
-																	<span className="font-medium">
-																		{event.action === 'personal_release'
-																			? 'Dikembalikan ke AI'
-																			: event.source === 'ai'
-																				? 'Dialihkan otomatis oleh AI'
-																				: 'Diambil alih sales'}
-																	</span>
-																	{event.actorName ? ` · ${event.actorName}` : ''}
-																	{event.note ? ` · "${event.note}"` : ''}
-																	<span className="text-muted-foreground"> · {formatDateTime(event.createdAt)}</span>
-																</span>
-															</li>
-														))}
-													</ol>
-												)}
-											</div>
-										</div>
-									) : null}
-								</li>
-								</Fragment>
-							)
-						})}
-					</ul>
-				)}
-			</section>
+													<span className="min-w-0">
+														<span className="font-medium">
+															{event.action === 'personal_release'
+																? 'Dikembalikan ke AI'
+																: event.source === 'ai'
+																	? 'Dialihkan otomatis oleh AI'
+																	: 'Diambil alih sales'}
+														</span>
+														{event.actorName ? ` · ${event.actorName}` : ''}
+														{event.note ? ` · "${event.note}"` : ''}
+														<span className="text-muted-foreground">
+															{' '}
+															· {formatDateTime(event.createdAt)}
+														</span>
+													</span>
+												</li>
+											))}
+										</ol>
+									)}
+								</div>
+							</div>
+						</>
+					)}
+				</section>
+			</div>
 		</main>
 	)
 }
