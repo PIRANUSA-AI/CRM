@@ -3,7 +3,7 @@ import prisma from '../../lib/prisma'
 import { TeamService, visibleTeamIds } from './service'
 import { TeamModel, TeamRequestModel } from './model'
 import { appContext } from '../../plugins'
-import { isMultiTeamRole } from '../../lib/require-role'
+import { ROLE_RANK, isMultiTeamRole, type CanonicalRole } from '../../lib/require-role'
 
 /**
  * The caller's team scope. Every handler here used to take an app id alone,
@@ -21,6 +21,17 @@ async function scopeFor(userId: string | null | undefined, appId: string) {
 		role: user?.role ?? null,
 		allowedTeamIds: await visibleTeamIds(userId, user?.role),
 	}
+}
+
+/**
+ * Team settings are a supervisor's job. Scoping alone was not enough: a sales
+ * belongs to a team, so "their team is in scope" let them rename it and change
+ * its opportunity threshold through the API. Kelola Tim is not in their sidebar,
+ * which hid the hole rather than closing it.
+ */
+function canManageTeams(role: string | null | undefined): boolean {
+	const rank = ROLE_RANK[String(role || '').toLowerCase() as CanonicalRole]
+	return rank !== undefined && rank >= ROLE_RANK.leader
 }
 
 export const team = new Elysia({ prefix: '/teams', tags: ['Team'] })
@@ -98,7 +109,11 @@ export const team = new Elysia({ prefix: '/teams', tags: ['Team'] })
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const { allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			const { role, allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			if (!canManageTeams(role)) {
+				set.status = 403
+				return { error: 'Tidak berhak mengubah pengaturan tim' }
+			}
 			try {
 				const t = await TeamService.updateTeam(params.id, resolvedAppId, body, allowedTeamIds)
 				return { data: t }
@@ -146,7 +161,11 @@ export const team = new Elysia({ prefix: '/teams', tags: ['Team'] })
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const { allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			const { role, allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			if (!canManageTeams(role)) {
+				set.status = 403
+				return { error: 'Tidak berhak mengubah anggota tim' }
+			}
 			try {
 				const member = await TeamService.addMember(params.id, body.userId, allowedTeamIds)
 				return { data: member }
@@ -167,7 +186,11 @@ export const team = new Elysia({ prefix: '/teams', tags: ['Team'] })
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			const { allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			const { role, allowedTeamIds } = await scopeFor(userId, resolvedAppId)
+			if (!canManageTeams(role)) {
+				set.status = 403
+				return { error: 'Tidak berhak mengubah anggota tim' }
+			}
 			try {
 				await TeamService.removeMember(params.id, params.userId, allowedTeamIds)
 				return { success: true }

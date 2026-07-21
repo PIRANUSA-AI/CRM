@@ -2019,7 +2019,12 @@ model teams {
 
   // Probability at which a deal stops reading as a prospek and starts reading
   // as an opportunity. Per team because AEC and MFG qualify differently.
-  deal_threshold    Int             @default(50)
+  /// Probability at which this team's deals stop reading as prospek and start
+  /// reading as opportunity. Matches DEFAULT_DEAL_THRESHOLD in
+  /// modules/opportunities/stages.ts, which is what the code falls back to, a
+  /// different default here would give a newly created team a threshold the
+  /// rest of the app does not expect.
+  deal_threshold    Int             @default(30)
 
   conversations     conversations[]
   team_members      team_members[]

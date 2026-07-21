@@ -1,4 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
+
+/** Mirrors DEFAULT_DEAL_THRESHOLD on the backend; the two must not disagree. */
+const DEFAULT_DEAL_THRESHOLD = 30
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	Check,
@@ -179,7 +182,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 	 */
 	async function handleThreshold(team: TeamWithMembers, value: number) {
 		const next = Math.max(0, Math.min(100, Math.round(value)))
-		if (next === (team.deal_threshold ?? 50)) return
+		if (next === (team.deal_threshold ?? DEFAULT_DEAL_THRESHOLD)) return
 		setBusyTeam(team.id)
 		try {
 			await teamsApi.update(team.id, { deal_threshold: next })
@@ -372,7 +375,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 												type='number'
 												min={0}
 												max={100}
-												defaultValue={team.deal_threshold ?? 50}
+												defaultValue={team.deal_threshold ?? DEFAULT_DEAL_THRESHOLD}
 												disabled={busy}
 												onBlur={(event) =>
 													void handleThreshold(team, Number(event.target.value))
