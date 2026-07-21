@@ -1641,7 +1641,8 @@ export type DealBucket = 'prospek' | 'opportunity' | 'closed'
 export interface DealStage {
 	id: string
 	label: string
-	probability: number
+	/** null for a stage that asserts no probability of its own — only Pending. */
+	probability: number | null
 	status: 'open' | 'won' | 'lost'
 }
 

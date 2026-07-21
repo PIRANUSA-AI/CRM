@@ -3,7 +3,7 @@ import { resolveCompany } from '../../lib/company'
 import prisma from '../../lib/prisma'
 import { getRealtimeIO } from '../../lib/realtime'
 import { isMultiTeamRole, type CanonicalRole } from '../../lib/require-role'
-import { DEFAULT_STAGE_ID, resolveStage } from '../opportunities/stages'
+import { DEFAULT_STAGE_ID, resolveProbability, resolveStage } from '../opportunities/stages'
 import {
 	isClosedStage,
 	isValidEmail,
@@ -964,7 +964,7 @@ export abstract class ImportService {
 						currency: 'IDR',
 						status: stage.status,
 						stage: stage.id,
-						probability: stage.probability,
+						probability: resolveProbability(stage, null),
 						source: `prospect:${channel}`,
 						created_by: actor.userId,
 					},

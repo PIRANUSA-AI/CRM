@@ -188,7 +188,7 @@ export abstract class OpportunityService {
 		const scope = await dealVisibilityScope(actor)
 		const existing = await prisma.opportunities.findFirst({
 			where: { id, app_id: actor.appId, ...scope } as any,
-			select: { id: true },
+			select: { id: true, probability: true },
 		})
 		if (!existing) return null
 
@@ -197,7 +197,7 @@ export abstract class OpportunityService {
 			where: { id },
 			data: {
 				stage: stage.id,
-				probability: resolveProbability(stage, probability),
+				probability: resolveProbability(stage, probability, existing.probability),
 				status: stage.status,
 				closed_at: stage.status === 'open' ? null : new Date(),
 			},
@@ -319,7 +319,7 @@ export abstract class OpportunityService {
 		const scope = await dealVisibilityScope(actor)
 		const existing = await prisma.opportunities.findFirst({
 			where: { id, app_id: appId, ...scope } as any,
-			select: { id: true, status: true },
+			select: { id: true, status: true, probability: true },
 		})
 		if (!existing) return null
 
@@ -339,7 +339,7 @@ export abstract class OpportunityService {
 		if (input.stage !== undefined) {
 			const stage = resolveStage(input.stage)
 			data.stage = stage.id
-			data.probability = resolveProbability(stage, input.probability)
+			data.probability = resolveProbability(stage, input.probability, existing.probability)
 			data.status = stage.status
 			data.closed_at = stage.status === 'open' ? null : new Date()
 		} else {

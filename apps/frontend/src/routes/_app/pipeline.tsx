@@ -432,7 +432,8 @@ function PipelinePage() {
 										<div className="mb-2 flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
 											<span className="text-xs font-semibold">{stage.label}</span>
 											<span className="text-xs text-muted-foreground">
-												{stage.probability}% · {items.length}
+												{stage.probability === null ? '' : `${stage.probability}% · `}
+												{items.length}
 											</span>
 										</div>
 										<div className="space-y-2">
