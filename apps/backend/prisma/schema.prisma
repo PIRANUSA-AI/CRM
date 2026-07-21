@@ -1087,6 +1087,11 @@ model companies {
   /// list read as if we had more corporate accounts than we do.
   type       String     @default("perusahaan") @db.VarChar(20)
 
+  /// What the firm does, from the fixed list in modules/company/industries.ts.
+  /// Free text would give ten spellings of "arsitektur" and nothing to filter
+  /// on, which is what the company name field already taught us.
+  industry   String?    @db.VarChar(40)
+
   created_at DateTime?  @default(now()) @db.Timestamp(6)
   /// @updatedAt, not default(now()): this drives the "Terakhir diperbarui"
   /// column, and a timestamp frozen at creation would report every company as

@@ -1,6 +1,8 @@
 import prisma from '../../lib/prisma'
 import { Prisma } from '../../generated/prisma'
 import { resolveStage } from '../opportunities/stages'
+import { displayCompanyName, normalizeCompanyName } from '../../lib/company'
+import { industryLabel, isIndustry } from './industries'
 
 /**
  * Reading companies.
@@ -270,6 +272,9 @@ export const CompanyService = {
 				id: true,
 				name: true,
 				city: true,
+				type: true,
+				industry: true,
+				updated_at: true,
 				website: true,
 				notes: true,
 				created_at: true,
@@ -315,6 +320,7 @@ export const CompanyService = {
 
 		return {
 			...company,
+			industry_label: industryLabel(company.industry),
 			contacts,
 			// Label resolved here rather than in the UI so the company page and the
 			// pipeline cannot end up calling the same stage two different things.
@@ -327,5 +333,99 @@ export const CompanyService = {
 			// worth across every PIC we talk to, not per conversation.
 			deal_value: deals.reduce((sum, deal) => sum + Number(deal.value || 0), 0),
 		}
+	},
+
+	/**
+	 * Edit the firm's own fields.
+	 *
+	 * Reuses getCompanyById as the permission check rather than repeating the
+	 * scope: if the viewer cannot read this company, they cannot write it, and
+	 * the two rules cannot drift apart by being stated twice.
+	 *
+	 * The name goes through normalizeCompanyName because norm_name carries the
+	 * uniqueness constraint — renaming "PT Maju" to something that collapses onto
+	 * an existing firm has to be refused rather than left to the database.
+	 */
+	async updateCompany(
+		id: string,
+		params: { appId: string; viewerRole?: string; viewerUserId?: string; viewerTeamIds?: string[] },
+		input: {
+			name?: string
+			city?: string | null
+			website?: string | null
+			notes?: string | null
+			type?: string
+			industry?: string | null
+		},
+	) {
+		const existing = await CompanyService.getCompanyById(id, params)
+		if (!existing) return null
+
+		const data: Record<string, unknown> = {}
+
+		if (input.name !== undefined) {
+			const name = displayCompanyName(input.name)
+			const norm = normalizeCompanyName(input.name)
+			if (!name || !norm) throw new Error('Nama perusahaan wajib diisi')
+			const clash = await prisma.companies.findFirst({
+				where: { app_id: params.appId, norm_name: norm, deleted_at: null, NOT: { id } },
+				select: { name: true },
+			})
+			if (clash) throw new Error(`Nama itu bentrok dengan perusahaan "${clash.name}"`)
+			data.name = name
+			data.norm_name = norm
+		}
+		if (input.city !== undefined) data.city = input.city?.trim() || null
+		if (input.website !== undefined) data.website = input.website?.trim() || null
+		if (input.notes !== undefined) data.notes = input.notes?.trim() || null
+		if (input.type !== undefined) {
+			data.type = input.type === 'perorangan' ? 'perorangan' : 'perusahaan'
+		}
+		if (input.industry !== undefined) {
+			// An unrecognised id is stored as null rather than kept, so the column
+			// can only ever hold something industryLabel knows how to render.
+			data.industry = isIndustry(input.industry) ? input.industry : null
+		}
+
+		if (Object.keys(data).length === 0) return existing
+		await prisma.companies.update({ where: { id }, data })
+		return CompanyService.getCompanyById(id, params)
+	},
+
+	/**
+	 * Attach or detach a contact.
+	 *
+	 * Both sides are checked against the viewer's scope: attaching a contact you
+	 * cannot see would let a sales discover who else works at a firm by trying
+	 * ids, and detaching one would let them quietly remove another team's PIC.
+	 */
+	async setContactLink(
+		companyId: string,
+		params: { appId: string; viewerRole?: string; viewerUserId?: string; viewerTeamIds?: string[] },
+		input: { contactId: string; attach: boolean },
+	) {
+		const company = await CompanyService.getCompanyById(companyId, params)
+		if (!company) return null
+
+		const scope = contactScope(params)
+		const allowed = await prisma.$queryRaw<Array<{ id: string }>>`
+			SELECT c.id FROM contacts c
+			WHERE c.id = ${input.contactId}::uuid
+				AND c.app_id = ${params.appId}::uuid
+				AND c.deleted_at IS NULL ${scope}
+		`
+		if (!allowed.length) return null
+
+		await prisma.contacts.update({
+			where: { id: input.contactId },
+			data: input.attach
+				? { company_id: companyId, company: company.name }
+				: // The free-text company is cleared with the link. Leaving it would
+					// show the contact as still working there on every screen that
+					// falls back to the text when company_id is null.
+					{ company_id: null, company: null },
+		})
+
+		return CompanyService.getCompanyById(companyId, params)
 	},
 }

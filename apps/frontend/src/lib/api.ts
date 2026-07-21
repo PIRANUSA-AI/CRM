@@ -1563,12 +1563,19 @@ export type CompanyRow = {
 	owners: Array<{ name: string; team: string | null }>
 }
 
+export type Industry = { id: string; label: string }
+
 export type CompanyDetail = {
 	id: string
 	name: string
 	city: string | null
 	website: string | null
 	notes: string | null
+	/** perusahaan | perorangan */
+	type: string
+	industry: string | null
+	industry_label: string | null
+	updated_at: string | null
 	created_at: string | null
 	contacts: Array<{
 		id: string
@@ -1591,6 +1598,33 @@ export type CompanyDetail = {
 }
 
 export const companies = {
+	industries: (): Promise<{ success: boolean; payload: Industry[] }> =>
+		apiRequest('/companies/meta/industries'),
+
+	update: (
+		id: string,
+		data: {
+			name?: string
+			city?: string | null
+			website?: string | null
+			notes?: string | null
+			type?: string
+			industry?: string | null
+		},
+	): Promise<{ success: boolean; payload: CompanyDetail }> =>
+		apiRequest(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+	/** Attach a contact to this firm, or detach it when `attach` is false. */
+	setContact: (
+		id: string,
+		contactId: string,
+		attach: boolean,
+	): Promise<{ success: boolean; payload: CompanyDetail }> =>
+		apiRequest(`/companies/${id}/contacts`, {
+			method: 'POST',
+			body: JSON.stringify({ contactId, attach }),
+		}),
+
 	list: (params?: {
 		page?: number
 		per_page?: number
