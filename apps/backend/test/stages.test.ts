@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	DEAL_STAGES,
+	PIPELINES,
+	pipelineOfStage,
+	resolvePipeline,
 	DEFAULT_DEAL_THRESHOLD,
 	dealBucket,
 	resolveProbability,
@@ -73,5 +76,47 @@ describe('dealBucket', () => {
 	test('closed deals belong to neither bucket', () => {
 		expect(dealBucket(100, 'won', DEFAULT_DEAL_THRESHOLD)).toBe('closed')
 		expect(dealBucket(0, 'lost', DEFAULT_DEAL_THRESHOLD)).toBe('closed')
+	})
+})
+
+describe('pipelines', () => {
+	test('stage ids are unique across every pipeline', () => {
+		// The whole design rests on this: a deal has no pipeline column, so the
+		// stage it sits on has to identify its board on its own. A collision would
+		// silently file deals onto the wrong one.
+		const ids = PIPELINES.flatMap((pipeline) => pipeline.stages.map((stage) => stage.id))
+		expect(new Set(ids).size).toBe(ids.length)
+	})
+
+	test('a stage names its own pipeline', () => {
+		expect(pipelineOfStage('leads_pending')).toBe('leads')
+		expect(pipelineOfStage('pending')).toBe('sales')
+		expect(pipelineOfStage('leads_confirmed')).toBe('leads')
+		expect(pipelineOfStage('won')).toBe('sales')
+	})
+
+	test('retired ids and unknown stages stay on the Sales board', () => {
+		// resolveStage sends all of these to the first Sales stage, so the board
+		// filter has to agree, or they would render nowhere.
+		expect(pipelineOfStage('menang')).toBe('sales')
+		expect(pipelineOfStage('entah-apa')).toBe('sales')
+		expect(pipelineOfStage(null)).toBe('sales')
+		expect(pipelineOfStage('')).toBe('sales')
+	})
+
+	test('an unknown pipeline falls back to Sales rather than empty', () => {
+		expect(resolvePipeline('purchasing').id).toBe('sales')
+		expect(resolvePipeline(null).id).toBe('sales')
+		expect(resolvePipeline('leads').id).toBe('leads')
+	})
+
+	test('the Leads board asserts no probability', () => {
+		// Its stages describe whether anyone picked the lead up, not how likely it
+		// is to close. A number here would feed the prospek/opportunity split a
+		// figure that means nothing on this board.
+		const leads = resolvePipeline('leads')
+		expect(leads.stages.every((stage) => stage.probability === null)).toBe(true)
+		expect(leads.stages.map((stage) => stage.status)).toContain('won')
+		expect(leads.stages.map((stage) => stage.status)).toContain('lost')
 	})
 })

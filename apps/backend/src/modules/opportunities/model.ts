@@ -38,6 +38,7 @@ export const OpportunityRequestModel = {
 		// prospek | opportunity | closed
 		bucket: t.Optional(t.String()),
 		stage: t.Optional(t.String()),
+		pipeline: t.Optional(t.String()),
 		limit: t.Optional(t.String()),
 		offset: t.Optional(t.String()),
 	}),
@@ -49,5 +50,6 @@ export const OpportunityRequestModel = {
 		perStage: t.Optional(t.String()),
 		/** Narrows only the won column to one closing year. */
 		wonYear: t.Optional(t.String()),
+		pipeline: t.Optional(t.String()),
 	}),
 }

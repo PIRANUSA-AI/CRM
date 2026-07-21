@@ -3,7 +3,7 @@ import { appContext } from '../../plugins'
 import prisma from '../../lib/prisma'
 import { OpportunityService, type OpportunityActor } from './service'
 import { OpportunityRequestModel } from './model'
-import { DEAL_STAGES, type DealBucket } from './stages'
+import { PIPELINES, resolvePipeline, type DealBucket } from './stages'
 
 /**
  * Deals are visible per role (sales sees their own, leader their team), so
@@ -30,9 +30,17 @@ function asBucket(value: unknown): DealBucket | undefined {
 
 export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Opportunities'] })
 	.use(appContext)
-	// Stage catalogue for the Pipeline board. The frontend renders one column
-	// per stage, so it must not hardcode its own copy of this list.
-	.get('/stages', () => ({ success: true, payload: DEAL_STAGES }))
+	// The board renders one column per stage, so it must not hold its own copy
+	// of this list. Scoped by pipeline, since each board has different columns.
+	.get(
+		'/stages',
+		({ query }) => ({ success: true, payload: resolvePipeline(query.pipeline).stages }),
+		{ query: t.Object({ pipeline: t.Optional(t.String()) }) },
+	)
+	.get('/pipelines', () => ({
+		success: true,
+		payload: PIPELINES.map(({ id, label }) => ({ id, label })),
+	}))
 	.get(
 		'/',
 		async ({ resolvedAppId, userId, query, set }) => {
@@ -48,6 +56,7 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 				search: query.search || undefined,
 				bucket: asBucket((query as Record<string, unknown>).bucket),
 				stage: query.stage || undefined,
+				pipeline: query.pipeline || undefined,
 				limit: query.limit ? Number(query.limit) : undefined,
 				offset: query.offset ? Number(query.offset) : undefined,
 			})
@@ -71,6 +80,7 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 				search: query.search || undefined,
 				bucket: asBucket((query as Record<string, unknown>).bucket),
 				perStage: query.perStage ? Number(query.perStage) : undefined,
+				pipeline: query.pipeline || undefined,
 				wonYear: query.wonYear ? Number(query.wonYear) : undefined,
 			})
 			return { success: true, payload: board }

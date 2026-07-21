@@ -1750,8 +1750,12 @@ export interface OpportunityInput {
 }
 
 export const opportunities = {
-	stages: (): Promise<{ success: boolean; payload: DealStage[] }> =>
-		apiRequest('/opportunities/stages'),
+	stages: (pipeline?: string): Promise<{ success: boolean; payload: DealStage[] }> =>
+		apiRequest(`/opportunities/stages${pipeline ? `?pipeline=${pipeline}` : ''}`),
+
+	/** The boards a deal can sit on. Each has its own columns. */
+	pipelines: (): Promise<{ success: boolean; payload: Array<{ id: string; label: string }> }> =>
+		apiRequest('/opportunities/pipelines'),
 
 	/** Move a deal to another stage. This is the whole lifecycle. */
 	moveStage: (
@@ -1771,6 +1775,7 @@ export const opportunities = {
 		search?: string
 		bucket?: DealBucket
 		stage?: string
+		pipeline?: string
 		limit?: number
 		offset?: number
 	}): Promise<{
@@ -1797,9 +1802,10 @@ export const opportunities = {
 		bucket?: DealBucket
 		perStage?: number
 		wonYear?: number
+		pipeline?: string
 	}): Promise<{
 		success: boolean
-		payload: { columns: DealColumn[]; wonYears: string[] }
+		payload: { pipeline: string; columns: DealColumn[]; wonYears: string[] }
 	}> => {
 		const query = new URLSearchParams()
 		for (const [key, value] of Object.entries(params || {})) {

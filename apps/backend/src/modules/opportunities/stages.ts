@@ -29,6 +29,24 @@ export type DealStage = {
 }
 
 /**
+ * A board. Each pipeline owns its own ordered stages and is read on its own.
+ *
+ * Stage ids are unique across every pipeline, which is why a deal needs no
+ * `pipeline` column: the stage it sits on says which board it belongs to. A
+ * column would be a second answer to the same question, free to drift into
+ * saying `pipeline = 'sales'` about a deal parked on `leads_open`.
+ *
+ * The cost is that ids carry a prefix. Sales keeps its bare ids because its
+ * deals already exist under them; anything added later is prefixed, which is
+ * also what keeps Sales' `pending` and Leads' `leads_pending` apart.
+ */
+export type Pipeline = {
+	id: string
+	label: string
+	stages: DealStage[]
+}
+
+/**
  * Labels are the English ones the team already used in Qontak, kept verbatim so
  * nobody has to relearn the board they read every morning.
  */
@@ -44,6 +62,54 @@ export const DEAL_STAGES: DealStage[] = [
 	{ id: 'lost', label: 'Lost', probability: 0, status: 'lost' },
 ]
 
+/**
+ * The lead-handling board, before a sale is on the table.
+ *
+ * No probabilities: these stages describe whether anyone has picked the lead up,
+ * not how likely it is to close. Putting a number here would feed the
+ * prospek/opportunity split a figure that means nothing on this board.
+ */
+export const LEADS_STAGES: DealStage[] = [
+	{ id: 'leads_new', label: 'New Leads', probability: null, status: 'open' },
+	{ id: 'leads_assigned', label: 'Assigned', probability: null, status: 'open' },
+	{ id: 'leads_pending', label: 'Pending', probability: null, status: 'open' },
+	{ id: 'leads_open', label: 'Open', probability: null, status: 'open' },
+	{ id: 'leads_progress', label: 'On Progress', probability: null, status: 'open' },
+	{ id: 'leads_confirmed', label: 'Confirmed', probability: null, status: 'won' },
+	{ id: 'leads_cancelled', label: 'Cancelled', probability: null, status: 'lost' },
+]
+
+export const PIPELINES: Pipeline[] = [
+	{ id: 'leads', label: 'Leads', stages: LEADS_STAGES },
+	{ id: 'sales', label: 'Sales', stages: DEAL_STAGES },
+]
+
+export const DEFAULT_PIPELINE_ID = 'sales'
+
+const PIPELINE_BY_ID = new Map(PIPELINES.map((pipeline) => [pipeline.id, pipeline]))
+
+/** Every stage of every pipeline, which is also the id-uniqueness guarantee. */
+const ALL_STAGES: DealStage[] = PIPELINES.flatMap((pipeline) => pipeline.stages)
+
+const PIPELINE_OF_STAGE = new Map(
+	PIPELINES.flatMap((pipeline) => pipeline.stages.map((stage) => [stage.id, pipeline.id])),
+)
+
+export function resolvePipeline(pipelineId: string | null | undefined): Pipeline {
+	const key = String(pipelineId || '').trim().toLowerCase()
+	return PIPELINE_BY_ID.get(key) || PIPELINE_BY_ID.get(DEFAULT_PIPELINE_ID)!
+}
+
+/** Which board a deal is on, read from the stage it sits on. */
+export function pipelineOfStage(stageId: string | null | undefined): string {
+	const key = String(stageId || '').trim().toLowerCase()
+	return (
+		PIPELINE_OF_STAGE.get(key) ||
+		PIPELINE_OF_STAGE.get(STAGE_ALIASES[key] || '') ||
+		DEFAULT_PIPELINE_ID
+	)
+}
+
 export const DEFAULT_STAGE_ID = 'leads_generation'
 
 /**
@@ -54,7 +120,7 @@ export const DEFAULT_STAGE_ID = 'leads_generation'
  */
 export const DEFAULT_DEAL_THRESHOLD = 30
 
-const STAGE_BY_ID = new Map(DEAL_STAGES.map((stage) => [stage.id, stage]))
+const STAGE_BY_ID = new Map(ALL_STAGES.map((stage) => [stage.id, stage]))
 
 /**
  * The Indonesian ids these stages replaced. resolveStage falls back to the first

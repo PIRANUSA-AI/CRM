@@ -4,6 +4,9 @@ import { isUuid } from '../../lib/utils'
 import { OPPORTUNITY_STATUSES, type OpportunityStatus } from './model'
 import {
 	DEAL_STAGES,
+	DEFAULT_PIPELINE_ID,
+	PIPELINES,
+	resolvePipeline,
 	DEFAULT_DEAL_THRESHOLD,
 	DEFAULT_STAGE_ID,
 	dealBucket,
@@ -105,6 +108,16 @@ async function dealScopeSql(actor: OpportunityActor): Promise<Prisma.Sql> {
 	return Prisma.empty
 }
 
+/**
+ * Every stage that is NOT on the default board. The Sales filter is expressed
+ * as "not one of these" rather than "one of mine", so a row on a retired
+ * Indonesian id, or on no stage at all, still lands on the board that actually
+ * renders it instead of disappearing from every one of them.
+ */
+const OTHER_PIPELINE_STAGE_IDS: string[] = PIPELINES.filter(
+	(pipeline) => pipeline.id !== DEFAULT_PIPELINE_ID,
+).flatMap((pipeline) => pipeline.stages.map((stage) => stage.id))
+
 type DealFilters = {
 	status?: string
 	ownerId?: string
@@ -113,6 +126,8 @@ type DealFilters = {
 	bucket?: DealBucket
 	/** One stage only: what the board's "muat lebih banyak" pages through. */
 	stage?: string
+	/** One board. Resolved to its stage ids, since a deal has no pipeline column. */
+	pipeline?: string
 }
 
 /**
@@ -130,6 +145,22 @@ function dealFiltersSql(filters: DealFilters): Prisma.Sql {
 	if (filters.contactId) parts.push(Prisma.sql`AND o.contact_id = ${filters.contactId}::uuid`)
 	if (filters.search) parts.push(Prisma.sql`AND o.name ILIKE ${`%${filters.search}%`}`)
 	if (filters.stage) parts.push(Prisma.sql`AND o.stage = ${filters.stage}`)
+
+	if (filters.pipeline) {
+		const pipeline = resolvePipeline(filters.pipeline)
+		const ids = pipeline.stages.map((stage) => stage.id)
+		// The Sales board also owns every row still on a retired Indonesian id and
+		// every row whose stage is null or unrecognised, because resolveStage sends
+		// all of those to the first Sales stage. Without this they would vanish
+		// from every board rather than showing where they actually render.
+		parts.push(
+			pipeline.id === DEFAULT_PIPELINE_ID
+				? Prisma.sql`AND (o.stage IS NULL OR o.stage NOT IN (${Prisma.join(
+						OTHER_PIPELINE_STAGE_IDS.map((id) => Prisma.sql`${id}`),
+					)}))`
+				: Prisma.sql`AND o.stage IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})`,
+		)
+	}
 
 	if (filters.bucket === 'closed') {
 		parts.push(Prisma.sql`AND o.status IN ('won', 'lost')`)
@@ -239,6 +270,7 @@ export abstract class OpportunityService {
 			search?: string
 			bucket?: DealBucket
 			stage?: string
+			pipeline?: string
 			limit?: number
 			offset?: number
 		},
@@ -288,10 +320,15 @@ export abstract class OpportunityService {
 			perStage?: number
 			/** Restrict the won column to one year; other columns are untouched. */
 			wonYear?: number
+			/** Which board to render. Defaults to Sales. */
+			pipeline?: string
 		} = {},
 	) {
+		const pipeline = resolvePipeline(options.pipeline)
 		const scope = await dealScopeSql(actor)
-		const filters = dealFiltersSql(options)
+		// The pipeline is part of the filter, not applied afterwards, so the column
+		// counts describe this board rather than every deal in the app.
+		const filters = dealFiltersSql({ ...options, pipeline: pipeline.id })
 		const perStage = Math.max(1, Math.min(100, options.perStage || 25))
 
 		// Applied in SQL rather than over the loaded cards. Filtering the page
@@ -353,7 +390,7 @@ export abstract class OpportunityService {
 
 		// Driven by DEAL_STAGES so a stage with nothing in it still gets a column;
 		// an empty column is information, and one that disappears is confusing.
-		const columns = DEAL_STAGES.map((stage) => {
+		const columns = pipeline.stages.map((stage) => {
 			const totalsForStage = totalByStage.get(stage.id)
 			return {
 				stage: stage.id,
@@ -363,7 +400,11 @@ export abstract class OpportunityService {
 			}
 		})
 
-		return { columns, wonYears: years.map((row) => String(row.year)) }
+		return {
+			pipeline: pipeline.id,
+			columns,
+			wonYears: years.map((row) => String(row.year)),
+		}
 	}
 
 	/**

@@ -139,6 +139,8 @@ function DealsPage() {
 	const [columns, setColumns] = useState<DealColumn[]>([])
 	const [total, setTotal] = useState(0)
 	const [page, setPage] = useState(1)
+	const [pipeline, setPipeline] = useState('sales')
+	const [pipelines, setPipelines] = useState<Array<{ id: string; label: string }>>([])
 	const [wonYear, setWonYear] = useState('all')
 	const [wonYears, setWonYears] = useState<string[]>([])
 	const [stats, setStats] = useState<OpportunityStats | null>(null)
@@ -180,7 +182,10 @@ function DealsPage() {
 			// The two views ask for different shapes: the table wants one page of
 			// rows with a true total, the board wants per-column totals plus only
 			// the first cards of each. Neither can be derived from the other.
-			const [stageRes, statRes] = await Promise.all([dealsApi.stages(), dealsApi.stats()])
+			const [stageRes, statRes] = await Promise.all([
+				dealsApi.stages(pipeline),
+				dealsApi.stats(),
+			])
 			setStages(stageRes.payload || [])
 			setStats(statRes.payload || null)
 
@@ -190,6 +195,7 @@ function DealsPage() {
 					bucket: bucket === 'all' ? undefined : bucket,
 					perStage: BOARD_PER_STAGE,
 					wonYear: wonYear === 'all' ? undefined : Number(wonYear),
+					pipeline,
 				})
 				setColumns(boardRes.payload?.columns || [])
 				setWonYears(boardRes.payload?.wonYears || [])
@@ -199,6 +205,7 @@ function DealsPage() {
 					bucket: bucket === 'all' ? undefined : bucket,
 					limit: PAGE_SIZE,
 					offset: (page - 1) * PAGE_SIZE,
+					pipeline,
 				})
 				setDeals(dealRes.payload || [])
 				setTotal(Number(dealRes.meta?.total ?? 0))
@@ -208,7 +215,7 @@ function DealsPage() {
 		} finally {
 			setLoading(false)
 		}
-	}, [view, query, bucket, page, wonYear])
+	}, [view, query, bucket, page, wonYear, pipeline])
 
 	const saveDetails = useCallback(async () => {
 		if (!editing) return
@@ -260,6 +267,20 @@ function DealsPage() {
 	useEffect(() => {
 		setPage(1)
 	}, [bucket, view])
+
+	useEffect(() => {
+		void dealsApi
+			.pipelines()
+			.then((response) => setPipelines(response.payload || []))
+			.catch(() => undefined)
+	}, [])
+
+	// Each board has its own columns and its own deals, so a page number and a
+	// won-year picked on one of them means nothing on the next.
+	useEffect(() => {
+		setPage(1)
+		setWonYear('all')
+	}, [pipeline])
 
 	/**
 	 * Moving a card updates the board in place rather than reloading it.
@@ -646,6 +667,23 @@ function DealsPage() {
 			<div className="ocm-card overflow-hidden">
 				<div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-3">
 					<div className="flex flex-wrap items-center gap-1">
+						{/* Which board. Each pipeline has its own columns and its own
+						    deals, so this switches the whole page rather than filtering
+						    what is already on it. */}
+						<label className="mr-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+							Pipeline
+							<select
+								value={pipeline}
+								onChange={(event) => setPipeline(event.target.value)}
+								className="rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+							>
+								{pipelines.map((option) => (
+									<option key={option.id} value={option.id}>
+										{option.label}
+									</option>
+								))}
+							</select>
+						</label>
 						{BUCKET_FILTERS.map((option) => (
 							<button
 								key={option.value}
