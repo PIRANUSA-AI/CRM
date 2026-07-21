@@ -2530,6 +2530,13 @@ model opportunities {
 
   created_by String?   @db.Uuid
   closed_at  DateTime? @db.Timestamptz(6)
+
+  // When the deal last changed column, which is what "12 days at this stage"
+  // on the board counts from. Deliberately not derived from updated_at: that
+  // one is @updatedAt, so editing the value or a note would reset the counter
+  // and make a deal that has been stuck for a month look like it moved today.
+  stage_changed_at DateTime? @db.Timestamptz(6)
+
   created_at DateTime  @default(now()) @db.Timestamptz(6)
   updated_at DateTime  @updatedAt @db.Timestamptz(6)
 

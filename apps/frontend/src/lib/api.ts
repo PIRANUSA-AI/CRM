@@ -1631,6 +1631,8 @@ export interface Opportunity {
 	source: string
 	notes: string | null
 	closedAt: string | null
+	/** When the deal last changed column — what "N hari di tahap ini" counts from. */
+	stageChangedAt: string | null
 	createdAt: string | null
 	updatedAt: string | null
 }

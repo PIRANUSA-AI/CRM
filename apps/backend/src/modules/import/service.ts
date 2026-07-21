@@ -967,6 +967,7 @@ export abstract class ImportService {
 						probability: resolveProbability(stage, null),
 						source: `prospect:${channel}`,
 						created_by: actor.userId,
+						stage_changed_at: new Date(),
 					},
 					select: { id: true },
 				})

@@ -10,6 +10,7 @@ import {
 	UserRound,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { DealBoard } from '@/components/crm/DealBoard'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import {
 	Dialog,
@@ -221,18 +222,6 @@ function PipelinePage() {
 		})
 	}, [deals, bucket, query])
 
-	const openStages = useMemo(() => stages.filter((s) => s.status === 'open'), [stages])
-
-	const byStage = useMemo(() => {
-		const map = new Map<string, Opportunity[]>()
-		for (const deal of visible) {
-			const list = map.get(deal.stage) || []
-			list.push(deal)
-			map.set(deal.stage, list)
-		}
-		return map
-	}, [visible])
-
 	return (
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
@@ -423,69 +412,12 @@ function PipelinePage() {
 						</table>
 					</div>
 				) : (
-					<div className="overflow-x-auto p-3">
-						<div className="flex gap-3">
-							{openStages.map((stage) => {
-								const items = byStage.get(stage.id) || []
-								return (
-									<div key={stage.id} className="w-64 shrink-0">
-										<div className="mb-2 flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
-											<span className="text-xs font-semibold">{stage.label}</span>
-											<span className="text-xs text-muted-foreground">
-												{stage.probability === null ? '' : `${stage.probability}% · `}
-												{items.length}
-											</span>
-										</div>
-										<div className="space-y-2">
-											{items.map((deal) => (
-												<div key={deal.id} className="rounded-lg border border-border bg-card p-3">
-													<button
-														type="button"
-														onClick={() => openEditor(deal)}
-														className="block w-full truncate text-left text-sm font-medium hover:underline"
-													>
-														{deal.name}
-													</button>
-													<p className="truncate text-xs text-muted-foreground">
-														{deal.contactName || '—'}
-														{deal.value ? ` · ${formatValue(deal.value)}` : ''}
-													</p>
-													<div className="mt-2">
-														<ProbabilityBar
-															value={deal.probability}
-															threshold={deal.threshold}
-														/>
-													</div>
-													<div className="mt-2 flex items-center justify-between gap-2">
-														<span className="truncate text-[11px] text-muted-foreground">
-															{deal.ownerName || '—'}
-														</span>
-														<select
-															value={deal.stage}
-															disabled={movingId === deal.id}
-															onChange={(event) => void moveStage(deal, event.target.value)}
-															className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
-														>
-															{stages.map((option) => (
-																<option key={option.id} value={option.id}>
-																	{option.label}
-																</option>
-															))}
-														</select>
-													</div>
-												</div>
-											))}
-											{items.length === 0 ? (
-												<p className="rounded-lg border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
-													Kosong
-												</p>
-											) : null}
-										</div>
-									</div>
-								)
-							})}
-						</div>
-					</div>
+					<DealBoard
+						stages={stages}
+						deals={visible}
+						onMove={(deal, stageId) => void moveStage(deal, stageId)}
+						onOpen={openEditor}
+					/>
 				)}
 			</div>
 

@@ -129,6 +129,9 @@ async function enrich(rows: Array<Record<string, any>>) {
 			source: row.source,
 			notes: row.notes,
 			closedAt: row.closed_at ? row.closed_at.toISOString() : null,
+			// Falls back to creation so a row written before this column existed
+			// counts from something real rather than showing nothing.
+			stageChangedAt: (row.stage_changed_at || row.created_at)?.toISOString() ?? null,
 			createdAt: row.created_at ? row.created_at.toISOString() : null,
 			updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
 		}
@@ -188,7 +191,7 @@ export abstract class OpportunityService {
 		const scope = await dealVisibilityScope(actor)
 		const existing = await prisma.opportunities.findFirst({
 			where: { id, app_id: actor.appId, ...scope } as any,
-			select: { id: true, probability: true },
+			select: { id: true, probability: true, stage: true },
 		})
 		if (!existing) return null
 
@@ -199,6 +202,10 @@ export abstract class OpportunityService {
 				stage: stage.id,
 				probability: resolveProbability(stage, probability, existing.probability),
 				status: stage.status,
+				// Only when the column actually changes. Dropping a card back where
+				// it started must not reset the "stuck for 30 days" counter that
+				// tells the leader which deals have gone cold.
+				...(existing.stage === stage.id ? {} : { stage_changed_at: new Date() }),
 				closed_at: stage.status === 'open' ? null : new Date(),
 			},
 		})
@@ -279,6 +286,7 @@ export abstract class OpportunityService {
 				source: (input.source || 'manual').slice(0, 40),
 				notes: input.notes || null,
 				created_by: actor.userId,
+				stage_changed_at: new Date(),
 				closed_at: stage.status === 'open' ? null : new Date(),
 			},
 		})
@@ -319,7 +327,7 @@ export abstract class OpportunityService {
 		const scope = await dealVisibilityScope(actor)
 		const existing = await prisma.opportunities.findFirst({
 			where: { id, app_id: appId, ...scope } as any,
-			select: { id: true, status: true, probability: true },
+			select: { id: true, status: true, probability: true, stage: true },
 		})
 		if (!existing) return null
 
@@ -341,6 +349,7 @@ export abstract class OpportunityService {
 			data.stage = stage.id
 			data.probability = resolveProbability(stage, input.probability, existing.probability)
 			data.status = stage.status
+			if (existing.stage !== stage.id) data.stage_changed_at = new Date()
 			data.closed_at = stage.status === 'open' ? null : new Date()
 		} else {
 			if (input.probability !== undefined) {
