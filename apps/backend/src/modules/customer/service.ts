@@ -27,9 +27,13 @@ type CustomerDTO = {
 	email: string | null
 	phone_number: string | null
 	avatar_url: string | null
+	city: string | null
 	company_id: string | null
 	company_name: string | null
 	owner_id: string | null
+	owner_name: string | null
+	deal_count: number
+	updated_at: Date | null
 	source: string | null
 	created_at: Date | null
 	last_contact_at: Date | null
@@ -318,7 +322,9 @@ function mapContactToCustomer(
 		window_expires_at: Date | null
 		consent_status: string | null
 		custom_attributes: unknown
+		city?: string | null
 		owner_id?: string | null
+		updated_at?: Date | null
 		companies?: { id: string; name: string } | null
 	},
 	messageCount: number,
@@ -326,6 +332,8 @@ function mapContactToCustomer(
 	tags: CustomerTag[],
 	stageMap?: Map<string, { name: string; color: string | null }>,
 	orderStats?: CustomerOrderStats,
+	/** Appended last so no existing positional argument shifts. */
+	extras?: { ownerName?: string | null; dealCount?: number },
 ): CustomerDTO {
 	const customAttributes = parseJsonObject(contact.custom_attributes)
 	const stageId =
@@ -342,9 +350,18 @@ function mapContactToCustomer(
 		avatar_url: contact.avatar_url,
 		// Carried so a picker can show which firm a contact belongs to at the
 		// moment it is chosen, instead of naming a person with no context.
+		// The stored column first, then the JSON blob it used to live in — an
+		// older contact still keeps its city there and would otherwise read blank.
+		city:
+			contact.city ||
+			(typeof customAttributes.city === 'string' ? customAttributes.city : null) ||
+			null,
 		company_id: contact.companies?.id ?? null,
 		company_name: contact.companies?.name ?? null,
 		owner_id: contact.owner_id ?? null,
+		owner_name: extras?.ownerName ?? null,
+		deal_count: extras?.dealCount ?? 0,
+		updated_at: contact.updated_at ?? null,
 		source: contact.source || contact.channel_type || 'direct',
 		created_at: contact.created_at,
 		last_contact_at: lastContactAt,
@@ -638,7 +655,9 @@ export abstract class CustomerService {
 					window_expires_at: true,
 					consent_status: true,
 					custom_attributes: true,
+					city: true,
 					owner_id: true,
+					updated_at: true,
 					companies: { select: { id: true, name: true } },
 				},
 			}),
@@ -725,6 +744,38 @@ export abstract class CustomerService {
 			})
 		}
 
+		// Owner names and deal counts for this page only — two batched lookups
+		// rather than a join, so the page query keeps its shape and neither can
+		// fan the row set out.
+		const pageOwnerIds = [
+			...new Set(
+				contactIds
+					.map((id) => contactsById.get(id)?.owner_id)
+					.filter((value): value is string => Boolean(value)),
+			),
+		]
+		const [ownerRows, dealRows] = await Promise.all([
+			pageOwnerIds.length
+				? prisma.users.findMany({
+						where: { id: { in: pageOwnerIds } },
+						select: { id: true, name: true, email: true },
+					})
+				: Promise.resolve([]),
+			contactIds.length
+				? prisma.opportunities.groupBy({
+						by: ['contact_id'],
+						where: { contact_id: { in: contactIds } },
+						_count: { _all: true },
+					})
+				: Promise.resolve([]),
+		])
+		const ownerNameById = new Map(
+			ownerRows.map((owner) => [owner.id, owner.name || owner.email?.split('@')[0] || null]),
+		)
+		const dealCountByContactId = new Map(
+			dealRows.map((row) => [row.contact_id as string, row._count._all]),
+		)
+
 		const payload = contactIds.flatMap((contactId) => {
 			const contact = contactsById.get(contactId)
 			if (!contact) return []
@@ -739,6 +790,10 @@ export abstract class CustomerService {
 					orderStatsByContactId.get(contact.id) || {
 						totalSpent: 0,
 						paidOrderCount: 0,
+					},
+					{
+						ownerName: contact.owner_id ? ownerNameById.get(contact.owner_id) ?? null : null,
+						dealCount: dealCountByContactId.get(contact.id) || 0,
 					},
 				),
 			]
@@ -764,12 +819,28 @@ export abstract class CustomerService {
 				source: true,
 				channel_type: true,
 				created_at: true,
+				updated_at: true,
 				window_expires_at: true,
 				consent_status: true,
 				custom_attributes: true,
+				owner_id: true,
+				city: true,
+				companies: { select: { id: true, name: true } },
 			},
 		})
 		if (!contact) return null
+
+		// The detail page shows the same firm and sales as the list, so the same
+		// two facts are resolved here rather than the page having to ask twice.
+		const [owner, dealCount] = await Promise.all([
+			contact.owner_id
+				? prisma.users.findUnique({
+						where: { id: contact.owner_id },
+						select: { name: true, email: true },
+					})
+				: Promise.resolve(null),
+			prisma.opportunities.count({ where: { contact_id: contact.id } }),
+		])
 
 		const stageId =
 			typeof parseJsonObject(contact.custom_attributes).pipeline_stage_id ===
@@ -832,6 +903,11 @@ export abstract class CustomerService {
 			lastContactAt,
 			tags,
 			stageMap,
+			undefined,
+			{
+				ownerName: owner?.name || owner?.email?.split('@')[0] || null,
+				dealCount,
+			},
 		)
 	}
 

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Filter, Loader2, MoreHorizontal, Plus, Upload } from 'lucide-react'
+import { Building2, Filter, Loader2, MoreHorizontal, Plus, Upload } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
 	CrmAvatar,
@@ -31,12 +31,16 @@ type CustomerRow = {
 	id: string
 	name: string
 	phone: string
+	email: string
 	city: string
 	stage: string
 	tags: string[]
-	ltv: string
-	ltvAmount: number
-	orders: number
+	companyName: string | null
+	companyId: string | null
+	ownerName: string | null
+	dealCount: number
+	createdAt: string | null
+	updatedAt: string | null
 	lastSeen: string
 	lastSeenMinutes: number | null
 }
@@ -69,12 +73,6 @@ const SEGMENT_CHIPS: SegmentChip[] = [
 	{ id: 'sering_beli', label: 'Sering beli' },
 	{ id: 'idle_90d', label: 'Idle 90 hari' },
 ]
-
-const IDR_FORMATTER = new Intl.NumberFormat('id-ID', {
-	style: 'currency',
-	currency: 'IDR',
-	maximumFractionDigits: 0,
-})
 
 const CUSTOMER_PAGE_SIZE = 10
 
@@ -149,19 +147,6 @@ function stageTagClass(stage: string) {
 	return 'ocm-tag'
 }
 
-function tagClass(tag: string) {
-	const normalized = tag.toLowerCase()
-	if (normalized === 'vip') return 'ocm-tag ocm-tag-warning'
-	if (normalized === 'komplain') return 'ocm-tag ocm-tag-danger'
-	if (normalized === 'advocate') return 'ocm-tag ocm-tag-success'
-	return 'ocm-tag'
-}
-
-function formatLtv(amount: number) {
-	if (!Number.isFinite(amount) || amount <= 0) return 'Rp 0'
-	return IDR_FORMATTER.format(amount).replace(/\u00a0/g, ' ')
-}
-
 function formatLastSeen(minutes: number | null) {
 	if (minutes === null || !Number.isFinite(minutes)) return '-'
 	if (minutes < 60) return `${Math.max(Math.round(minutes), 1)}m`
@@ -171,6 +156,20 @@ function formatLastSeen(minutes: number | null) {
 
 function formatStageLabel(stage: string) {
 	return stage.replaceAll('_', ' ')
+}
+
+/** Matches the Perusahaan list, so a date reads the same on both pages. */
+function formatMoment(value: string | null): string {
+	if (!value) return '-'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '-'
+	return date.toLocaleString('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	})
 }
 
 function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
@@ -188,14 +187,6 @@ function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 		})
 		.filter(Boolean)
 
-	const ltvNumber = toNumber(input.total_spent, toNumber(input.ltv, 0))
-	const orderCount = toNumber(
-		input.paid_order_count,
-		toNumber(
-			input.order_count,
-			toNumber(input.total_orders, toNumber(input.orders, 0)),
-		),
-	)
 
 	const dateRaw = input.last_contact_at || input.updated_at || input.created_at
 	const date =
@@ -226,13 +217,17 @@ function mapCustomer(input: Record<string, unknown>): CustomerRow | null {
 	return {
 		id,
 		name: toText(input.name, 'Kontak'),
-		phone: toText(input.phone_number, toText(input.phone, '-')),
+		phone: toText(input.phone_number, toText(input.phone, '')),
+		email: toText(input.email, ''),
 		city,
 		stage,
 		tags,
-		ltvAmount: ltvNumber,
-		ltv: formatLtv(ltvNumber),
-		orders: orderCount,
+		companyName: toText(input.company_name, '') || null,
+		companyId: toText(input.company_id, '') || null,
+		ownerName: toText(input.owner_name, '') || null,
+		dealCount: Number(input.deal_count ?? 0),
+		createdAt: toText(input.created_at, '') || null,
+		updatedAt: toText(input.updated_at, '') || null,
 		lastSeenMinutes: diffMinutes,
 		lastSeen: formatLastSeen(diffMinutes),
 	}
@@ -617,7 +612,7 @@ function CustomersPage() {
 					</div>
 				) : (
 					<div className="overflow-x-auto">
-						<div className="min-w-[1160px]">
+						<div className="min-w-[1180px]">
 							<div className="grid grid-cols-[30px_1.8fr_170px_80px_140px_110px_140px_170px_34px] items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
 								<div></div>
 								<div>Nama</div>
@@ -638,7 +633,7 @@ function CustomersPage() {
 									onKeyDown={(event) => {
 										if (event.key === 'Enter') openDetail(row.id)
 									}}
-									className="grid cursor-pointer grid-cols-[30px_1.8fr_170px_80px_140px_110px_140px_170px_34px] items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40"
+									className="grid cursor-pointer grid-cols-[30px_1.6fr_1.3fr_150px_130px_150px_130px_34px] items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40"
 								>
 									<div>
 										<input
@@ -659,40 +654,37 @@ function CustomersPage() {
 											</p>
 										</div>
 									</div>
-									<div className="font-mono text-xs text-muted-foreground">
-										{row.phone}
+									{/* Email and phone in one column, as the team's own tool shows
+									    them: a contact usually has one or the other, so two columns
+									    left one of them empty on most rows. */}
+									<div className="min-w-0 text-xs text-muted-foreground">
+										{row.email ? <p className="truncate">{row.email}</p> : null}
+										{row.phone ? <p className="truncate font-mono">{row.phone}</p> : null}
+										{!row.email && !row.phone ? <span>-</span> : null}
 									</div>
-									<div className="font-mono text-sm">{row.orders}</div>
-									<div
-										className={`font-mono text-sm ${
-											row.ltvAmount > 0
-												? 'text-foreground'
-												: 'text-muted-foreground'
-										}`}
-									>
-										{row.ltv}
-									</div>
-									<div className="text-sm text-muted-foreground">
-										{row.city}
+									<div className="min-w-0 text-xs text-muted-foreground">
+										{row.companyName ? (
+											<span className="flex items-center gap-1">
+												<Building2 size={11} className="shrink-0" />
+												<span className="truncate">{row.companyName}</span>
+											</span>
+										) : null}
+										{row.dealCount > 0 ? (
+											<span className="mt-0.5 block">{row.dealCount} deal</span>
+										) : null}
+										{!row.companyName && row.dealCount === 0 ? <span>-</span> : null}
 									</div>
 									<div>
 										<span className={stageTagClass(row.stage)}>
 											{formatStageLabel(row.stage)}
 										</span>
 									</div>
-									<div className="flex flex-wrap gap-1">
-										{row.tags.length > 0 ? (
-											row.tags.map((tag) => (
-												<span
-													key={`${row.id}-${tag}`}
-													className={tagClass(tag)}
-												>
-													{tag}
-												</span>
-											))
-										) : (
-											<span className="text-xs text-muted-foreground">-</span>
-										)}
+									<div className="text-[11px] text-muted-foreground">
+										<span className="block">{formatMoment(row.createdAt)}</span>
+										<span className="block">{formatMoment(row.updatedAt)}</span>
+									</div>
+									<div className="truncate text-xs text-muted-foreground">
+										{row.ownerName || 'Belum ada'}
 									</div>
 									<div className="flex justify-end">
 										<button

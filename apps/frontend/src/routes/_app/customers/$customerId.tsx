@@ -158,6 +158,12 @@ interface Customer {
 	consent_status?: string
 	custom_attributes?: Record<string, any>
 	tags?: Array<{ id: string; name: string; color: string }>
+	city?: string | null
+	company_id?: string | null
+	company_name?: string | null
+	owner_name?: string | null
+	deal_count?: number
+	updated_at?: string | null
 }
 
 interface Conversation {
@@ -485,357 +491,413 @@ function CustomerDetail() {
 				</div>
 			</section>
 
-			{/* Tabs */}
-			<section className="ocm-card overflow-hidden">
-				<div className="flex items-center gap-1 overflow-x-auto border-b border-border p-2">
-					{TAB_OPTIONS.map((option) => (
-						<button
-							key={option.value}
-							type="button"
-							onClick={() => setActiveTab(option.value)}
-							className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-								activeTab === option.value
-									? 'bg-primary/15 text-primary'
-									: 'text-muted-foreground hover:text-foreground'
-							}`}
-						>
-							{option.label}
-						</button>
-					))}
-				</div>
-
-				<div className="p-4">
-					{activeTab === 'overview' && (
-						<div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-							<div className="space-y-4 lg:col-span-2">
-								<div className="ocm-card">
-									<div className="ocm-card-header">
-										<span className="ocm-card-title inline-flex items-center gap-2">
-											<Info size={14} className="text-primary" /> Tentang Customer
-										</span>
-									</div>
-									<div className="ocm-card-body">
-										{customer.notes ? (
-											<p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-												{customer.notes}
-											</p>
-										) : (
-											<p className="text-sm italic text-muted-foreground">
-												Belum ada catatan internal. Gunakan tombol Edit Profil
-												untuk menambah konteks customer.
-											</p>
-										)}
-									</div>
-								</div>
-
-								<div className="ocm-card">
-									<div className="ocm-card-header">
-										<span className="ocm-card-title inline-flex items-center gap-2">
-											<ShieldCheck size={14} className="text-primary" /> Kepatuhan
-											& Data
-										</span>
-									</div>
-									<div className="ocm-card-body grid grid-cols-1 gap-6 md:grid-cols-2">
-										<div>
-											<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-												Status Consent
-											</div>
-											<div className="flex items-center gap-2">
-												<span
-													className={`size-2.5 rounded-full ${customer.consent_status === 'granted' ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
-												/>
-												<span className="font-semibold capitalize">
-													{customer.consent_status || 'Tidak diketahui'}
-												</span>
-											</div>
-										</div>
-										<div>
-											<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-												Sumber Data
-											</div>
-											<div className="inline-flex items-center gap-1.5 font-semibold capitalize">
-												<MapPin size={14} className="text-muted-foreground" />
-												{customer.source || 'Direct Entry'}
-											</div>
-										</div>
-									</div>
-								</div>
-
-								{additionalFields.length > 0 && (
-									<div className="ocm-card">
-										<div className="ocm-card-header">
-											<span className="ocm-card-title inline-flex items-center gap-2">
-												<Info size={14} className="text-primary" /> Field
-												Tambahan
-											</span>
-										</div>
-										<div className="ocm-card-body grid grid-cols-1 gap-4 md:grid-cols-2">
-											{additionalFields.map(([key, value]) => (
-												<div key={key}>
-													<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-														{key.replace(/_/g, ' ')}
-													</div>
-													<div className="break-words text-sm font-medium">
-														{typeof value === 'boolean'
-															? value
-																? 'Ya'
-																: 'Tidak'
-															: String(value)}
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-							</div>
-
-							<div className="space-y-4">
-								<div className="ocm-card">
-									<div className="ocm-card-header">
-										<span className="ocm-card-title inline-flex items-center gap-2">
-											<Tag size={14} className="text-primary" /> Tag Customer
-										</span>
-									</div>
-									<div className="ocm-card-body flex flex-wrap gap-2">
-										{customer.tags && customer.tags.length > 0 ? (
-											customer.tags.map((tag) => (
-												<span
-													key={tag.id}
-													className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold"
-													style={{
-														borderColor: `${tag.color}40`,
-														backgroundColor: `${tag.color}1a`,
-														color: tag.color,
-													}}
-												>
-													<span
-														className="size-1.5 rounded-full"
-														style={{ backgroundColor: tag.color }}
-													/>
-													{tag.name}
-												</span>
-											))
-										) : (
-											<span className="text-sm italic text-muted-foreground">
-												Belum ada tag.
-											</span>
-										)}
-									</div>
-								</div>
+			{/* Narrow rail on the left, the tabs on the right — the same shape as
+			    the Perusahaan detail page, so the two read as one product. */}
+			<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+				<div className="space-y-5 lg:sticky lg:top-4">
+					<section className="ocm-card overflow-hidden">
+						<div className="ocm-card-header">
+							<span className="ocm-card-title">Tentang Kontak</span>
+							<div className="font-mono text-[11px] text-muted-foreground">
+								ID {customer.id.slice(0, 8).toUpperCase()}
 							</div>
 						</div>
-					)}
+						<dl className="divide-y divide-border text-sm">
+							{(
+								[
+									['Email', customer.email || '—'],
+									['Nomor WA', customer.phone_number || '—'],
+									['Perusahaan', customer.company_name || 'Belum terhubung'],
+									['Kota', customer.city || '—'],
+									['Sales', customer.owner_name || 'Belum ada'],
+									[
+										'Deal',
+										customer.deal_count && customer.deal_count > 0
+											? `${customer.deal_count} deal`
+											: 'Belum ada',
+									],
+									['Sumber', customer.source || 'Direct'],
+									['Terdaftar', formatDate(customer.created_at)],
+								] as Array<[string, string]>
+							).map(([label, value]) => (
+								<div
+									key={label}
+									className="flex items-baseline justify-between gap-3 px-4 py-2.5"
+								>
+									<dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+									<dd className="min-w-0 break-words text-right text-sm">{value}</dd>
+								</div>
+							))}
+						</dl>
+						{/* The firm is a link, not a label: the whole point of storing it
+						    as a row is that you can walk to it. */}
+						{customer.company_id ? (
+							<div className="border-t border-border p-3">
+								<Link
+									to="/companies/$companyId"
+									params={{ companyId: customer.company_id }}
+									className="ocm-btn h-8 w-full justify-center text-xs"
+								>
+									Buka perusahaan
+								</Link>
+							</div>
+						) : null}
+					</section>
+				</div>
 
-					{activeTab === 'conversations' && (
-						<>
-							{conversations.length === 0 ? (
-								<CrmEmptyState
-									title="Belum ada percakapan"
-									description="Riwayat percakapan customer ini akan muncul di sini."
-								/>
-							) : (
-								<div className="ocm-card overflow-hidden">
-									<div className="overflow-x-auto">
-										<table className="ocm-table">
-											<thead>
-												<tr>
-													<th>Inbox / Channel</th>
-													<th>Pesan Terakhir</th>
-													<th>Tanggal</th>
-													<th>Status</th>
-													<th />
-												</tr>
-											</thead>
-											<tbody>
-												{conversations.map((conv) => (
-													<tr key={conv.id} className="group">
-														<td>
-															<div className="flex items-center gap-3">
-																<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-																	<MessageSquare size={15} />
-																</span>
-																<div>
-																	<div className="font-semibold">
-																		{conv.inbox_name || 'Direct Channel'}
-																	</div>
-																	<div className="text-[10px] font-semibold uppercase text-muted-foreground">
-																		{conv.channel_type}
-																	</div>
-																</div>
+				<div className="min-w-0 space-y-5">
+					<section className="ocm-card overflow-hidden">
+						<div className="flex items-center gap-1 overflow-x-auto border-b border-border p-2">
+							{TAB_OPTIONS.map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									onClick={() => setActiveTab(option.value)}
+									className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+										activeTab === option.value
+											? 'bg-primary/15 text-primary'
+											: 'text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
+
+						<div className="p-4">
+							{activeTab === 'overview' && (
+								<div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+									<div className="space-y-4 lg:col-span-2">
+										<div className="ocm-card">
+											<div className="ocm-card-header">
+												<span className="ocm-card-title inline-flex items-center gap-2">
+													<Info size={14} className="text-primary" /> Tentang Customer
+												</span>
+											</div>
+											<div className="ocm-card-body">
+												{customer.notes ? (
+													<p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+														{customer.notes}
+													</p>
+												) : (
+													<p className="text-sm italic text-muted-foreground">
+														Belum ada catatan internal. Gunakan tombol Edit Profil
+														untuk menambah konteks customer.
+													</p>
+												)}
+											</div>
+										</div>
+
+										<div className="ocm-card">
+											<div className="ocm-card-header">
+												<span className="ocm-card-title inline-flex items-center gap-2">
+													<ShieldCheck size={14} className="text-primary" /> Kepatuhan
+													& Data
+												</span>
+											</div>
+											<div className="ocm-card-body grid grid-cols-1 gap-6 md:grid-cols-2">
+												<div>
+													<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+														Status Consent
+													</div>
+													<div className="flex items-center gap-2">
+														<span
+															className={`size-2.5 rounded-full ${customer.consent_status === 'granted' ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
+														/>
+														<span className="font-semibold capitalize">
+															{customer.consent_status || 'Tidak diketahui'}
+														</span>
+													</div>
+												</div>
+												<div>
+													<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+														Sumber Data
+													</div>
+													<div className="inline-flex items-center gap-1.5 font-semibold capitalize">
+														<MapPin size={14} className="text-muted-foreground" />
+														{customer.source || 'Direct Entry'}
+													</div>
+												</div>
+											</div>
+										</div>
+
+										{additionalFields.length > 0 && (
+											<div className="ocm-card">
+												<div className="ocm-card-header">
+													<span className="ocm-card-title inline-flex items-center gap-2">
+														<Info size={14} className="text-primary" /> Field
+														Tambahan
+													</span>
+												</div>
+												<div className="ocm-card-body grid grid-cols-1 gap-4 md:grid-cols-2">
+													{additionalFields.map(([key, value]) => (
+														<div key={key}>
+															<div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+																{key.replace(/_/g, ' ')}
 															</div>
-														</td>
-														<td>
-															<div className="line-clamp-1 max-w-xs text-muted-foreground">
-																{conv.last_message || 'Tanpa isi'}
+															<div className="break-words text-sm font-medium">
+																{typeof value === 'boolean'
+																	? value
+																		? 'Ya'
+																		: 'Tidak'
+																	: String(value)}
 															</div>
-														</td>
-														<td className="text-muted-foreground">
-															{conv.last_message_at
-																? formatDate(conv.last_message_at)
-																: '—'}
-														</td>
-														<td>
+														</div>
+													))}
+												</div>
+											</div>
+										)}
+									</div>
+
+									<div className="space-y-4">
+										<div className="ocm-card">
+											<div className="ocm-card-header">
+												<span className="ocm-card-title inline-flex items-center gap-2">
+													<Tag size={14} className="text-primary" /> Tag Customer
+												</span>
+											</div>
+											<div className="ocm-card-body flex flex-wrap gap-2">
+												{customer.tags && customer.tags.length > 0 ? (
+													customer.tags.map((tag) => (
+														<span
+															key={tag.id}
+															className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold"
+															style={{
+																borderColor: `${tag.color}40`,
+																backgroundColor: `${tag.color}1a`,
+																color: tag.color,
+															}}
+														>
 															<span
-																className={`ocm-tag ${conv.status === 'open' ? 'ocm-tag-success' : ''}`}
-															>
-																{conv.status}
-															</span>
-														</td>
-														<td className="text-right">
-															<Link
-																to="/chat"
-																search={{ c: conv.id, draft: undefined }}
-																className="inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100"
-															>
-																Buka Chat <ChevronRight size={13} />
-															</Link>
-														</td>
-													</tr>
-												))}
-											</tbody>
-										</table>
+																className="size-1.5 rounded-full"
+																style={{ backgroundColor: tag.color }}
+															/>
+															{tag.name}
+														</span>
+													))
+												) : (
+													<span className="text-sm italic text-muted-foreground">
+														Belum ada tag.
+													</span>
+												)}
+											</div>
+										</div>
 									</div>
 								</div>
 							)}
-						</>
-					)}
 
-					{activeTab === 'tasks' && (
-						<>
-							{contactTasks.length === 0 ? (
-								<CrmEmptyState
-									title="Belum ada tugas"
-									description="Tugas follow-up untuk customer ini akan muncul di sini setelah lead di-assign atau dianalisis."
-								/>
-							) : (
-								<ul className="ocm-card divide-y divide-border overflow-hidden">
-									{contactTasks.map((task) => {
-										const isActive =
-											task.status === 'open' || task.status === 'in_progress'
-										const busy = taskBusy === task.id
-										return (
-											<li
-												key={task.id}
-												className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center"
-											>
-												<div className="min-w-0 flex-1">
-													<div className="mb-1 flex flex-wrap items-center gap-2">
-														<span
-															className={TASK_PRIORITY_STYLE[task.priority] || 'ocm-tag'}
-														>
-															{TASK_PRIORITY_LABEL[task.priority] || task.priority}
-														</span>
-														<span className="ocm-tag">
-															{TASK_ACTION_LABEL[task.actionKind] || task.actionKind}
-														</span>
-														{task.teamName ? (
-															<span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
-																{task.teamName}
-															</span>
-														) : null}
-														<span className="text-[11px] text-muted-foreground">
-															{TASK_STATUS_LABEL[task.status] || task.status}
-														</span>
-													</div>
-													<p className="font-semibold">{task.title}</p>
-													{task.description ? (
-														<p className="mt-1 text-sm text-muted-foreground">
-															{task.description}
-														</p>
-													) : null}
-													<div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-														<Clock size={13} />
-														{formatTaskDue(task.dueAt)}
-													</div>
-												</div>
-												<div className="flex shrink-0 gap-2">
-													{task.status === 'open' ? (
-														<button
-															type="button"
-															disabled={busy}
-															onClick={() => runTaskAction(task.id, 'start')}
-															className="ocm-btn disabled:opacity-50"
-														>
-															<CirclePlay size={14} /> Mulai
-														</button>
-													) : null}
-													{isActive ? (
-														<button
-															type="button"
-															disabled={busy}
-															onClick={() => runTaskAction(task.id, 'complete')}
-															className="ocm-btn ocm-btn-primary disabled:opacity-50"
-														>
-															<CheckCircle2 size={14} /> {busy ? '…' : 'Selesai'}
-														</button>
-													) : null}
-												</div>
-											</li>
-										)
-									})}
-								</ul>
+							{activeTab === 'conversations' && (
+								<>
+									{conversations.length === 0 ? (
+										<CrmEmptyState
+											title="Belum ada percakapan"
+											description="Riwayat percakapan customer ini akan muncul di sini."
+										/>
+									) : (
+										<div className="ocm-card overflow-hidden">
+											<div className="overflow-x-auto">
+												<table className="ocm-table">
+													<thead>
+														<tr>
+															<th>Inbox / Channel</th>
+															<th>Pesan Terakhir</th>
+															<th>Tanggal</th>
+															<th>Status</th>
+															<th />
+														</tr>
+													</thead>
+													<tbody>
+														{conversations.map((conv) => (
+															<tr key={conv.id} className="group">
+																<td>
+																	<div className="flex items-center gap-3">
+																		<span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+																			<MessageSquare size={15} />
+																		</span>
+																		<div>
+																			<div className="font-semibold">
+																				{conv.inbox_name || 'Direct Channel'}
+																			</div>
+																			<div className="text-[10px] font-semibold uppercase text-muted-foreground">
+																				{conv.channel_type}
+																			</div>
+																		</div>
+																	</div>
+																</td>
+																<td>
+																	<div className="line-clamp-1 max-w-xs text-muted-foreground">
+																		{conv.last_message || 'Tanpa isi'}
+																	</div>
+																</td>
+																<td className="text-muted-foreground">
+																	{conv.last_message_at
+																		? formatDate(conv.last_message_at)
+																		: '—'}
+																</td>
+																<td>
+																	<span
+																		className={`ocm-tag ${conv.status === 'open' ? 'ocm-tag-success' : ''}`}
+																	>
+																		{conv.status}
+																	</span>
+																</td>
+																<td className="text-right">
+																	<Link
+																		to="/chat"
+																		search={{ c: conv.id, draft: undefined }}
+																		className="inline-flex items-center gap-1 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100"
+																	>
+																		Buka Chat <ChevronRight size={13} />
+																	</Link>
+																</td>
+															</tr>
+														))}
+													</tbody>
+												</table>
+											</div>
+										</div>
+									)}
+								</>
 							)}
-						</>
-					)}
 
-					{activeTab === 'activity' && (
-						<>
-							{timeline.length === 0 ? (
-								<CrmEmptyState
-									title="Belum ada aktivitas"
-									description="Riwayat interaksi tim dengan lead ini — tugas, catatan, handover, dan perubahan tahap — akan muncul di sini."
-								/>
-							) : (
-								<ol className="relative px-1 py-1">
-									{timeline.map((event, index) => {
-										const Icon = timelineIcon(event.type)
-										const time = formatTimelineTime(event.at)
-										const isLast = index === timeline.length - 1
-										return (
-											<li key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
-												{!isLast && (
-													<span
-														className="absolute bottom-0 left-[19px] top-10 w-px bg-border"
-														aria-hidden
-													/>
-												)}
-												<span
-													className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full ${
-														TIMELINE_TONE[event.tone] || TIMELINE_TONE.default
-													}`}
-												>
-													<Icon size={18} />
-												</span>
-												<div className="min-w-0 flex-1 pt-1">
-													<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-														<p className="font-semibold">{event.title}</p>
-														<span
-															className="shrink-0 text-xs text-muted-foreground"
-															title={time.absolute}
-														>
-															{time.relative}
-														</span>
-													</div>
-													{event.description && (
-														<p className="mt-0.5 line-clamp-3 break-words text-sm text-muted-foreground">
-															{event.description}
-														</p>
-													)}
-													{event.actorName && (
-														<p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-															<UserRound size={12} /> {event.actorName}
-														</p>
-													)}
-												</div>
-											</li>
-										)
-									})}
-								</ol>
+							{activeTab === 'tasks' && (
+								<>
+									{contactTasks.length === 0 ? (
+										<CrmEmptyState
+											title="Belum ada tugas"
+											description="Tugas follow-up untuk customer ini akan muncul di sini setelah lead di-assign atau dianalisis."
+										/>
+									) : (
+										<ul className="ocm-card divide-y divide-border overflow-hidden">
+											{contactTasks.map((task) => {
+												const isActive =
+													task.status === 'open' || task.status === 'in_progress'
+												const busy = taskBusy === task.id
+												return (
+													<li
+														key={task.id}
+														className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center"
+													>
+														<div className="min-w-0 flex-1">
+															<div className="mb-1 flex flex-wrap items-center gap-2">
+																<span
+																	className={TASK_PRIORITY_STYLE[task.priority] || 'ocm-tag'}
+																>
+																	{TASK_PRIORITY_LABEL[task.priority] || task.priority}
+																</span>
+																<span className="ocm-tag">
+																	{TASK_ACTION_LABEL[task.actionKind] || task.actionKind}
+																</span>
+																{task.teamName ? (
+																	<span className="rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+																		{task.teamName}
+																	</span>
+																) : null}
+																<span className="text-[11px] text-muted-foreground">
+																	{TASK_STATUS_LABEL[task.status] || task.status}
+																</span>
+															</div>
+															<p className="font-semibold">{task.title}</p>
+															{task.description ? (
+																<p className="mt-1 text-sm text-muted-foreground">
+																	{task.description}
+																</p>
+															) : null}
+															<div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+																<Clock size={13} />
+																{formatTaskDue(task.dueAt)}
+															</div>
+														</div>
+														<div className="flex shrink-0 gap-2">
+															{task.status === 'open' ? (
+																<button
+																	type="button"
+																	disabled={busy}
+																	onClick={() => runTaskAction(task.id, 'start')}
+																	className="ocm-btn disabled:opacity-50"
+																>
+																	<CirclePlay size={14} /> Mulai
+																</button>
+															) : null}
+															{isActive ? (
+																<button
+																	type="button"
+																	disabled={busy}
+																	onClick={() => runTaskAction(task.id, 'complete')}
+																	className="ocm-btn ocm-btn-primary disabled:opacity-50"
+																>
+																	<CheckCircle2 size={14} /> {busy ? '…' : 'Selesai'}
+																</button>
+															) : null}
+														</div>
+													</li>
+												)
+											})}
+										</ul>
+									)}
+								</>
 							)}
-						</>
-					)}
+
+							{activeTab === 'activity' && (
+								<>
+									{timeline.length === 0 ? (
+										<CrmEmptyState
+											title="Belum ada aktivitas"
+											description="Riwayat interaksi tim dengan lead ini — tugas, catatan, handover, dan perubahan tahap — akan muncul di sini."
+										/>
+									) : (
+										<ol className="relative px-1 py-1">
+											{timeline.map((event, index) => {
+												const Icon = timelineIcon(event.type)
+												const time = formatTimelineTime(event.at)
+												const isLast = index === timeline.length - 1
+												return (
+													<li key={event.id} className="relative flex gap-4 pb-6 last:pb-0">
+														{!isLast && (
+															<span
+																className="absolute bottom-0 left-[19px] top-10 w-px bg-border"
+																aria-hidden
+															/>
+														)}
+														<span
+															className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full ${
+																TIMELINE_TONE[event.tone] || TIMELINE_TONE.default
+															}`}
+														>
+															<Icon size={18} />
+														</span>
+														<div className="min-w-0 flex-1 pt-1">
+															<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+																<p className="font-semibold">{event.title}</p>
+																<span
+																	className="shrink-0 text-xs text-muted-foreground"
+																	title={time.absolute}
+																>
+																	{time.relative}
+																</span>
+															</div>
+															{event.description && (
+																<p className="mt-0.5 line-clamp-3 break-words text-sm text-muted-foreground">
+																	{event.description}
+																</p>
+															)}
+															{event.actorName && (
+																<p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+																	<UserRound size={12} /> {event.actorName}
+																</p>
+															)}
+														</div>
+													</li>
+												)
+											})}
+										</ol>
+									)}
+								</>
+							)}
+						</div>
+					</section>
 				</div>
-			</section>
+			</div>
 
 			{showEditModal && (
 				<EditCustomerModal
