@@ -73,6 +73,19 @@ type ContactOption = {
 const PAGE_SIZE = 25
 const BOARD_PER_STAGE = 25
 
+/**
+ * The Semua / Prospek / Opportunity / Selesai chips are hidden, not removed.
+ *
+ * The Pipeline picker now answers "which board am I looking at", which is most
+ * of what those chips were doing. Everything behind them stays wired: the state,
+ * the backend filter, and the `?bucket=` search key, so /opportunity still lands
+ * here pre-filtered and switching this back on is one line.
+ *
+ * They are also misleading on the Leads board, whose stages carry no
+ * probability, so every lead there reads as "prospek" whatever it is.
+ */
+const SHOW_BUCKET_FILTERS: boolean = false
+
 const BUCKET_FILTERS: Array<{ value: DealBucket | 'all'; label: string }> = [
 	{ value: 'all', label: 'Semua' },
 	{ value: 'prospek', label: 'Prospek' },
@@ -684,20 +697,22 @@ function DealsPage() {
 								))}
 							</select>
 						</label>
-						{BUCKET_FILTERS.map((option) => (
-							<button
-								key={option.value}
-								type='button'
-								onClick={() => setBucket(option.value)}
-								className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-									bucket === option.value
-										? 'bg-primary/15 text-primary'
-										: 'text-muted-foreground hover:text-foreground'
-								}`}
-							>
-								{option.label}
-							</button>
-						))}
+						{SHOW_BUCKET_FILTERS ? (
+							BUCKET_FILTERS.map((option) => (
+								<button
+									key={option.value}
+									type='button'
+									onClick={() => setBucket(option.value)}
+									className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+										bucket === option.value
+											? 'bg-primary/15 text-primary'
+											: 'text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									{option.label}
+								</button>
+							))
+						) : null}
 					</div>
 					<div className="flex flex-wrap items-center gap-2">
 						<div className="relative">
