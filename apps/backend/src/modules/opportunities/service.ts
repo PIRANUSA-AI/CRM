@@ -1,7 +1,9 @@
 import prisma from '../../lib/prisma'
+import { Prisma } from '../../generated/prisma'
 import { isUuid } from '../../lib/utils'
 import { OPPORTUNITY_STATUSES, type OpportunityStatus } from './model'
 import {
+	DEAL_STAGES,
 	DEFAULT_DEAL_THRESHOLD,
 	DEFAULT_STAGE_ID,
 	dealBucket,
@@ -76,6 +78,69 @@ export async function dealVisibilityScope(actor: OpportunityActor) {
 		}
 	}
 	return {}
+}
+
+/**
+ * The same visibility rule as dealVisibilityScope, in SQL.
+ *
+ * It exists because counting cannot go through findMany: the board has to say
+ * how many deals a column really holds while rendering only the first page of
+ * them, and the table needs a total it did not load. Both are aggregates, so
+ * they are expressed once here rather than by fetching rows and measuring them.
+ */
+async function dealScopeSql(actor: OpportunityActor): Promise<Prisma.Sql> {
+	const role = String(actor.role || '').toLowerCase()
+	if (role === 'sales') return Prisma.sql`AND o.owner_id = ${actor.userId}::uuid`
+	if (role === 'leader') {
+		const memberships = await prisma.team_members.findMany({
+			where: { user_id: actor.userId || '' },
+			select: { team_id: true },
+		})
+		const teamIds = memberships.map(({ team_id }) => team_id)
+		if (!teamIds.length) return Prisma.sql`AND o.owner_id = ${actor.userId}::uuid`
+		return Prisma.sql`AND (o.owner_id = ${actor.userId}::uuid OR o.team_id IN (${Prisma.join(
+			teamIds.map((id) => Prisma.sql`${id}::uuid`),
+		)}))`
+	}
+	return Prisma.empty
+}
+
+type DealFilters = {
+	status?: string
+	ownerId?: string
+	contactId?: string
+	search?: string
+	bucket?: DealBucket
+}
+
+/**
+ * Everything the caller narrowed by, as one SQL fragment.
+ *
+ * The bucket is resolved here rather than after loading, against the owning
+ * team's threshold with the global default for a deal that has no team. Doing
+ * it in SQL is what lets a filtered count stay true — filtering enriched rows
+ * can only ever describe the page that was already fetched.
+ */
+function dealFiltersSql(filters: DealFilters): Prisma.Sql {
+	const parts: Prisma.Sql[] = []
+	if (filters.status) parts.push(Prisma.sql`AND o.status = ${filters.status}`)
+	if (filters.ownerId) parts.push(Prisma.sql`AND o.owner_id = ${filters.ownerId}::uuid`)
+	if (filters.contactId) parts.push(Prisma.sql`AND o.contact_id = ${filters.contactId}::uuid`)
+	if (filters.search) parts.push(Prisma.sql`AND o.name ILIKE ${`%${filters.search}%`}`)
+
+	if (filters.bucket === 'closed') {
+		parts.push(Prisma.sql`AND o.status IN ('won', 'lost')`)
+	} else if (filters.bucket === 'opportunity') {
+		parts.push(
+			Prisma.sql`AND o.status = 'open' AND o.probability >= COALESCE(t.deal_threshold, ${DEFAULT_DEAL_THRESHOLD})`,
+		)
+	} else if (filters.bucket === 'prospek') {
+		parts.push(
+			Prisma.sql`AND o.status = 'open' AND o.probability < COALESCE(t.deal_threshold, ${DEFAULT_DEAL_THRESHOLD})`,
+		)
+	}
+
+	return parts.length ? Prisma.sql`${Prisma.join(parts, ' ')}` : Prisma.empty
 }
 
 async function enrich(rows: Array<Record<string, any>>) {
@@ -155,6 +220,13 @@ async function enrich(rows: Array<Record<string, any>>) {
 }
 
 export abstract class OpportunityService {
+	/**
+	 * One page of deals plus how many there are in total.
+	 *
+	 * The total is counted rather than measured off the returned rows, so a
+	 * caller showing "1-25 dari 4355" is telling the truth instead of reporting
+	 * the size of its own page.
+	 */
 	static async list(
 		actor: OpportunityActor,
 		options: {
@@ -162,34 +234,132 @@ export abstract class OpportunityService {
 			ownerId?: string
 			contactId?: string
 			search?: string
-			/** prospek | opportunity | closed — filtered after the threshold is known. */
 			bucket?: DealBucket
 			limit?: number
 			offset?: number
 		},
 	) {
-		const scope = await dealVisibilityScope(actor)
-		const rows = await prisma.opportunities.findMany({
-			where: {
-				app_id: actor.appId,
-				...scope,
-				...(options.status ? { status: options.status } : {}),
-				...(options.ownerId ? { owner_id: options.ownerId } : {}),
-				...(options.contactId ? { contact_id: options.contactId } : {}),
-				...(options.search
-					? { name: { contains: options.search, mode: 'insensitive' as const } }
-					: {}),
-			} as any,
-			orderBy: [{ probability: 'desc' }, { created_at: 'desc' }],
-			skip: Math.max(0, options.offset || 0),
-			take: Math.max(1, Math.min(200, options.limit || 100)),
-		})
+		const scope = await dealScopeSql(actor)
+		const filters = dealFiltersSql(options)
+		const limit = Math.max(1, Math.min(200, options.limit || 100))
+		const offset = Math.max(0, options.offset || 0)
+
+		const rows = await prisma.$queryRaw<Array<Record<string, any>>>`
+			SELECT o.*
+			FROM opportunities o
+			LEFT JOIN teams t ON t.id = o.team_id
+			WHERE o.app_id = ${actor.appId}::uuid ${scope} ${filters}
+			ORDER BY o.probability DESC, o.created_at DESC
+			LIMIT ${limit} OFFSET ${offset}
+		`
+		const totals = await prisma.$queryRaw<Array<{ total: bigint }>>`
+			SELECT COUNT(*) AS total
+			FROM opportunities o
+			LEFT JOIN teams t ON t.id = o.team_id
+			WHERE o.app_id = ${actor.appId}::uuid ${scope} ${filters}
+		`
+
+		return {
+			rows: await enrich(rows),
+			total: Number(totals[0]?.total || 0),
+			limit,
+			offset,
+		}
+	}
+
+	/**
+	 * The board: every stage, with the count and value of everything in it, and
+	 * only the first `perStage` cards.
+	 *
+	 * A kanban cannot page the way a table does — cutting the result set in half
+	 * gives half-filled columns rather than a second page — so the limit is per
+	 * column and the count beside the heading is the true one. That is what stops
+	 * a column from quietly ending at card 25 with no sign there are 1069.
+	 */
+	static async board(
+		actor: OpportunityActor,
+		options: {
+			search?: string
+			bucket?: DealBucket
+			perStage?: number
+			/** Restrict the won column to one year; other columns are untouched. */
+			wonYear?: number
+		} = {},
+	) {
+		const scope = await dealScopeSql(actor)
+		const filters = dealFiltersSql(options)
+		const perStage = Math.max(1, Math.min(100, options.perStage || 25))
+
+		// Applied in SQL rather than over the loaded cards. Filtering the page
+		// would leave the column heading counting years it is no longer showing.
+		const wonYear = Number(options.wonYear)
+		const yearFilter = Number.isFinite(wonYear) && wonYear > 0
+			? Prisma.sql`AND (o.status <> 'won' OR EXTRACT(YEAR FROM COALESCE(o.closed_at, o.updated_at)) = ${wonYear})`
+			: Prisma.empty
+
+		const totals = await prisma.$queryRaw<
+			Array<{ stage: string | null; count: bigint; value: Prisma.Decimal | null }>
+		>`
+			SELECT o.stage, COUNT(*) AS count, COALESCE(SUM(o.value), 0) AS value
+			FROM opportunities o
+			LEFT JOIN teams t ON t.id = o.team_id
+			WHERE o.app_id = ${actor.appId}::uuid ${scope} ${filters} ${yearFilter}
+			GROUP BY o.stage
+		`
+
+		// ROW_NUMBER rather than one query per stage: the cut has to happen inside
+		// each partition, and a LIMIT would apply to the whole result instead.
+		const rows = await prisma.$queryRaw<Array<Record<string, any>>>`
+			SELECT * FROM (
+				SELECT o.*, ROW_NUMBER() OVER (
+					PARTITION BY o.stage ORDER BY o.probability DESC, o.created_at DESC
+				) AS rn
+				FROM opportunities o
+				LEFT JOIN teams t ON t.id = o.team_id
+				WHERE o.app_id = ${actor.appId}::uuid ${scope} ${filters} ${yearFilter}
+			) ranked
+			WHERE rn <= ${perStage}
+		`
+
 		const enriched = await enrich(rows)
-		// The bucket depends on the owning team's threshold, which is only known
-		// after enrichment, so this filter cannot move into the query.
-		return options.bucket
-			? enriched.filter((deal) => deal.bucket === options.bucket)
-			: enriched
+		const dealsByStage = new Map<string, typeof enriched>()
+		for (const deal of enriched) {
+			const list = dealsByStage.get(deal.stage) || []
+			list.push(deal)
+			dealsByStage.set(deal.stage, list)
+		}
+
+		const totalByStage = new Map(
+			totals.map((row) => [
+				resolveStage(row.stage).id,
+				{ count: Number(row.count), value: Number(row.value || 0) },
+			]),
+		)
+
+		// Which years the won column could be narrowed to. Computed without the
+		// year filter and without the per-column cap, so choosing 2025 does not
+		// remove 2026 from the dropdown that offers it.
+		const years = await prisma.$queryRaw<Array<{ year: number }>>`
+			SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(o.closed_at, o.updated_at))::int AS year
+			FROM opportunities o
+			LEFT JOIN teams t ON t.id = o.team_id
+			WHERE o.app_id = ${actor.appId}::uuid AND o.status = 'won' ${scope} ${filters}
+			ORDER BY year DESC
+		`
+
+		// Driven by DEAL_STAGES so a stage with nothing in it still gets a column;
+		// an empty column is information, and one that disappears is confusing.
+		const columns = DEAL_STAGES.map((stage) => {
+			const totalsForStage = totalByStage.get(stage.id)
+			return {
+				stage: stage.id,
+				count: totalsForStage?.count ?? 0,
+				value: totalsForStage?.value ?? 0,
+				deals: dealsByStage.get(stage.id) || [],
+			}
+		})
+
+		return { columns, wonYears: years.map((row) => String(row.year)) }
 	}
 
 	/**

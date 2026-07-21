@@ -40,4 +40,13 @@ export const OpportunityRequestModel = {
 		limit: t.Optional(t.String()),
 		offset: t.Optional(t.String()),
 	}),
+
+	boardQuery: t.Object({
+		search: t.Optional(t.String()),
+		bucket: t.Optional(t.String()),
+		/** Cards rendered per column; the count beside the heading is the real one. */
+		perStage: t.Optional(t.String()),
+		/** Narrows only the won column to one closing year. */
+		wonYear: t.Optional(t.String()),
+	}),
 }

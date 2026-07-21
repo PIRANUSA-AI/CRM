@@ -9,7 +9,7 @@ import {
 	UserPlus,
 	UserRound,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DealBoard } from '@/components/crm/DealBoard'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import {
@@ -25,6 +25,7 @@ import { isSupervisorRole } from '@/lib/role-access'
 import {
 	opportunities as dealsApi,
 	type DealBucket,
+	type DealColumn,
 	type DealStage,
 	type Opportunity,
 	type OpportunityStats,
@@ -42,6 +43,11 @@ export const Route = createFileRoute('/_app/deals')({
 })
 
 type ViewMode = 'table' | 'board'
+
+/** Rows per table page, and cards per board column — the column heading still
+ *  reports the real count, so a capped column says how many it is hiding. */
+const PAGE_SIZE = 25
+const BOARD_PER_STAGE = 25
 
 const BUCKET_FILTERS: Array<{ value: DealBucket | 'all'; label: string }> = [
 	{ value: 'all', label: 'Semua' },
@@ -103,6 +109,11 @@ function DealsPage() {
 
 	const [stages, setStages] = useState<DealStage[]>([])
 	const [deals, setDeals] = useState<Opportunity[]>([])
+	const [columns, setColumns] = useState<DealColumn[]>([])
+	const [total, setTotal] = useState(0)
+	const [page, setPage] = useState(1)
+	const [wonYear, setWonYear] = useState('all')
+	const [wonYears, setWonYears] = useState<string[]>([])
 	const [stats, setStats] = useState<OpportunityStats | null>(null)
 	const [view, setView] = useState<ViewMode>('table')
 	// /opportunity redirects here pre-filtered, so the initial bucket comes from
@@ -110,6 +121,7 @@ function DealsPage() {
 	const [bucket, setBucket] = useState<DealBucket | 'all'>(
 		isBucket(search.bucket) ? search.bucket : 'all',
 	)
+	const [queryInput, setQueryInput] = useState('')
 	const [query, setQuery] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [movingId, setMovingId] = useState<string | null>(null)
@@ -133,6 +145,43 @@ function DealsPage() {
 		})
 	}, [])
 
+	const load = useCallback(async () => {
+		setLoading(true)
+		setError(null)
+		try {
+			// The two views ask for different shapes: the table wants one page of
+			// rows with a true total, the board wants per-column totals plus only
+			// the first cards of each. Neither can be derived from the other.
+			const [stageRes, statRes] = await Promise.all([dealsApi.stages(), dealsApi.stats()])
+			setStages(stageRes.payload || [])
+			setStats(statRes.payload || null)
+
+			if (view === 'board') {
+				const boardRes = await dealsApi.board({
+					search: query.trim() || undefined,
+					bucket: bucket === 'all' ? undefined : bucket,
+					perStage: BOARD_PER_STAGE,
+					wonYear: wonYear === 'all' ? undefined : Number(wonYear),
+				})
+				setColumns(boardRes.payload?.columns || [])
+				setWonYears(boardRes.payload?.wonYears || [])
+			} else {
+				const dealRes = await dealsApi.list({
+					search: query.trim() || undefined,
+					bucket: bucket === 'all' ? undefined : bucket,
+					limit: PAGE_SIZE,
+					offset: (page - 1) * PAGE_SIZE,
+				})
+				setDeals(dealRes.payload || [])
+				setTotal(Number(dealRes.meta?.total ?? 0))
+			}
+		} catch (reason) {
+			setError(reason instanceof Error ? reason.message : 'Deals belum dapat dimuat.')
+		} finally {
+			setLoading(false)
+		}
+	}, [view, query, bucket, page, wonYear])
+
 	const saveDetails = useCallback(async () => {
 		if (!editing) return
 		const name = draft.name.trim()
@@ -150,58 +199,50 @@ function DealsPage() {
 		setSaving(true)
 		setError(null)
 		try {
-			const response = await dealsApi.update(editing.id, {
+			await dealsApi.update(editing.id, {
 				name,
 				product: draft.product.trim() || null,
 				value,
 				notes: draft.notes.trim() || null,
 			})
-			const updated = response.payload
-			setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
 			setEditing(null)
 			// Totals are money sums, so they shift the moment a value is entered.
-			void dealsApi.stats().then((res) => setStats(res.payload)).catch(() => undefined)
+			await load()
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : 'Deal belum dapat disimpan.')
 		} finally {
 			setSaving(false)
 		}
-	}, [editing, draft])
-
-	const load = useCallback(async () => {
-		setLoading(true)
-		setError(null)
-		try {
-			const [stageRes, dealRes, statRes] = await Promise.all([
-				dealsApi.stages(),
-				dealsApi.list({ limit: 200 }),
-				dealsApi.stats(),
-			])
-			setStages(stageRes.payload || [])
-			setDeals(dealRes.payload || [])
-			setStats(statRes.payload || null)
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : 'Pipeline belum dapat dimuat.')
-		} finally {
-			setLoading(false)
-		}
-	}, [])
+	}, [editing, draft, load])
 
 	useEffect(() => {
 		void load()
 	}, [load])
+
+	// Debounced so typing a deal name does not fire a request per keystroke, and
+	// page 1 again because page 4 of the old result set means nothing in the new.
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setQuery(queryInput.trim())
+			setPage(1)
+		}, 300)
+		return () => clearTimeout(timer)
+	}, [queryInput])
+
+	useEffect(() => {
+		setPage(1)
+	}, [bucket, view])
 
 	const moveStage = useCallback(async (deal: Opportunity, stageId: string) => {
 		if (stageId === deal.stage) return
 		setMovingId(deal.id)
 		setError(null)
 		try {
-			const response = await dealsApi.moveStage(deal.id, stageId)
-			const updated = response.payload
-			setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
-			// The buckets in the header shift as soon as a deal crosses the
-			// threshold, so they are refetched rather than patched locally.
-			void dealsApi.stats().then((res) => setStats(res.payload)).catch(() => undefined)
+			await dealsApi.moveStage(deal.id, stageId)
+			// Column counts, column totals and the header buckets all live on the
+			// server now, so the move is followed by a reload rather than by
+			// patching one row and leaving four numbers stale.
+			await load()
 		} catch (reason) {
 			setError(reason instanceof Error ? reason.message : 'Tahap belum dapat diubah.')
 		} finally {
@@ -209,25 +250,11 @@ function DealsPage() {
 		}
 	}, [])
 
-	const visible = useMemo(() => {
-		const q = query.trim().toLowerCase()
-		return deals.filter((deal) => {
-			if (bucket !== 'all' && deal.bucket !== bucket) return false
-			if (!q) return true
-			return [
-					deal.name,
-					deal.contactName,
-					deal.companyName,
-					deal.product,
-					deal.ownerName,
-					deal.teamName,
-				]
-				.filter(Boolean)
-				.join(' ')
-				.toLowerCase()
-				.includes(q)
-		})
-	}, [deals, bucket, query])
+	// Search and the bucket filter are applied by the server now, so what came
+	// back is already what should be shown — narrowing it again here would shrink
+	// the page while the total went on describing something wider.
+	const visible = deals
+	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -305,8 +332,8 @@ function DealsPage() {
 								className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
 							/>
 							<input
-								value={query}
-								onChange={(event) => setQuery(event.target.value)}
+								value={queryInput}
+								onChange={(event) => setQueryInput(event.target.value)}
 								placeholder="Cari deal, kontak, produk..."
 								className="w-56 rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 							/>
@@ -344,7 +371,8 @@ function DealsPage() {
 						/>
 					</div>
 				) : view === 'table' ? (
-					<div className="overflow-x-auto">
+					<>
+						<div className="overflow-x-auto">
 						<table className="w-full min-w-[860px] text-sm">
 							<thead>
 								<tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -431,11 +459,42 @@ function DealsPage() {
 								))}
 							</tbody>
 						</table>
-					</div>
+						</div>
+						<div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-xs text-muted-foreground">
+							<span>
+								Menampilkan {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}-
+								{Math.min(page * PAGE_SIZE, total)} dari {total.toLocaleString('id-ID')} deal
+							</span>
+							<div className="flex items-center gap-1">
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => setPage((current) => Math.max(1, current - 1))}
+									disabled={loading || page <= 1}
+								>
+									Sebelumnya
+								</button>
+								<span className="px-2 font-mono">
+									{page} / {totalPages}
+								</span>
+								<button
+									type="button"
+									className="ocm-btn h-8 px-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+									onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+									disabled={loading || page >= totalPages}
+								>
+									Berikutnya
+								</button>
+							</div>
+						</div>
+					</>
 				) : (
 					<DealBoard
 						stages={stages}
-						deals={visible}
+						columns={columns}
+						wonYear={wonYear}
+						wonYears={wonYears}
+						onWonYearChange={setWonYear}
 						onMove={(deal, stageId) => void moveStage(deal, stageId)}
 						onOpen={openEditor}
 					/>

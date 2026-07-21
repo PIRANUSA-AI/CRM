@@ -50,9 +50,31 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 				limit: query.limit ? Number(query.limit) : undefined,
 				offset: query.offset ? Number(query.offset) : undefined,
 			})
-			return { success: true, payload: data }
+			return {
+				success: true,
+				payload: data.rows,
+				meta: { total: data.total, limit: data.limit, offset: data.offset },
+			}
 		},
 		{ query: OpportunityRequestModel.listQuery },
+	)
+	.get(
+		'/board',
+		async ({ resolvedAppId, userId, query, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId)
+			if (!actor) {
+				set.status = 400
+				return { error: 'App ID required' }
+			}
+			const board = await OpportunityService.board(actor, {
+				search: query.search || undefined,
+				bucket: asBucket((query as Record<string, unknown>).bucket),
+				perStage: query.perStage ? Number(query.perStage) : undefined,
+				wonYear: query.wonYear ? Number(query.wonYear) : undefined,
+			})
+			return { success: true, payload: board }
+		},
+		{ query: OpportunityRequestModel.boardQuery },
 	)
 	.get('/stats', async ({ resolvedAppId, userId, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId)

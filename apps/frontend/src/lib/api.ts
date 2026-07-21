@@ -1640,6 +1640,14 @@ export interface Opportunity {
 	updatedAt: string | null
 }
 
+/** One board column: the whole column's totals, plus the cards actually rendered. */
+export interface DealColumn {
+	stage: string
+	count: number
+	value: number
+	deals: Opportunity[]
+}
+
 /** A deal below the team threshold reads as a prospek, at or above as an opportunity. */
 export type DealBucket = 'prospek' | 'opportunity' | 'closed'
 
@@ -1692,7 +1700,11 @@ export const opportunities = {
 		bucket?: DealBucket
 		limit?: number
 		offset?: number
-	}): Promise<{ success: boolean; payload: Opportunity[] }> => {
+	}): Promise<{
+		success: boolean
+		payload: Opportunity[]
+		meta: { total: number; limit: number; offset: number }
+	}> => {
 		const query = new URLSearchParams()
 		for (const [key, value] of Object.entries(params || {})) {
 			if (value === undefined || value === null || value === '') continue
@@ -1700,6 +1712,29 @@ export const opportunities = {
 		}
 		const qs = query.toString()
 		return apiRequest(`/opportunities${qs ? `?${qs}` : ''}`)
+	},
+
+	/**
+	 * The board, one entry per stage. `count` and `value` cover the whole column;
+	 * `deals` is only the first `perStage` cards, because a kanban cannot page
+	 * the way a table does without leaving half-filled columns.
+	 */
+	board: (params?: {
+		search?: string
+		bucket?: DealBucket
+		perStage?: number
+		wonYear?: number
+	}): Promise<{
+		success: boolean
+		payload: { columns: DealColumn[]; wonYears: string[] }
+	}> => {
+		const query = new URLSearchParams()
+		for (const [key, value] of Object.entries(params || {})) {
+			if (value === undefined || value === null || value === '') continue
+			query.set(key, String(value))
+		}
+		const qs = query.toString()
+		return apiRequest(`/opportunities/board${qs ? `?${qs}` : ''}`)
 	},
 
 	stats: (): Promise<{ success: boolean; payload: OpportunityStats }> =>

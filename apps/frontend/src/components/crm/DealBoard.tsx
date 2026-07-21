@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core'
 import { Building2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { DealStage, Opportunity } from '@/lib/api'
+import type { DealColumn, DealStage, Opportunity } from '@/lib/api'
 
 /**
  * The deal board.
@@ -126,16 +126,21 @@ function DraggableCard({
 function StageColumn({
 	stage,
 	deals,
+	count,
+	total,
 	onOpen,
 	headerExtra,
 }: {
 	stage: DealStage
 	deals: Opportunity[]
+	/** The whole column, which may be larger than `deals`. */
+	count: number
+	total: number
 	onOpen: (deal: Opportunity) => void
 	headerExtra?: React.ReactNode
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id: stage.id })
-	const total = deals.reduce((sum, deal) => sum + (deal.value || 0), 0)
+	const hidden = Math.max(0, count - deals.length)
 
 	return (
 		<div className="flex w-64 shrink-0 flex-col">
@@ -145,7 +150,7 @@ function StageColumn({
 					{stage.probability === null ? '' : ` ${stage.probability}%`}
 				</span>
 				<span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
-					{deals.length}
+					{count}
 				</span>
 			</div>
 			{headerExtra}
@@ -163,6 +168,11 @@ function StageColumn({
 						Kosong
 					</p>
 				) : null}
+				{hidden > 0 ? (
+					<p className="rounded-lg border border-dashed border-border p-2 text-center text-[10px] text-muted-foreground">
+						+{hidden} lagi tidak ditampilkan
+					</p>
+				) : null}
 			</div>
 			<div className="mt-2 border-t border-border px-2 py-1.5 text-right text-[11px] font-semibold tabular-nums">
 				TOTAL: {total ? IDR.format(total) : 'Rp 0'}
@@ -173,57 +183,45 @@ function StageColumn({
 
 export function DealBoard({
 	stages,
-	deals,
+	columns,
+	wonYear,
+	wonYears,
+	onWonYearChange,
 	onMove,
 	onOpen,
 }: {
 	stages: DealStage[]
-	deals: Opportunity[]
+	/** Server-side per-stage totals plus the cards to render. */
+	columns: DealColumn[]
+	wonYear: string
+	wonYears: string[]
+	onWonYearChange: (year: string) => void
 	onMove: (deal: Opportunity, stageId: string) => void
 	onOpen: (deal: Opportunity) => void
 }) {
 	const [draggingId, setDraggingId] = useState<string | null>(null)
-	const [wonYear, setWonYear] = useState<string>('all')
 
 	// A small drag threshold, so clicking a card title still opens the editor
 	// rather than being swallowed as a drag.
 	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-	const wonYears = useMemo(() => {
-		const years = new Set<string>()
-		for (const deal of deals) {
-			if (deal.status !== 'won') continue
-			const at = deal.closedAt || deal.updatedAt
-			if (!at) continue
-			const year = new Date(at).getFullYear()
-			if (Number.isFinite(year)) years.add(String(year))
-		}
-		return Array.from(years).sort((a, b) => Number(b) - Number(a))
-	}, [deals])
+	const columnByStage = useMemo(
+		() => new Map(columns.map((column) => [column.stage, column])),
+		[columns],
+	)
 
-	const byStage = useMemo(() => {
-		const map = new Map<string, Opportunity[]>()
-		for (const stage of stages) map.set(stage.id, [])
-		for (const deal of deals) {
-			// A deal on a stage the board does not know about would otherwise vanish
-			// silently; it is shown in the first column instead, where it is visible
-			// and can be dragged somewhere real.
-			const key = map.has(deal.stage) ? deal.stage : stages[0]?.id
-			if (key) map.get(key)!.push(deal)
-		}
-		return map
-	}, [deals, stages])
+	const loadedDeals = useMemo(() => columns.flatMap((column) => column.deals), [columns])
 
 	const handleDragEnd = (event: DragEndEvent) => {
 		setDraggingId(null)
 		const stageId = event.over?.id
 		if (typeof stageId !== 'string') return
-		const deal = deals.find((row) => row.id === event.active.id)
+		const deal = loadedDeals.find((row) => row.id === event.active.id)
 		if (!deal || deal.stage === stageId) return
 		onMove(deal, stageId)
 	}
 
-	const dragging = draggingId ? deals.find((deal) => deal.id === draggingId) : null
+	const dragging = draggingId ? loadedDeals.find((deal) => deal.id === draggingId) : null
 
 	return (
 		<DndContext
@@ -235,24 +233,20 @@ export function DealBoard({
 			<div className="overflow-x-auto p-3">
 				<div className="flex items-stretch gap-3">
 					{stages.map((stage) => {
-						let items = byStage.get(stage.id) || []
-						if (stage.status === 'won' && wonYear !== 'all') {
-							items = items.filter((deal) => {
-								const at = deal.closedAt || deal.updatedAt
-								return at ? String(new Date(at).getFullYear()) === wonYear : false
-							})
-						}
+						const column = columnByStage.get(stage.id)
 						return (
 							<StageColumn
 								key={stage.id}
 								stage={stage}
-								deals={items}
+								deals={column?.deals ?? []}
+								count={column?.count ?? 0}
+								total={column?.value ?? 0}
 								onOpen={onOpen}
 								headerExtra={
 									stage.status === 'won' && wonYears.length > 1 ? (
 										<select
 											value={wonYear}
-											onChange={(event) => setWonYear(event.target.value)}
+											onChange={(event) => onWonYearChange(event.target.value)}
 											className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring"
 											aria-label="Filter tahun deal menang"
 										>
