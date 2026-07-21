@@ -10,6 +10,13 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmAvatar, CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { isSupervisorRole } from '@/lib/role-access'
 import {
@@ -299,252 +306,256 @@ function AlihTugasPage() {
 				</div>
 			) : null}
 
-			{/* List on the left, one chat's detail on the right. The detail used to
-			    live inside every row at once, which is why a screen held four chats
-			    and no sense of which needed answering first. */}
-			<div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
-				<section className="ocm-card overflow-hidden">
-					<div className="ocm-card-header">
-						<span className="ocm-card-title">Daftar Chat</span>
-						<span className="text-xs text-muted-foreground">
-							{loading ? 'Memuat...' : `${visibleItems.length} chat`}
-						</span>
-					</div>
+			<section className="ocm-card overflow-hidden">
+				<div className="ocm-card-header">
+					<span className="ocm-card-title">Daftar Chat</span>
+					<span className="text-xs text-muted-foreground">
+						{loading ? 'Memuat...' : `${visibleItems.length} chat`}
+					</span>
+				</div>
 
-					{loading && items.length === 0 ? (
-						<div className="space-y-2 p-4">
-							{Array.from({ length: 4 }).map((_, index) => (
-								<div key={index} className="h-12 animate-pulse rounded-lg bg-muted/60" />
-							))}
-						</div>
-					) : visibleItems.length === 0 ? (
-						<div className="p-3">
-							<CrmEmptyState
-								title={items.length === 0 ? 'Belum ada alih tugas' : 'Tidak ada yang cocok'}
-								description={
-									items.length === 0
-										? 'Saat AI menyerahkan lead atau kamu klik Ambil Alih di chat, lead-nya muncul di sini.'
-										: 'Coba longgarkan filternya.'
-								}
-							/>
-						</div>
-					) : (
-						<div className="overflow-x-auto">
-							<div className="min-w-[720px]">
-								<div
-									className={`grid ${COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
-								>
-									<div>Kontak</div>
-									<div>Status</div>
-									<div>Menunggu</div>
-									<div>Sales</div>
-									<div>Sumber</div>
-								</div>
-								{visibleItems.map((item) => {
-									const isSelected = item.conversationId === selectedId
-									return (
+				{loading && items.length === 0 ? (
+					<div className="space-y-2 p-4">
+						{Array.from({ length: 4 }).map((_, index) => (
+							<div key={index} className="h-12 animate-pulse rounded-lg bg-muted/60" />
+						))}
+					</div>
+				) : visibleItems.length === 0 ? (
+					<div className="p-3">
+						<CrmEmptyState
+							title={items.length === 0 ? 'Belum ada alih tugas' : 'Tidak ada yang cocok'}
+							description={
+								items.length === 0
+									? 'Saat AI menyerahkan lead atau kamu klik Ambil Alih di chat, lead-nya muncul di sini.'
+									: 'Coba longgarkan filternya.'
+							}
+						/>
+					</div>
+				) : (
+					<div className="overflow-x-auto">
+						<div className="min-w-[720px]">
+							<div
+								className={`grid ${COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
+							>
+								<div>Kontak</div>
+								<div>Status</div>
+								<div>Menunggu</div>
+								<div>Sales</div>
+								<div>Sumber</div>
+							</div>
+							{visibleItems.map((item) => {
+								const isSelected = item.conversationId === selectedId
+								return (
+									<div
+										key={item.conversationId}
+										role="button"
+										tabIndex={0}
+										onClick={() => select(item.conversationId)}
+										onKeyDown={(event) => {
+											if (event.key === 'Enter') select(item.conversationId)
+										}}
+										className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 ${
+											isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+										}`}
+									>
+										<div className="flex min-w-0 items-center gap-2.5 pr-3">
+											<CrmAvatar name={item.contactName || '?'} size={28} />
+											<div className="min-w-0">
+												<p className="truncate font-semibold">{item.contactName}</p>
+												{item.preview ? (
+													<p className="truncate text-[11px] italic text-muted-foreground">
+														{item.preview}
+													</p>
+												) : null}
+											</div>
+										</div>
+										<div>
+											{item.awaitingResponse ? (
+												<span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+													<span className="size-1.5 rounded-full bg-amber-500" /> Belum dibalas
+												</span>
+											) : (
+												<span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
+													<CheckCircle2 size={12} /> Sudah dibalas
+												</span>
+											)}
+										</div>
 										<div
-											key={item.conversationId}
-											role="button"
-											tabIndex={0}
-											onClick={() => select(item.conversationId)}
-											onKeyDown={(event) => {
-												if (event.key === 'Enter') select(item.conversationId)
-											}}
-											className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 ${
-												isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
+											className={`text-xs tabular-nums ${
+												item.overdue
+													? 'font-semibold text-red-600 dark:text-red-300'
+													: 'text-muted-foreground'
 											}`}
 										>
-											<div className="flex min-w-0 items-center gap-2.5 pr-3">
-												<CrmAvatar name={item.contactName || '?'} size={28} />
-												<div className="min-w-0">
-													<p className="truncate font-semibold">{item.contactName}</p>
-													{item.preview ? (
-														<p className="truncate text-[11px] italic text-muted-foreground">
-															{item.preview}
-														</p>
-													) : null}
-												</div>
-											</div>
-											<div>
-												{item.awaitingResponse ? (
-													<span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
-														<span className="size-1.5 rounded-full bg-amber-500" /> Belum dibalas
-													</span>
-												) : (
-													<span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
-														<CheckCircle2 size={12} /> Sudah dibalas
-													</span>
-												)}
-											</div>
-											<div
-												className={`text-xs tabular-nums ${
-													item.overdue
-														? 'font-semibold text-red-600 dark:text-red-300'
-														: 'text-muted-foreground'
+											{item.awaitingResponse ? formatWaiting(item.waitingMinutes) : '—'}
+											{item.overdue ? ' ⚠' : ''}
+										</div>
+										<div className="truncate text-xs text-muted-foreground">
+											{item.ownerName || '—'}
+										</div>
+										<div>
+											<span
+												className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+													item.source === 'ai'
+														? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+														: 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
 												}`}
 											>
-												{item.awaitingResponse ? formatWaiting(item.waitingMinutes) : '—'}
-												{item.overdue ? ' ⚠' : ''}
-											</div>
-											<div className="truncate text-xs text-muted-foreground">
-												{item.ownerName || '—'}
-											</div>
-											<div>
-												<span
-													className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-														item.source === 'ai'
-															? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-															: 'bg-sky-500/10 text-sky-700 dark:text-sky-300'
-													}`}
-												>
-													{item.source === 'ai' ? <Bot size={11} /> : <UserCheck size={11} />}
-													{item.source === 'ai' ? 'AI' : 'Sales'}
-												</span>
-											</div>
+												{item.source === 'ai' ? <Bot size={11} /> : <UserCheck size={11} />}
+												{item.source === 'ai' ? 'AI' : 'Sales'}
+											</span>
 										</div>
-									)
-								})}
-							</div>
+									</div>
+								)
+							})}
 						</div>
-					)}
-				</section>
+					</div>
+				)}
+			</section>
 
-				<section className="ocm-card overflow-hidden xl:sticky xl:top-4">
-					{!selected ? (
-						<div className="p-6 text-center text-sm text-muted-foreground">
-							Pilih satu chat untuk melihat alasan AI, draf balasan, dan riwayatnya.
-						</div>
-					) : (
+			{/* Detail opens on click rather than living beside the list: it only
+			    ever describes one chat, and a permanent column for it left the
+			    table narrower than the rows it has to hold. */}
+			<Dialog
+				open={Boolean(selected)}
+				onOpenChange={(open) => {
+					if (!open) {
+						setSelectedId(null)
+						setNoteDraft('')
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-lg">
+					{selected ? (
 						<>
-							<div className="ocm-card-header">
-								<span className="ocm-card-title truncate">{selected.contactName}</span>
-								<span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-									{selected.contactPhone || '—'}
-								</span>
+							<DialogHeader>
+								<DialogTitle>{selected.contactName}</DialogTitle>
+								<DialogDescription>
+									{selected.contactPhone || 'Nomor tidak tersedia'}
+								</DialogDescription>
+							</DialogHeader>
+
+							<div className="space-y-3">
+						{/* Replying is the job; returning it to the AI is what you do
+						    afterwards. The old page styled those the other way round. */}
+						<button
+							type="button"
+							className="ocm-btn ocm-btn-primary w-full justify-center"
+							onClick={() =>
+								navigate({ to: '/chat', search: { c: selected.conversationId } })
+							}
+						>
+							<MessageCircle size={15} /> Balas di Chat
+						</button>
+
+						<dl className="divide-y divide-border rounded-lg border border-border text-sm">
+							{(
+								[
+									['Sales', selected.ownerName || '—'],
+									['Diambil oleh', selected.takenByName || (selected.source === 'ai' ? 'AI' : '—')],
+									['Sejak', formatDateTime(selected.takenAt)],
+									[
+										'Status',
+										selected.awaitingResponse
+											? `Menunggu dibalas ${formatWaiting(selected.waitingMinutes)}${selected.overdue ? ' · lewat SLA' : ''}`
+											: `Sudah dibalas${selected.respondedAt ? ` · ${formatDateTime(selected.respondedAt)}` : ''}`,
+									],
+								] as Array<[string, string]>
+							).map(([label, value]) => (
+								<div key={label} className="flex items-baseline justify-between gap-3 px-3 py-2">
+									<dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+									<dd className="min-w-0 break-words text-right text-xs">{value}</dd>
+								</div>
+							))}
+						</dl>
+
+						{selected.aiReason ? (
+							<div>
+								<p className="mb-1 text-xs font-semibold text-muted-foreground">Alasan AI</p>
+								<p className="text-sm text-muted-foreground">{selected.aiReason}</p>
 							</div>
+						) : null}
 
-							<div className="space-y-3 p-4">
-								{/* Replying is the job; returning it to the AI is what you do
-								    afterwards. The old page styled those the other way round. */}
-								<button
-									type="button"
-									className="ocm-btn ocm-btn-primary w-full justify-center"
-									onClick={() =>
-										navigate({ to: '/chat', search: { c: selected.conversationId } })
-									}
-								>
-									<MessageCircle size={15} /> Balas di Chat
-								</button>
+						{selected.aiSuggestedReply ? (
+							<div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+								<p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
+									<Sparkles size={12} /> Draf balasan dari AI
+								</p>
+								<p className="text-sm">{selected.aiSuggestedReply}</p>
+							</div>
+						) : null}
 
-								<dl className="divide-y divide-border rounded-lg border border-border text-sm">
-									{(
-										[
-											['Sales', selected.ownerName || '—'],
-											['Diambil oleh', selected.takenByName || (selected.source === 'ai' ? 'AI' : '—')],
-											['Sejak', formatDateTime(selected.takenAt)],
-											[
-												'Status',
-												selected.awaitingResponse
-													? `Menunggu dibalas ${formatWaiting(selected.waitingMinutes)}${selected.overdue ? ' · lewat SLA' : ''}`
-													: `Sudah dibalas${selected.respondedAt ? ` · ${formatDateTime(selected.respondedAt)}` : ''}`,
-											],
-										] as Array<[string, string]>
-									).map(([label, value]) => (
-										<div key={label} className="flex items-baseline justify-between gap-3 px-3 py-2">
-											<dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
-											<dd className="min-w-0 break-words text-right text-xs">{value}</dd>
-										</div>
+						{selected.note ? (
+							<p className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+								Catatan: {selected.note}
+							</p>
+						) : null}
+
+						<div className="border-t border-border pt-3">
+							<label className="mb-1 block text-xs font-semibold text-muted-foreground">
+								Catatan saat dikembalikan (opsional)
+							</label>
+							{/* Out in the open. It used to sit behind a button labelled
+							    "Riwayat", so adding a note meant opening a history panel. */}
+							<input
+								value={noteDraft}
+								onChange={(event) => setNoteDraft(event.target.value)}
+								placeholder="mis. sudah dijawab, tinggal follow-up"
+								className="ocm-input"
+							/>
+							<button
+								type="button"
+								className="ocm-btn mt-2 w-full justify-center"
+								onClick={() => void releaseToAi(selected.conversationId, noteDraft)}
+								disabled={busyId === selected.conversationId}
+							>
+								<Bot size={15} />
+								{busyId === selected.conversationId
+									? 'Mengembalikan...'
+									: 'Selesai, kembalikan ke AI'}
+							</button>
+						</div>
+
+						<div className="border-t border-border pt-3">
+							<p className="mb-1.5 text-xs font-semibold text-muted-foreground">Riwayat</p>
+							{historyById[selected.conversationId] === undefined ? (
+								<p className="text-xs text-muted-foreground">Memuat...</p>
+							) : historyById[selected.conversationId].length === 0 ? (
+								<p className="text-xs text-muted-foreground">Belum ada riwayat.</p>
+							) : (
+								<ol className="space-y-1.5">
+									{historyById[selected.conversationId].map((event) => (
+										<li key={event.id} className="flex items-start gap-2 text-xs">
+											<span
+												className={`mt-1 inline-block size-2 shrink-0 rounded-full ${
+													event.action === 'personal_release' ? 'bg-sky-500' : 'bg-amber-500'
+												}`}
+											/>
+											<span className="min-w-0">
+												<span className="font-medium">
+													{event.action === 'personal_release'
+														? 'Dikembalikan ke AI'
+														: event.source === 'ai'
+															? 'Dialihkan otomatis oleh AI'
+															: 'Diambil alih sales'}
+												</span>
+												{event.actorName ? ` · ${event.actorName}` : ''}
+												{event.note ? ` · "${event.note}"` : ''}
+												<span className="text-muted-foreground">
+													{' '}
+													· {formatDateTime(event.createdAt)}
+												</span>
+											</span>
+										</li>
 									))}
-								</dl>
-
-								{selected.aiReason ? (
-									<div>
-										<p className="mb-1 text-xs font-semibold text-muted-foreground">Alasan AI</p>
-										<p className="text-sm text-muted-foreground">{selected.aiReason}</p>
-									</div>
-								) : null}
-
-								{selected.aiSuggestedReply ? (
-									<div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
-										<p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
-											<Sparkles size={12} /> Draf balasan dari AI
-										</p>
-										<p className="text-sm">{selected.aiSuggestedReply}</p>
-									</div>
-								) : null}
-
-								{selected.note ? (
-									<p className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
-										Catatan: {selected.note}
-									</p>
-								) : null}
-
-								<div className="border-t border-border pt-3">
-									<label className="mb-1 block text-xs font-semibold text-muted-foreground">
-										Catatan saat dikembalikan (opsional)
-									</label>
-									{/* Out in the open. It used to sit behind a button labelled
-									    "Riwayat", so adding a note meant opening a history panel. */}
-									<input
-										value={noteDraft}
-										onChange={(event) => setNoteDraft(event.target.value)}
-										placeholder="mis. sudah dijawab, tinggal follow-up"
-										className="ocm-input"
-									/>
-									<button
-										type="button"
-										className="ocm-btn mt-2 w-full justify-center"
-										onClick={() => void releaseToAi(selected.conversationId, noteDraft)}
-										disabled={busyId === selected.conversationId}
-									>
-										<Bot size={15} />
-										{busyId === selected.conversationId
-											? 'Mengembalikan...'
-											: 'Selesai, kembalikan ke AI'}
-									</button>
-								</div>
-
-								<div className="border-t border-border pt-3">
-									<p className="mb-1.5 text-xs font-semibold text-muted-foreground">Riwayat</p>
-									{historyById[selected.conversationId] === undefined ? (
-										<p className="text-xs text-muted-foreground">Memuat...</p>
-									) : historyById[selected.conversationId].length === 0 ? (
-										<p className="text-xs text-muted-foreground">Belum ada riwayat.</p>
-									) : (
-										<ol className="space-y-1.5">
-											{historyById[selected.conversationId].map((event) => (
-												<li key={event.id} className="flex items-start gap-2 text-xs">
-													<span
-														className={`mt-1 inline-block size-2 shrink-0 rounded-full ${
-															event.action === 'personal_release' ? 'bg-sky-500' : 'bg-amber-500'
-														}`}
-													/>
-													<span className="min-w-0">
-														<span className="font-medium">
-															{event.action === 'personal_release'
-																? 'Dikembalikan ke AI'
-																: event.source === 'ai'
-																	? 'Dialihkan otomatis oleh AI'
-																	: 'Diambil alih sales'}
-														</span>
-														{event.actorName ? ` · ${event.actorName}` : ''}
-														{event.note ? ` · "${event.note}"` : ''}
-														<span className="text-muted-foreground">
-															{' '}
-															· {formatDateTime(event.createdAt)}
-														</span>
-													</span>
-												</li>
-											))}
-										</ol>
-									)}
-								</div>
+								</ol>
+							)}
+						</div>
 							</div>
 						</>
-					)}
-				</section>
-			</div>
+					) : null}
+				</DialogContent>
+			</Dialog>
 		</main>
 	)
 }
