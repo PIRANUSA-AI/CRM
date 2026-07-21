@@ -1,4 +1,14 @@
-.ocm-shell {
+/*
+ * Theme tokens live on :root, not on .ocm-shell.
+ *
+ * Radix renders dialogs, dropdowns and tooltips through a portal on
+ * document.body — outside the shell. A token scoped to the shell is simply
+ * undefined there, and `border: 1px solid var(--ocm-line)` with an undefined
+ * var is invalid at computed-value time, so the whole shorthand falls back to
+ * border-style: none. That is why every field in every dialog had no box at
+ * all: not a contrast problem, a missing border.
+ */
+:root {
 	--ocm-bg: var(--background);
 	--ocm-surface: color-mix(in oklab, var(--card) 92%, var(--background) 8%);
 	--ocm-surface-soft: color-mix(in oklab, var(--muted) 72%, var(--background) 28%);
@@ -13,7 +23,7 @@
 	--ocm-danger: oklch(0.62 0.2 26);
 }
 
-.dark .ocm-shell {
+.dark {
 	--ocm-surface: color-mix(in oklab, var(--card) 78%, var(--background) 22%);
 	--ocm-surface-soft: color-mix(in oklab, var(--muted) 82%, var(--background) 18%);
 	--ocm-line: color-mix(in oklab, var(--border) 80%, transparent);
@@ -247,16 +257,43 @@
 .ocm-select {
 	width: 100%;
 	border-radius: 8px;
-	border: 1px solid var(--ocm-line);
-	background: var(--ocm-surface-soft);
+	/* The stronger line, not --ocm-line: a field has to read as a box you can
+	   type into before it is focused, which the softer one did not manage
+	   against the card behind it. */
+	border: 1px solid var(--ocm-line-strong);
+	background: var(--background);
 	color: var(--ocm-text);
-	padding: 8px 10px;
+	padding: 9px 12px;
 	font-size: 0.8rem;
+	line-height: 1.4;
+	transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.ocm-input:hover:not(:disabled),
+.ocm-textarea:hover:not(:disabled),
+.ocm-select:hover:not(:disabled) {
+	border-color: color-mix(in oklab, var(--ocm-accent) 40%, var(--ocm-line-strong));
+}
+
+.ocm-input:focus-visible,
+.ocm-textarea:focus-visible,
+.ocm-select:focus-visible {
+	outline: none;
+	border-color: var(--ocm-accent);
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--ocm-accent) 22%, transparent);
+}
+
+.ocm-input:disabled,
+.ocm-textarea:disabled,
+.ocm-select:disabled {
+	background: var(--ocm-surface-soft);
+	color: var(--ocm-text-muted);
+	cursor: not-allowed;
 }
 
 .ocm-input::placeholder,
 .ocm-textarea::placeholder {
-	color: var(--ocm-text-muted);
+	color: color-mix(in oklab, var(--ocm-text-muted) 75%, transparent);
 }
 
 .ocm-textarea {
