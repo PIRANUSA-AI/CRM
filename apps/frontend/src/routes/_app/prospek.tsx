@@ -3,6 +3,7 @@ import { CheckCircle2, Sparkles, TriangleAlert, UserPlus } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmSectionHeader } from '@/components/crm/shared'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
 import { leadImport, prospects, type ProspectChannel } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/prospek')({
@@ -47,24 +48,39 @@ function ProspekPage() {
 	const [saving, setSaving] = useState(false)
 	const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
-	// A leader hands the prospect to a sales instead of keeping it: they assign
-	// leads, they do not work them through to closing. A sales always keeps
-	// their own, so the picker is only rendered for a leader.
+	// A supervisor hands the prospect to whoever will work it; a sales always
+	// keeps their own, so the picker is only rendered above sales. This is
+	// isSupervisorRole rather than a hand-written list because spelling the
+	// roles out here is exactly how the administrator tier was missed when it
+	// was introduced: the backend requires an assignee from anyone overseeing
+	// more than one team, but this form rendered no picker for them, so an
+	// administrator could only ever be rejected — the form was unusable rather
+	// than merely inconvenient.
 	const currentUser = useCurrentUser()
-	const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
+	const isSupervisor = isSupervisorRole(currentUser?.role)
 	const [salesOptions, setSalesOptions] = useState<
-		Array<{ userId: string; name: string | null; email: string }>
+		Array<{
+			userId: string
+			name: string | null
+			email: string
+			role: string
+			teamName: string | null
+		}>
 	>([])
 	const [assigneeId, setAssigneeId] = useState('')
 
 	useEffect(() => {
-		if (!isLeader) return
+		if (!isSupervisor) return
 		let active = true
 		void leadImport
 			.assignables()
 			.then((response) => {
 				if (!active) return
-				const options = response.data.filter((item) => item.userId !== currentUser?.id)
+				// No self-filter: the backend already lists only who can carry a
+				// lead (sales and leaders), so an administrator is absent from it
+				// by construction, while a leader sells alongside their team and
+				// may legitimately keep the prospect.
+				const options = response.data
 				setSalesOptions(options)
 				if (options.length === 1) setAssigneeId(options[0].userId)
 			})
@@ -72,7 +88,7 @@ function ProspekPage() {
 		return () => {
 			active = false
 		}
-	}, [isLeader, currentUser?.id])
+	}, [isSupervisor])
 
 	const set = useCallback(
 		<K extends keyof typeof emptyForm>(key: K, value: (typeof emptyForm)[K]) =>
@@ -89,8 +105,8 @@ function ProspekPage() {
 			setMsg({ ok: false, text: 'Isi minimal nomor WhatsApp atau email.' })
 			return
 		}
-		if (isLeader && !assigneeId) {
-			setMsg({ ok: false, text: 'Pilih sales yang akan menangani prospek ini.' })
+		if (isSupervisor && !assigneeId) {
+			setMsg({ ok: false, text: 'Pilih siapa yang akan menangani prospek ini.' })
 			return
 		}
 		setSaving(true)
@@ -106,7 +122,7 @@ function ProspekPage() {
 				productInterest: form.productInterest.trim() || undefined,
 				followUpAt: form.followUpAt ? new Date(form.followUpAt).toISOString() : undefined,
 				notes: form.notes.trim() || undefined,
-				assigneeId: isLeader ? assigneeId : undefined,
+				assigneeId: isSupervisor ? assigneeId : undefined,
 			})
 			const due = new Date(res.data.dueAt)
 			const dueLabel = new Intl.DateTimeFormat('id-ID', {
@@ -115,7 +131,7 @@ function ProspekPage() {
 				hour: '2-digit',
 				minute: '2-digit',
 			}).format(due)
-			const owner = isLeader
+			const owner = isSupervisor
 				? salesOptions.find((item) => item.userId === assigneeId)
 				: null
 			setMsg({
@@ -130,13 +146,17 @@ function ProspekPage() {
 		} finally {
 			setSaving(false)
 		}
-	}, [form, emptyForm, isLeader, assigneeId, salesOptions])
+	}, [form, emptyForm, isSupervisor, assigneeId, salesOptions])
 
 	return (
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
 				title="Tambah Prospek"
-				subtitle="Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Otomatis jadi tugas follow-up milikmu."
+				subtitle={
+					isSupervisor
+						? 'Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Jadi tugas follow-up untuk orang yang kamu tunjuk.'
+						: 'Catat lead yang kamu temukan sendiri (event, LinkedIn, sosmed). Otomatis jadi tugas follow-up milikmu.'
+				}
 				actions={
 					<button type="button" className="ocm-btn" onClick={() => navigate({ to: '/tasks' })}>
 						Lihat Daftar Tugas
@@ -148,9 +168,9 @@ function ProspekPage() {
 				<div className="mb-4 flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
 					<Sparkles size={16} className="mt-0.5 shrink-0 text-primary" />
 					<span>
-						{isLeader ? (
+						{isSupervisor ? (
 							<>
-								Prospek ini ditugaskan ke sales yang kamu pilih dan muncul di{' '}
+								Prospek ini ditugaskan ke orang yang kamu pilih dan muncul di{' '}
 								<strong>Daftar Tugas</strong> mereka pada tanggal follow-up.
 							</>
 						) : (
@@ -180,17 +200,19 @@ function ProspekPage() {
 				) : null}
 
 				<div className="grid gap-3 sm:grid-cols-2">
-					{isLeader ? (
-						<Field label="Tugaskan ke sales *">
+					{isSupervisor ? (
+						<Field label="Tugaskan ke *">
 							<select
 								value={assigneeId}
 								onChange={(e) => setAssigneeId(e.target.value)}
 								className="ocm-input"
 							>
-								<option value="">— Pilih sales —</option>
+								<option value="">— Pilih penanggung jawab —</option>
 								{salesOptions.map((option) => (
 									<option key={option.userId} value={option.userId}>
 										{option.name || option.email}
+										{option.teamName ? ` · ${option.teamName}` : ''}
+										{option.role === 'leader' ? ' (leader)' : ''}
 									</option>
 								))}
 							</select>

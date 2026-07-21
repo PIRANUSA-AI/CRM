@@ -57,7 +57,14 @@ type MappedRow = {
 	consent_status: string
 }
 
-type Assignable = { userId: string; teamId: string | null; name: string | null; email: string }
+type Assignable = {
+	userId: string
+	teamId: string | null
+	teamName: string | null
+	name: string | null
+	email: string
+	role: string
+}
 
 const REQUIRED_HEADERS: CanonicalField[] = ['name', 'phone']
 
@@ -94,9 +101,10 @@ function normalizeProspectChannel(value: string | null | undefined): ProspectCha
 async function resolveOwnTeamId(actor: ImportActor): Promise<string | null> {
 	const appTeams = await prisma.teams.findMany({
 		where: { app_id: actor.appId, deleted_at: null },
-		select: { id: true },
+		select: { id: true, name: true },
 	})
 	const appTeamIds = appTeams.map((team) => team.id)
+	const teamNameById = new Map(appTeams.map((team) => [team.id, team.name]))
 	if (!appTeamIds.length) return null
 	const membership = await prisma.team_members.findFirst({
 		where: { team_id: { in: appTeamIds }, user_id: actor.userId },
@@ -121,9 +129,10 @@ function priorityForStage(stage: string | null): string {
 async function resolveAssignables(actor: ImportActor): Promise<Map<string, Assignable>> {
 	const appTeams = await prisma.teams.findMany({
 		where: { app_id: actor.appId, deleted_at: null },
-		select: { id: true },
+		select: { id: true, name: true },
 	})
 	const appTeamIds = appTeams.map((team) => team.id)
+	const teamNameById = new Map(appTeams.map((team) => [team.id, team.name]))
 	const appMembers = appTeamIds.length
 		? await prisma.team_members.findMany({
 				where: { team_id: { in: appTeamIds } },
@@ -146,7 +155,7 @@ async function resolveAssignables(actor: ImportActor): Promise<Map<string, Assig
 			active: true,
 			role: { in: ['sales', 'leader'] },
 		},
-		select: { id: true, name: true, email: true },
+		select: { id: true, name: true, email: true, role: true },
 	})
 
 	const map = new Map<string, Assignable>()
@@ -164,8 +173,13 @@ async function resolveAssignables(actor: ImportActor): Promise<Map<string, Assig
 		map.set(user.email.trim().toLowerCase(), {
 			userId: user.id,
 			teamId,
+			// Carried so the picker can say which team and which tier someone is.
+			// An administrator sees both teams at once, where "Deska" and "Reza"
+			// alone give no hint that one of them is the wrong team for this lead.
+			teamName: teamId ? teamNameById.get(teamId) ?? null : null,
 			name: user.name,
 			email: user.email,
+			role: user.role || 'sales',
 		})
 	}
 	return map
@@ -615,11 +629,20 @@ export abstract class ImportService {
 		}
 	}
 
-	// Sales the actor may assign a lead to (for the manual add-lead dropdown).
+	// Who the actor may hand a lead to (for the assignee dropdowns). Team and
+	// role travel with each entry: an administrator picks across every team at
+	// once, where a bare list of first names gives no way to tell an AEC sales
+	// from an MFG one.
 	static async listAssignables(actor: ImportActor) {
 		const assignables = await resolveAssignables(actor)
 		return [...assignables.values()]
-			.map((a) => ({ userId: a.userId, name: a.name, email: a.email }))
+			.map((a) => ({
+				userId: a.userId,
+				name: a.name,
+				email: a.email,
+				role: a.role,
+				teamName: a.teamName,
+			}))
 			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
 	}
 

@@ -3168,9 +3168,15 @@ export const leadImport = {
 	history: () => apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
 
 	assignables: () =>
-		apiRequest<{ data: Array<{ userId: string; name: string | null; email: string }> }>(
-			'/import/assignables',
-		),
+		apiRequest<{
+			data: Array<{
+				userId: string
+				name: string | null
+				email: string
+				role: string
+				teamName: string | null
+			}>
+		}>('/import/assignables'),
 
 	createManualLead: (input: {
 		name: string
