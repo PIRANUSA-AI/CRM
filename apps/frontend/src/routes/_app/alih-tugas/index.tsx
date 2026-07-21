@@ -1,46 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import {
-	Bot,
-	CheckCircle2,
-	MessageCircle,
-	RefreshCw,
-	Sparkles,
-	TriangleAlert,
-	UserCheck,
-} from 'lucide-react'
+import { Bot, CheckCircle2, RefreshCw, TriangleAlert, UserCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CrmAvatar, CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-} from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { isSupervisorRole } from '@/lib/role-access'
-import {
-	personalAi,
-	type PersonalTakeoverHistoryItem,
-	type PersonalTakeoverItem,
-} from '@/lib/api'
+import { personalAi, type PersonalTakeoverItem } from '@/lib/api'
 import { connectSocket } from '@/lib/socket'
 
-export const Route = createFileRoute('/_app/alih-tugas')({
+export const Route = createFileRoute('/_app/alih-tugas/')({
 	component: AlihTugasPage,
 })
-
-function formatDateTime(value: string | null) {
-	if (!value) return '-'
-	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return '-'
-	return new Intl.DateTimeFormat('id-ID', {
-		day: 'numeric',
-		month: 'short',
-		hour: '2-digit',
-		minute: '2-digit',
-	}).format(date)
-}
 
 function formatWaiting(minutes: number) {
 	if (minutes < 1) return 'baru saja'
@@ -70,13 +39,9 @@ function AlihTugasPage() {
 	const [items, setItems] = useState<PersonalTakeoverItem[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
-	const [busyId, setBusyId] = useState<string | null>(null)
-	const [historyById, setHistoryById] = useState<Record<string, PersonalTakeoverHistoryItem[]>>({})
 
 	const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 	const [ownerFilter, setOwnerFilter] = useState('')
-	const [selectedId, setSelectedId] = useState<string | null>(null)
-	const [noteDraft, setNoteDraft] = useState('')
 
 	const load = useCallback(async () => {
 		setLoading(true)
@@ -115,46 +80,12 @@ function AlihTugasPage() {
 		}
 	}, [load])
 
-	const loadHistory = useCallback(
-		async (conversationId: string) => {
-			if (historyById[conversationId]) return
-			try {
-				const response = await personalAi.takeoverHistory(conversationId)
-				setHistoryById((current) => ({ ...current, [conversationId]: response.data }))
-			} catch {
-				setHistoryById((current) => ({ ...current, [conversationId]: [] }))
-			}
-		},
-		[historyById],
-	)
-
-	const select = useCallback(
-		(conversationId: string) => {
-			setSelectedId(conversationId)
-			// Cleared per selection. One shared draft meant a note typed against
-			// one chat would follow you to the next and be sent for that one.
-			setNoteDraft('')
-			void loadHistory(conversationId)
-		},
-		[loadHistory],
-	)
-
-	const releaseToAi = useCallback(
-		async (conversationId: string, note?: string) => {
-			setBusyId(conversationId)
-			setError(null)
-			try {
-				await personalAi.release(conversationId, note?.trim() || undefined)
-				setSelectedId(null)
-				setNoteDraft('')
-				await load()
-			} catch (reason) {
-				setError(reason instanceof Error ? reason.message : 'Gagal mengembalikan ke AI.')
-			} finally {
-				setBusyId(null)
-			}
-		},
-		[load],
+	// The record lives on its own page now, the way a task does. Keeping it in
+	// a panel here meant every row carried state that only one of them used.
+	const openDetail = useCallback(
+		(conversationId: string) =>
+			navigate({ to: '/alih-tugas/$conversationId', params: { conversationId } }),
+		[navigate],
 	)
 
 	const overdueCount = items.filter((item) => item.overdue).length
@@ -193,11 +124,6 @@ function AlihTugasPage() {
 			return b.waitingMinutes - a.waitingMinutes
 		})
 	}, [items, statusFilter, ownerFilter])
-
-	const selected = useMemo(
-		() => visibleItems.find((item) => item.conversationId === selectedId) ?? null,
-		[visibleItems, selectedId],
-	)
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -244,7 +170,7 @@ function AlihTugasPage() {
 			<div className="flex flex-wrap items-center gap-2">
 				{STATUS_FILTERS.map((chip) => (
 					<button
-						type="button"
+						type='button'
 						key={chip.id}
 						onClick={() => setStatusFilter(chip.id)}
 						className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
@@ -278,7 +204,7 @@ function AlihTugasPage() {
 
 				{statusFilter !== 'all' || ownerFilter ? (
 					<button
-						type="button"
+						type='button'
 						onClick={() => {
 							setStatusFilter('all')
 							setOwnerFilter('')
@@ -296,7 +222,7 @@ function AlihTugasPage() {
 					<div>
 						<p>{error}</p>
 						<button
-							type="button"
+							type='button'
 							className="mt-1 font-semibold underline"
 							onClick={() => void load()}
 						>
@@ -343,32 +269,29 @@ function AlihTugasPage() {
 								<div>Sales</div>
 								<div>Sumber</div>
 							</div>
-							{visibleItems.map((item) => {
-								const isSelected = item.conversationId === selectedId
-								return (
-									<div
-										key={item.conversationId}
-										role="button"
-										tabIndex={0}
-										onClick={() => select(item.conversationId)}
-										onKeyDown={(event) => {
-											if (event.key === 'Enter') select(item.conversationId)
-										}}
-										className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 ${
-											isSelected ? 'bg-primary/10' : 'hover:bg-muted/40'
-										}`}
-									>
-										<div className="flex min-w-0 items-center gap-2.5 pr-3">
-											<CrmAvatar name={item.contactName || '?'} size={28} />
-											<div className="min-w-0">
-												<p className="truncate font-semibold">{item.contactName}</p>
-												{item.preview ? (
-													<p className="truncate text-[11px] italic text-muted-foreground">
-														{item.preview}
-													</p>
-												) : null}
-											</div>
+							{visibleItems.map((item) => (
+								<div
+									key={item.conversationId}
+									role="button"
+									tabIndex={0}
+									onClick={() => openDetail(item.conversationId)}
+									onKeyDown={(event) => {
+										if (event.key === 'Enter') openDetail(item.conversationId)
+									}}
+									className={`grid ${COLUMNS} cursor-pointer items-center border-b border-border px-4 py-2.5 text-sm transition-colors last:border-0 hover:bg-muted/40`}
+								>
+									<div className="flex min-w-0 items-center gap-2.5 pr-3">
+										<CrmAvatar name={item.contactName || '?'} size={28} />
+										{/* The second line is always rendered, with a fallback when
+										    there is no preview: letting it collapse gave rows two
+										    different heights down the same table. */}
+										<div className="min-w-0">
+											<p className="truncate text-sm font-semibold">{item.contactName}</p>
+											<p className="truncate text-[11px] italic text-muted-foreground">
+												{item.preview || 'Belum ada isi pesan'}
+											</p>
 										</div>
+									</div>
 										<div>
 											{item.awaitingResponse ? (
 												<span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
@@ -406,156 +329,12 @@ function AlihTugasPage() {
 											</span>
 										</div>
 									</div>
-								)
-							})}
+								))}
 						</div>
 					</div>
 				)}
 			</section>
 
-			{/* Detail opens on click rather than living beside the list: it only
-			    ever describes one chat, and a permanent column for it left the
-			    table narrower than the rows it has to hold. */}
-			<Dialog
-				open={Boolean(selected)}
-				onOpenChange={(open) => {
-					if (!open) {
-						setSelectedId(null)
-						setNoteDraft('')
-					}
-				}}
-			>
-				<DialogContent className="sm:max-w-lg">
-					{selected ? (
-						<>
-							<DialogHeader>
-								<DialogTitle>{selected.contactName}</DialogTitle>
-								<DialogDescription>
-									{selected.contactPhone || 'Nomor tidak tersedia'}
-								</DialogDescription>
-							</DialogHeader>
-
-							<div className="space-y-3">
-						{/* Replying is the job; returning it to the AI is what you do
-						    afterwards. The old page styled those the other way round. */}
-						<button
-							type="button"
-							className="ocm-btn ocm-btn-primary w-full justify-center"
-							onClick={() =>
-								navigate({ to: '/chat', search: { c: selected.conversationId } })
-							}
-						>
-							<MessageCircle size={15} /> Balas di Chat
-						</button>
-
-						<dl className="divide-y divide-border rounded-lg border border-border text-sm">
-							{(
-								[
-									['Sales', selected.ownerName || '—'],
-									['Diambil oleh', selected.takenByName || (selected.source === 'ai' ? 'AI' : '—')],
-									['Sejak', formatDateTime(selected.takenAt)],
-									[
-										'Status',
-										selected.awaitingResponse
-											? `Menunggu dibalas ${formatWaiting(selected.waitingMinutes)}${selected.overdue ? ' · lewat SLA' : ''}`
-											: `Sudah dibalas${selected.respondedAt ? ` · ${formatDateTime(selected.respondedAt)}` : ''}`,
-									],
-								] as Array<[string, string]>
-							).map(([label, value]) => (
-								<div key={label} className="flex items-baseline justify-between gap-3 px-3 py-2">
-									<dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
-									<dd className="min-w-0 break-words text-right text-xs">{value}</dd>
-								</div>
-							))}
-						</dl>
-
-						{selected.aiReason ? (
-							<div>
-								<p className="mb-1 text-xs font-semibold text-muted-foreground">Alasan AI</p>
-								<p className="text-sm text-muted-foreground">{selected.aiReason}</p>
-							</div>
-						) : null}
-
-						{selected.aiSuggestedReply ? (
-							<div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5">
-								<p className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
-									<Sparkles size={12} /> Draf balasan dari AI
-								</p>
-								<p className="text-sm">{selected.aiSuggestedReply}</p>
-							</div>
-						) : null}
-
-						{selected.note ? (
-							<p className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
-								Catatan: {selected.note}
-							</p>
-						) : null}
-
-						<div className="border-t border-border pt-3">
-							<label className="mb-1 block text-xs font-semibold text-muted-foreground">
-								Catatan saat dikembalikan (opsional)
-							</label>
-							{/* Out in the open. It used to sit behind a button labelled
-							    "Riwayat", so adding a note meant opening a history panel. */}
-							<input
-								value={noteDraft}
-								onChange={(event) => setNoteDraft(event.target.value)}
-								placeholder="mis. sudah dijawab, tinggal follow-up"
-								className="ocm-input"
-							/>
-							<button
-								type="button"
-								className="ocm-btn mt-2 w-full justify-center"
-								onClick={() => void releaseToAi(selected.conversationId, noteDraft)}
-								disabled={busyId === selected.conversationId}
-							>
-								<Bot size={15} />
-								{busyId === selected.conversationId
-									? 'Mengembalikan...'
-									: 'Selesai, kembalikan ke AI'}
-							</button>
-						</div>
-
-						<div className="border-t border-border pt-3">
-							<p className="mb-1.5 text-xs font-semibold text-muted-foreground">Riwayat</p>
-							{historyById[selected.conversationId] === undefined ? (
-								<p className="text-xs text-muted-foreground">Memuat...</p>
-							) : historyById[selected.conversationId].length === 0 ? (
-								<p className="text-xs text-muted-foreground">Belum ada riwayat.</p>
-							) : (
-								<ol className="space-y-1.5">
-									{historyById[selected.conversationId].map((event) => (
-										<li key={event.id} className="flex items-start gap-2 text-xs">
-											<span
-												className={`mt-1 inline-block size-2 shrink-0 rounded-full ${
-													event.action === 'personal_release' ? 'bg-sky-500' : 'bg-amber-500'
-												}`}
-											/>
-											<span className="min-w-0">
-												<span className="font-medium">
-													{event.action === 'personal_release'
-														? 'Dikembalikan ke AI'
-														: event.source === 'ai'
-															? 'Dialihkan otomatis oleh AI'
-															: 'Diambil alih sales'}
-												</span>
-												{event.actorName ? ` · ${event.actorName}` : ''}
-												{event.note ? ` · "${event.note}"` : ''}
-												<span className="text-muted-foreground">
-													{' '}
-													· {formatDateTime(event.createdAt)}
-												</span>
-											</span>
-										</li>
-									))}
-								</ol>
-							)}
-						</div>
-							</div>
-						</>
-					) : null}
-				</DialogContent>
-			</Dialog>
 		</main>
 	)
 }

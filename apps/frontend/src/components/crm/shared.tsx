@@ -45,7 +45,13 @@ export function CrmAvatar({
 
 	return (
 		<div
-			className={cn('relative inline-grid place-items-center rounded-full text-white', className)}
+			// shrink-0: an avatar sits next to a name in a flex row, and without it
+			// a long name squeezes the circle into an ellipse. Fixed here so every
+			// table gets it rather than each one remembering.
+			className={cn(
+				'relative inline-grid shrink-0 place-items-center rounded-full text-white',
+				className,
+			)}
 			style={{
 				width: size,
 				height: size,

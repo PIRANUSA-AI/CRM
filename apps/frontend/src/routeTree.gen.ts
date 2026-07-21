@@ -36,7 +36,6 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppChatRouteImport } from './routes/_app/chat'
 import { Route as AppBroadcastRouteImport } from './routes/_app/broadcast'
 import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
-import { Route as AppAlihTugasRouteImport } from './routes/_app/alih-tugas'
 import { Route as AppAiAgentsRouteImport } from './routes/_app/ai-agents'
 import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppTasksIndexRouteImport } from './routes/_app/tasks/index'
@@ -45,6 +44,7 @@ import { Route as AppSaktiIndexRouteImport } from './routes/_app/sakti/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/_app/developers/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/_app/customers/index'
 import { Route as AppCompaniesIndexRouteImport } from './routes/_app/companies/index'
+import { Route as AppAlihTugasIndexRouteImport } from './routes/_app/alih-tugas/index'
 import { Route as AppTasksTaskIdRouteImport } from './routes/_app/tasks/$taskId'
 import { Route as AppSalesProfilesUserIdRouteImport } from './routes/_app/sales-profiles/$userId'
 import { Route as AppSaktiSuratBaruRouteImport } from './routes/_app/sakti/surat-baru'
@@ -63,6 +63,7 @@ import { Route as AppChannelsFacebookRouteImport } from './routes/_app/channels/
 import { Route as AppChannelsCustomRouteImport } from './routes/_app/channels/custom'
 import { Route as AppChannelsBotRouteImport } from './routes/_app/channels/bot'
 import { Route as AppAppsMetaAdsTrackerRouteImport } from './routes/_app/apps/meta-ads-tracker'
+import { Route as AppAlihTugasConversationIdRouteImport } from './routes/_app/alih-tugas/$conversationId'
 import { Route as AppAiAgentsAgentIdRouteImport } from './routes/_app/ai-agents/$agentId'
 import { Route as AppDevelopersApiToolsNewRouteImport } from './routes/_app/developers/api-tools/new'
 import { Route as AppChannelsWhatsappSuccessRouteImport } from './routes/_app/channels/whatsapp/success'
@@ -202,11 +203,6 @@ const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAlihTugasRoute = AppAlihTugasRouteImport.update({
-  id: '/alih-tugas',
-  path: '/alih-tugas',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppAiAgentsRoute = AppAiAgentsRouteImport.update({
   id: '/ai-agents',
   path: '/ai-agents',
@@ -245,6 +241,11 @@ const AppCustomersIndexRoute = AppCustomersIndexRouteImport.update({
 const AppCompaniesIndexRoute = AppCompaniesIndexRouteImport.update({
   id: '/companies/',
   path: '/companies/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAlihTugasIndexRoute = AppAlihTugasIndexRouteImport.update({
+  id: '/alih-tugas/',
+  path: '/alih-tugas/',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTasksTaskIdRoute = AppTasksTaskIdRouteImport.update({
@@ -339,6 +340,12 @@ const AppAppsMetaAdsTrackerRoute = AppAppsMetaAdsTrackerRouteImport.update({
   path: '/apps/meta-ads-tracker',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAlihTugasConversationIdRoute =
+  AppAlihTugasConversationIdRouteImport.update({
+    id: '/alih-tugas/$conversationId',
+    path: '/alih-tugas/$conversationId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppAiAgentsAgentIdRoute = AppAiAgentsAgentIdRouteImport.update({
   id: '/$agentId',
   path: '/$agentId',
@@ -372,7 +379,6 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ai': typeof AppAiRoute
   '/ai-agents': typeof AppAiAgentsRouteWithChildren
-  '/alih-tugas': typeof AppAlihTugasRoute
   '/analytics': typeof AppAnalyticsRoute
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
@@ -394,6 +400,7 @@ export interface FileRoutesByFullPath {
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
+  '/alih-tugas/$conversationId': typeof AppAlihTugasConversationIdRoute
   '/apps/meta-ads-tracker': typeof AppAppsMetaAdsTrackerRoute
   '/channels/bot': typeof AppChannelsBotRoute
   '/channels/custom': typeof AppChannelsCustomRoute
@@ -412,6 +419,7 @@ export interface FileRoutesByFullPath {
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/alih-tugas/': typeof AppAlihTugasIndexRoute
   '/companies/': typeof AppCompaniesIndexRoute
   '/customers/': typeof AppCustomersIndexRoute
   '/developers/': typeof AppDevelopersIndexRoute
@@ -431,7 +439,6 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ai': typeof AppAiRoute
   '/ai-agents': typeof AppAiAgentsRouteWithChildren
-  '/alih-tugas': typeof AppAlihTugasRoute
   '/analytics': typeof AppAnalyticsRoute
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
@@ -453,6 +460,7 @@ export interface FileRoutesByTo {
   '/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
+  '/alih-tugas/$conversationId': typeof AppAlihTugasConversationIdRoute
   '/apps/meta-ads-tracker': typeof AppAppsMetaAdsTrackerRoute
   '/channels/bot': typeof AppChannelsBotRoute
   '/channels/custom': typeof AppChannelsCustomRoute
@@ -471,6 +479,7 @@ export interface FileRoutesByTo {
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/alih-tugas': typeof AppAlihTugasIndexRoute
   '/companies': typeof AppCompaniesIndexRoute
   '/customers': typeof AppCustomersIndexRoute
   '/developers': typeof AppDevelopersIndexRoute
@@ -492,7 +501,6 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_app/ai': typeof AppAiRoute
   '/_app/ai-agents': typeof AppAiAgentsRouteWithChildren
-  '/_app/alih-tugas': typeof AppAlihTugasRoute
   '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/broadcast': typeof AppBroadcastRoute
   '/_app/chat': typeof AppChatRoute
@@ -514,6 +522,7 @@ export interface FileRoutesById {
   '/_app/templates': typeof AppTemplatesRoute
   '/whatsapp/connect': typeof WhatsappConnectRoute
   '/_app/ai-agents/$agentId': typeof AppAiAgentsAgentIdRoute
+  '/_app/alih-tugas/$conversationId': typeof AppAlihTugasConversationIdRoute
   '/_app/apps/meta-ads-tracker': typeof AppAppsMetaAdsTrackerRoute
   '/_app/channels/bot': typeof AppChannelsBotRoute
   '/_app/channels/custom': typeof AppChannelsCustomRoute
@@ -532,6 +541,7 @@ export interface FileRoutesById {
   '/_app/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/_app/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/_app/tasks/$taskId': typeof AppTasksTaskIdRoute
+  '/_app/alih-tugas/': typeof AppAlihTugasIndexRoute
   '/_app/companies/': typeof AppCompaniesIndexRoute
   '/_app/customers/': typeof AppCustomersIndexRoute
   '/_app/developers/': typeof AppDevelopersIndexRoute
@@ -553,7 +563,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ai'
     | '/ai-agents'
-    | '/alih-tugas'
     | '/analytics'
     | '/broadcast'
     | '/chat'
@@ -575,6 +584,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
+    | '/alih-tugas/$conversationId'
     | '/apps/meta-ads-tracker'
     | '/channels/bot'
     | '/channels/custom'
@@ -593,6 +603,7 @@ export interface FileRouteTypes {
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
+    | '/alih-tugas/'
     | '/companies/'
     | '/customers/'
     | '/developers/'
@@ -612,7 +623,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ai'
     | '/ai-agents'
-    | '/alih-tugas'
     | '/analytics'
     | '/broadcast'
     | '/chat'
@@ -634,6 +644,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/whatsapp/connect'
     | '/ai-agents/$agentId'
+    | '/alih-tugas/$conversationId'
     | '/apps/meta-ads-tracker'
     | '/channels/bot'
     | '/channels/custom'
@@ -652,6 +663,7 @@ export interface FileRouteTypes {
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
+    | '/alih-tugas'
     | '/companies'
     | '/customers'
     | '/developers'
@@ -672,7 +684,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_app/ai'
     | '/_app/ai-agents'
-    | '/_app/alih-tugas'
     | '/_app/analytics'
     | '/_app/broadcast'
     | '/_app/chat'
@@ -694,6 +705,7 @@ export interface FileRouteTypes {
     | '/_app/templates'
     | '/whatsapp/connect'
     | '/_app/ai-agents/$agentId'
+    | '/_app/alih-tugas/$conversationId'
     | '/_app/apps/meta-ads-tracker'
     | '/_app/channels/bot'
     | '/_app/channels/custom'
@@ -712,6 +724,7 @@ export interface FileRouteTypes {
     | '/_app/sakti/surat-baru'
     | '/_app/sales-profiles/$userId'
     | '/_app/tasks/$taskId'
+    | '/_app/alih-tugas/'
     | '/_app/companies/'
     | '/_app/customers/'
     | '/_app/developers/'
@@ -925,13 +938,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAnalyticsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/alih-tugas': {
-      id: '/_app/alih-tugas'
-      path: '/alih-tugas'
-      fullPath: '/alih-tugas'
-      preLoaderRoute: typeof AppAlihTugasRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/ai-agents': {
       id: '/_app/ai-agents'
       path: '/ai-agents'
@@ -986,6 +992,13 @@ declare module '@tanstack/react-router' {
       path: '/companies'
       fullPath: '/companies/'
       preLoaderRoute: typeof AppCompaniesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/alih-tugas/': {
+      id: '/_app/alih-tugas/'
+      path: '/alih-tugas'
+      fullPath: '/alih-tugas/'
+      preLoaderRoute: typeof AppAlihTugasIndexRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/tasks/$taskId': {
@@ -1114,6 +1127,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAppsMetaAdsTrackerRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/alih-tugas/$conversationId': {
+      id: '/_app/alih-tugas/$conversationId'
+      path: '/alih-tugas/$conversationId'
+      fullPath: '/alih-tugas/$conversationId'
+      preLoaderRoute: typeof AppAlihTugasConversationIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/ai-agents/$agentId': {
       id: '/_app/ai-agents/$agentId'
       path: '/$agentId'
@@ -1198,7 +1218,6 @@ const AppDevelopersApiToolsRouteWithChildren =
 interface AppRouteChildren {
   AppAiRoute: typeof AppAiRoute
   AppAiAgentsRoute: typeof AppAiAgentsRouteWithChildren
-  AppAlihTugasRoute: typeof AppAlihTugasRoute
   AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppBroadcastRoute: typeof AppBroadcastRoute
   AppChatRoute: typeof AppChatRoute
@@ -1218,6 +1237,7 @@ interface AppRouteChildren {
   AppProspekRoute: typeof AppProspekRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTemplatesRoute: typeof AppTemplatesRoute
+  AppAlihTugasConversationIdRoute: typeof AppAlihTugasConversationIdRoute
   AppAppsMetaAdsTrackerRoute: typeof AppAppsMetaAdsTrackerRoute
   AppChannelsBotRoute: typeof AppChannelsBotRoute
   AppChannelsCustomRoute: typeof AppChannelsCustomRoute
@@ -1235,6 +1255,7 @@ interface AppRouteChildren {
   AppSaktiSuratBaruRoute: typeof AppSaktiSuratBaruRoute
   AppSalesProfilesUserIdRoute: typeof AppSalesProfilesUserIdRoute
   AppTasksTaskIdRoute: typeof AppTasksTaskIdRoute
+  AppAlihTugasIndexRoute: typeof AppAlihTugasIndexRoute
   AppCompaniesIndexRoute: typeof AppCompaniesIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
@@ -1246,7 +1267,6 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAiRoute: AppAiRoute,
   AppAiAgentsRoute: AppAiAgentsRouteWithChildren,
-  AppAlihTugasRoute: AppAlihTugasRoute,
   AppAnalyticsRoute: AppAnalyticsRoute,
   AppBroadcastRoute: AppBroadcastRoute,
   AppChatRoute: AppChatRoute,
@@ -1266,6 +1286,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppProspekRoute: AppProspekRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTemplatesRoute: AppTemplatesRoute,
+  AppAlihTugasConversationIdRoute: AppAlihTugasConversationIdRoute,
   AppAppsMetaAdsTrackerRoute: AppAppsMetaAdsTrackerRoute,
   AppChannelsBotRoute: AppChannelsBotRoute,
   AppChannelsCustomRoute: AppChannelsCustomRoute,
@@ -1283,6 +1304,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSaktiSuratBaruRoute: AppSaktiSuratBaruRoute,
   AppSalesProfilesUserIdRoute: AppSalesProfilesUserIdRoute,
   AppTasksTaskIdRoute: AppTasksTaskIdRoute,
+  AppAlihTugasIndexRoute: AppAlihTugasIndexRoute,
   AppCompaniesIndexRoute: AppCompaniesIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,

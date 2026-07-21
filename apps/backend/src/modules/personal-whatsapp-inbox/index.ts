@@ -536,6 +536,26 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		})
 		return { count }
 	})
+	// Declared after /takeovers/count so the literal path wins: a param route
+	// registered first would swallow "count" as a conversation id.
+	// One takeover, for the detail page. Reuses list() and picks the row rather
+	// than growing a second query that could scope differently from the list the
+	// user just clicked out of.
+	.get('/takeovers/:conversationId', async ({ resolvedAppId, userId, params, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const user = await prisma.users.findFirst({
+			where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+			select: { role: true },
+		})
+		const data = await PersonalTakeoverService.list({
+			appId: resolvedAppId,
+			userId,
+			role: user?.role || 'sales',
+		})
+		const item = data.find((row) => row.conversationId === params.conversationId)
+		if (!item) { set.status = 404; return { error: 'Alih tugas tidak ditemukan' } }
+		return { data: item }
+	})
 	.post('/:conversationId/takeover', async ({ resolvedAppId, userId, params, body, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
 		const conversation = await prisma.conversations.findFirst({

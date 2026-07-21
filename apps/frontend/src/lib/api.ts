@@ -1267,6 +1267,11 @@ export const personalAi = {
 		apiRequest<{ data: PersonalTakeoverItem[] }>('/personal-whatsapp-inbox/takeovers'),
 	takeoverCount: () =>
 		apiRequest<{ count: number }>('/personal-whatsapp-inbox/takeovers/count'),
+	getTakeover: (conversationId: string) =>
+		apiRequest<{ data: PersonalTakeoverItem }>(
+			`/personal-whatsapp-inbox/takeovers/${conversationId}`,
+		),
+
 	takeoverHistory: (conversationId: string) =>
 		apiRequest<{ data: PersonalTakeoverHistoryItem[] }>(
 			`/personal-whatsapp-inbox/${conversationId}/takeover-history`,
