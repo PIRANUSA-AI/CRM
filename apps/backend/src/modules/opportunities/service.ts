@@ -111,6 +111,8 @@ type DealFilters = {
 	contactId?: string
 	search?: string
 	bucket?: DealBucket
+	/** One stage only — what the board's "muat lebih banyak" pages through. */
+	stage?: string
 }
 
 /**
@@ -127,6 +129,7 @@ function dealFiltersSql(filters: DealFilters): Prisma.Sql {
 	if (filters.ownerId) parts.push(Prisma.sql`AND o.owner_id = ${filters.ownerId}::uuid`)
 	if (filters.contactId) parts.push(Prisma.sql`AND o.contact_id = ${filters.contactId}::uuid`)
 	if (filters.search) parts.push(Prisma.sql`AND o.name ILIKE ${`%${filters.search}%`}`)
+	if (filters.stage) parts.push(Prisma.sql`AND o.stage = ${filters.stage}`)
 
 	if (filters.bucket === 'closed') {
 		parts.push(Prisma.sql`AND o.status IN ('won', 'lost')`)
@@ -235,6 +238,7 @@ export abstract class OpportunityService {
 			contactId?: string
 			search?: string
 			bucket?: DealBucket
+			stage?: string
 			limit?: number
 			offset?: number
 		},

@@ -1698,6 +1698,7 @@ export const opportunities = {
 		contactId?: string
 		search?: string
 		bucket?: DealBucket
+		stage?: string
 		limit?: number
 		offset?: number
 	}): Promise<{

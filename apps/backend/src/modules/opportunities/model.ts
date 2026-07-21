@@ -37,6 +37,7 @@ export const OpportunityRequestModel = {
 		search: t.Optional(t.String()),
 		// prospek | opportunity | closed
 		bucket: t.Optional(t.String()),
+		stage: t.Optional(t.String()),
 		limit: t.Optional(t.String()),
 		offset: t.Optional(t.String()),
 	}),

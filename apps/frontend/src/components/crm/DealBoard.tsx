@@ -129,6 +129,8 @@ function StageColumn({
 	count,
 	total,
 	onOpen,
+	onLoadMore,
+	loadingMore,
 	headerExtra,
 }: {
 	stage: DealStage
@@ -137,6 +139,8 @@ function StageColumn({
 	count: number
 	total: number
 	onOpen: (deal: Opportunity) => void
+	onLoadMore: (stageId: string) => void
+	loadingMore: boolean
 	headerExtra?: React.ReactNode
 }) {
 	const { setNodeRef, isOver } = useDroppable({ id: stage.id })
@@ -169,9 +173,14 @@ function StageColumn({
 					</p>
 				) : null}
 				{hidden > 0 ? (
-					<p className="rounded-lg border border-dashed border-border p-2 text-center text-[10px] text-muted-foreground">
-						+{hidden} lagi tidak ditampilkan
-					</p>
+					<button
+						type="button"
+						onClick={() => onLoadMore(stage.id)}
+						disabled={loadingMore}
+						className="w-full rounded-lg border border-dashed border-border p-2 text-center text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
+					>
+						{loadingMore ? 'Memuat...' : `Muat ${hidden} lagi`}
+					</button>
 				) : null}
 			</div>
 			<div className="mt-2 border-t border-border px-2 py-1.5 text-right text-[11px] font-semibold tabular-nums">
@@ -189,6 +198,8 @@ export function DealBoard({
 	onWonYearChange,
 	onMove,
 	onOpen,
+	onLoadMore,
+	loadingStage,
 }: {
 	stages: DealStage[]
 	/** Server-side per-stage totals plus the cards to render. */
@@ -198,6 +209,9 @@ export function DealBoard({
 	onWonYearChange: (year: string) => void
 	onMove: (deal: Opportunity, stageId: string) => void
 	onOpen: (deal: Opportunity) => void
+	onLoadMore: (stageId: string) => void
+	/** The one column currently fetching its next page, if any. */
+	loadingStage: string | null
 }) {
 	const [draggingId, setDraggingId] = useState<string | null>(null)
 
@@ -242,6 +256,8 @@ export function DealBoard({
 								count={column?.count ?? 0}
 								total={column?.value ?? 0}
 								onOpen={onOpen}
+								onLoadMore={onLoadMore}
+								loadingMore={loadingStage === stage.id}
 								headerExtra={
 									stage.status === 'won' && wonYears.length > 1 ? (
 										<select

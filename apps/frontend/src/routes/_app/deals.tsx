@@ -125,6 +125,7 @@ function DealsPage() {
 	const [query, setQuery] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [movingId, setMovingId] = useState<string | null>(null)
+	const [loadingStage, setLoadingStage] = useState<string | null>(null)
 	const [error, setError] = useState<string | null>(null)
 
 	// Details a sales fills in as the deal firms up. The stage stays on the row
@@ -233,26 +234,133 @@ function DealsPage() {
 		setPage(1)
 	}, [bucket, view])
 
-	const moveStage = useCallback(async (deal: Opportunity, stageId: string) => {
-		if (stageId === deal.stage) return
-		setMovingId(deal.id)
-		setError(null)
-		try {
-			await dealsApi.moveStage(deal.id, stageId)
-			// Column counts, column totals and the header buckets all live on the
-			// server now, so the move is followed by a reload rather than by
-			// patching one row and leaving four numbers stale.
-			await load()
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : 'Tahap belum dapat diubah.')
-		} finally {
-			setMovingId(null)
-		}
-	}, [])
+	/**
+	 * Moving a card updates the board in place rather than reloading it.
+	 *
+	 * A drag should land instantly, and the four numbers a move disturbs — both
+	 * columns' counts and both columns' totals — are all derivable from the card
+	 * that moved, so they are adjusted here. The server's row then replaces the
+	 * optimistic one, and a failure puts the board back exactly as it was.
+	 */
+	const moveStage = useCallback(
+		async (deal: Opportunity, stageId: string) => {
+			if (stageId === deal.stage) return
+			const previousColumns = columns
+			const previousDeals = deals
+			const target = stages.find((row) => row.id === stageId)
+			const amount = deal.value || 0
 
-	// Search and the bucket filter are applied by the server now, so what came
-	// back is already what should be shown — narrowing it again here would shrink
-	// the page while the total went on describing something wider.
+			const optimistic: Opportunity = {
+				...deal,
+				stage: stageId,
+				stageLabel: target?.label ?? deal.stageLabel,
+				// Pending asserts no probability, so the card keeps the one it had —
+				// the same rule the backend applies.
+				probability: target?.probability ?? deal.probability,
+				status: target?.status ?? deal.status,
+				stageChangedAt: new Date().toISOString(),
+			}
+
+			setMovingId(deal.id)
+			setError(null)
+			setColumns((prev) =>
+				prev.map((column) => {
+					if (column.stage === deal.stage) {
+						return {
+							...column,
+							count: Math.max(0, column.count - 1),
+							value: column.value - amount,
+							deals: column.deals.filter((row) => row.id !== deal.id),
+						}
+					}
+					if (column.stage === stageId) {
+						return {
+							...column,
+							count: column.count + 1,
+							value: column.value + amount,
+							deals: [optimistic, ...column.deals],
+						}
+					}
+					return column
+				}),
+			)
+			setDeals((prev) => prev.map((row) => (row.id === deal.id ? optimistic : row)))
+
+			try {
+				const response = await dealsApi.moveStage(deal.id, stageId)
+				const updated = response.payload
+				setColumns((prev) =>
+					prev.map((column) =>
+						column.stage === stageId
+							? {
+									...column,
+									deals: column.deals.map((row) => (row.id === updated.id ? updated : row)),
+								}
+							: column,
+					),
+				)
+				setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
+				// The header buckets depend on the team threshold, so they are asked
+				// for rather than guessed — but out of band, since nothing on screen
+				// waits for them.
+				void dealsApi
+					.stats()
+					.then((res) => setStats(res.payload))
+					.catch(() => undefined)
+				// A row that just left the filtered bucket must stop being listed,
+				// and only the server knows what takes its place on this page.
+				if (view === 'table' && bucket !== 'all') await load()
+			} catch (reason) {
+				setColumns(previousColumns)
+				setDeals(previousDeals)
+				setError(reason instanceof Error ? reason.message : 'Tahap belum dapat diubah.')
+			} finally {
+				setMovingId(null)
+			}
+		},
+		[columns, deals, stages, view, bucket, load],
+	)
+
+	/** The next page of one column, appended rather than replacing what is shown. */
+	const loadMoreStage = useCallback(
+		async (stageId: string) => {
+			const column = columns.find((row) => row.stage === stageId)
+			if (!column || column.deals.length >= column.count) return
+			setLoadingStage(stageId)
+			try {
+				const response = await dealsApi.list({
+					search: query.trim() || undefined,
+					bucket: bucket === 'all' ? undefined : bucket,
+					stage: stageId,
+					limit: BOARD_PER_STAGE,
+					offset: column.deals.length,
+				})
+				const more = response.payload || []
+				setColumns((prev) =>
+					prev.map((row) =>
+						row.stage === stageId
+							? {
+									...row,
+									// Guarded against duplicates: a card moved into this column
+									// since the first page was fetched would otherwise arrive
+									// twice, once optimistically and once from the offset.
+									deals: [
+										...row.deals,
+										...more.filter((item) => !row.deals.some((had) => had.id === item.id)),
+									],
+								}
+							: row,
+					),
+				)
+			} catch (reason) {
+				setError(reason instanceof Error ? reason.message : 'Gagal memuat sisa kolom.')
+			} finally {
+				setLoadingStage(null)
+			}
+		},
+		[columns, query, bucket],
+	)
+
 	const visible = deals
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -497,6 +605,8 @@ function DealsPage() {
 						onWonYearChange={setWonYear}
 						onMove={(deal, stageId) => void moveStage(deal, stageId)}
 						onOpen={openEditor}
+						onLoadMore={(stageId) => void loadMoreStage(stageId)}
+						loadingStage={loadingStage}
 					/>
 				)}
 			</div>

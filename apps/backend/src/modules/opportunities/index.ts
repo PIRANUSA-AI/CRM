@@ -47,6 +47,7 @@ export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Oppo
 				contactId: query.contactId || undefined,
 				search: query.search || undefined,
 				bucket: asBucket((query as Record<string, unknown>).bucket),
+				stage: query.stage || undefined,
 				limit: query.limit ? Number(query.limit) : undefined,
 				offset: query.offset ? Number(query.offset) : undefined,
 			})
