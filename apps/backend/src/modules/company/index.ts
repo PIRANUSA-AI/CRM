@@ -61,6 +61,11 @@ export const company = new Elysia({ prefix: '/companies', tags: ['Company'] })
 				viewerRole: viewer.viewerRole,
 				viewerUserId: viewer.viewerUserId,
 				viewerTeamIds: viewer.viewerTeamIds,
+				type: query.type || undefined,
+				city: query.city || undefined,
+				hasDeals: query.has_deals === 'true',
+				teamId: query.team_id || undefined,
+				ownerId: query.owner_id || undefined,
 			})
 
 			return { success: true, payload: result.payload, meta: result.meta }
@@ -71,6 +76,11 @@ export const company = new Elysia({ prefix: '/companies', tags: ['Company'] })
 				per_page: t.Optional(t.String()),
 				search: t.Optional(t.String()),
 				q: t.Optional(t.String()),
+				type: t.Optional(t.String()),
+				city: t.Optional(t.String()),
+				has_deals: t.Optional(t.String()),
+				team_id: t.Optional(t.String()),
+				owner_id: t.Optional(t.String()),
 			}),
 		},
 	)

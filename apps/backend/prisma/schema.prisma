@@ -1081,14 +1081,24 @@ model companies {
   city       String?    @db.VarChar(120)
   website    String?    @db.VarChar(255)
   notes      String?
+
+  /// "perusahaan" or "perorangan". A freelance architect and a student are real
+  /// buyers but not firms, and lumping them in with PT and CV made the company
+  /// list read as if we had more corporate accounts than we do.
+  type       String     @default("perusahaan") @db.VarChar(20)
+
   created_at DateTime?  @default(now()) @db.Timestamp(6)
-  updated_at DateTime?  @default(now()) @db.Timestamp(6)
+  /// @updatedAt, not default(now()): this drives the "Terakhir diperbarui"
+  /// column, and a timestamp frozen at creation would report every company as
+  /// untouched since the day it appeared.
+  updated_at DateTime?  @updatedAt @db.Timestamp(6)
   deleted_at DateTime?  @db.Timestamp(6)
 
   contacts   contacts[]
 
   @@unique([app_id, norm_name], map: "uq_companies_app_norm_name")
   @@index([app_id, name], map: "idx_companies_app_name")
+  @@index([app_id, type], map: "idx_companies_app_type")
 }
 
 model conversation_activity_log {

@@ -1550,11 +1550,17 @@ export type CompanyRow = {
 	city: string | null
 	website: string | null
 	notes: string | null
+	/** perusahaan | perorangan */
+	type: string
 	contact_count: number
 	deal_count: number
 	deal_value: number
 	last_activity_at: string | null
+	updated_at: string | null
 	created_at: string | null
+	/** Up to four PIC names, for the avatar stack. */
+	contact_preview: string[]
+	owners: Array<{ name: string; team: string | null }>
 }
 
 export type CompanyDetail = {
@@ -1585,7 +1591,16 @@ export type CompanyDetail = {
 }
 
 export const companies = {
-	list: (params?: { page?: number; per_page?: number; search?: string }) => {
+	list: (params?: {
+		page?: number
+		per_page?: number
+		search?: string
+		type?: string
+		city?: string
+		has_deals?: boolean
+		team_id?: string
+		owner_id?: string
+	}) => {
 		const queryParams = new URLSearchParams()
 		for (const [key, value] of Object.entries(params || {})) {
 			if (value === undefined || value === null) continue
@@ -1597,7 +1612,14 @@ export const companies = {
 		return apiRequest<{
 			success: boolean
 			payload: CompanyRow[]
-			meta: { page: number; per_page: number; total: number; total_pages: number }
+			meta: {
+				page: number
+				per_page: number
+				total: number
+				total_pages: number
+				/** Cities available to filter by, unaffected by the city filter itself. */
+				cities: string[]
+			}
 		}>(`/companies${query ? `?${query}` : ''}`)
 	},
 

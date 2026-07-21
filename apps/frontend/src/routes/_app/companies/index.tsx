@@ -2,7 +2,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Building2, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
-import { companies as companiesApi, type CompanyRow } from '@/lib/api'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { isSupervisorRole } from '@/lib/role-access'
+import {
+	companies as companiesApi,
+	leadImport,
+	teams as teamsApi,
+	type CompanyRow,
+} from '@/lib/api'
 
 export const Route = createFileRoute('/_app/companies/')({
 	component: CompaniesPage,
@@ -38,7 +45,62 @@ function formatLastActivity(value: string | null): string {
 	return `${months} bulan lalu`
 }
 
-const COLUMNS = 'grid-cols-[30px_1.8fr_150px_90px_90px_160px_170px]'
+// Company name · Associations · Type · Last updated · Sales, following the
+// Qontak layout the team already reads. "Added by" is replaced by the sales
+// working the firm: we never recorded who first typed a company in, and who
+// owns it now is the more useful answer anyway.
+const COLUMNS = 'grid-cols-[30px_1.7fr_160px_120px_150px_1fr]'
+
+const TYPE_FILTERS = [
+	{ id: '', label: 'Semua' },
+	{ id: 'perusahaan', label: 'Perusahaan' },
+	{ id: 'perorangan', label: 'Perorangan' },
+]
+
+function formatUpdated(value: string | null): string {
+	if (!value) return '-'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '-'
+	return date.toLocaleString('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	})
+}
+
+function initials(name: string): string {
+	const parts = name.trim().split(/\s+/).filter(Boolean)
+	if (!parts.length) return '?'
+	if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+	return (parts[0][0] + parts[1][0]).toUpperCase()
+}
+
+/** Avatar stack for the PIC at a firm — Qontak's "Associations" column. */
+function ContactStack({ names, total }: { names: string[]; total: number }) {
+	if (total === 0) return <span className="text-xs text-muted-foreground">-</span>
+	const hidden = total - names.length
+	return (
+		<div className="flex items-center">
+			{names.map((name, index) => (
+				<span
+					key={name}
+					title={name}
+					className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-background bg-primary/15 text-[9px] font-bold text-primary first:ml-0"
+					style={{ zIndex: names.length - index }}
+				>
+					{initials(name)}
+				</span>
+			))}
+			{hidden > 0 ? (
+				<span className="-ml-1.5 flex h-6 items-center justify-center rounded-full border border-background bg-muted px-1.5 text-[9px] font-bold text-muted-foreground">
+					+{hidden}
+				</span>
+			) : null}
+		</div>
+	)
+}
 
 function CompaniesPage() {
 	const navigate = useNavigate()
@@ -48,6 +110,33 @@ function CompaniesPage() {
 	const [search, setSearch] = useState('')
 	const [loading, setLoading] = useState(true)
 	const [loadError, setLoadError] = useState(false)
+	const [typeFilter, setTypeFilter] = useState('')
+	const [cityFilter, setCityFilter] = useState('')
+	const [hasDeals, setHasDeals] = useState(false)
+	const [teamFilter, setTeamFilter] = useState('')
+	const [ownerFilter, setOwnerFilter] = useState('')
+	const [cities, setCities] = useState<string[]>([])
+	const [teamOptions, setTeamOptions] = useState<Array<{ id: string; name: string }>>([])
+	const [salesOptions, setSalesOptions] = useState<
+		Array<{ userId: string; name: string | null; email: string }>
+	>([])
+
+	const currentUser = useCurrentUser()
+	const isLeader = isSupervisorRole(currentUser?.role)
+
+	// Team and sales pickers only mean something to someone who oversees more
+	// than themselves; a sales already sees exactly their own companies.
+	useEffect(() => {
+		if (!isLeader) return
+		void teamsApi
+			.list()
+			.then((response: any) => setTeamOptions(response?.data || response?.payload || []))
+			.catch(() => undefined)
+		void leadImport
+			.assignables()
+			.then((response) => setSalesOptions(response.data || []))
+			.catch(() => undefined)
+	}, [isLeader])
 
 	// Debounced so typing a firm name does not fire a request per keystroke.
 	const [appliedSearch, setAppliedSearch] = useState('')
@@ -65,11 +154,21 @@ function CompaniesPage() {
 		setLoadError(false)
 
 		companiesApi
-			.list({ page, per_page: COMPANY_PAGE_SIZE, search: appliedSearch || undefined })
+			.list({
+				page,
+				per_page: COMPANY_PAGE_SIZE,
+				search: appliedSearch || undefined,
+				type: typeFilter || undefined,
+				city: cityFilter || undefined,
+				has_deals: hasDeals || undefined,
+				team_id: teamFilter || undefined,
+				owner_id: ownerFilter || undefined,
+			})
 			.then((response) => {
 				if (cancelled) return
 				setRows(Array.isArray(response?.payload) ? response.payload : [])
 				setTotal(Number(response?.meta?.total ?? 0))
+				setCities(response?.meta?.cities || [])
 			})
 			.catch(() => {
 				if (cancelled) return
@@ -83,7 +182,15 @@ function CompaniesPage() {
 		return () => {
 			cancelled = true
 		}
-	}, [page, appliedSearch])
+	}, [page, appliedSearch, typeFilter, cityFilter, hasDeals, teamFilter, ownerFilter])
+
+	// Page 4 of the unfiltered list means nothing once a filter narrows it.
+	useEffect(() => {
+		setPage(1)
+	}, [typeFilter, cityFilter, hasDeals, teamFilter, ownerFilter])
+
+	const hasActiveFilter =
+		Boolean(typeFilter || cityFilter || teamFilter || ownerFilter || appliedSearch) || hasDeals
 
 	const totalPages = Math.max(1, Math.ceil(total / COMPANY_PAGE_SIZE))
 	const clampedPage = Math.min(page, totalPages)
@@ -168,10 +275,88 @@ function CompaniesPage() {
 						className="w-64 rounded-full border border-border bg-card py-1.5 pl-9 pr-3 text-[11px] font-semibold placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
 					/>
 				</div>
-				{appliedSearch ? (
+				{TYPE_FILTERS.map((chip) => (
 					<button
 						type="button"
-						onClick={() => setSearch('')}
+						key={chip.id || 'all'}
+						onClick={() => setTypeFilter(chip.id)}
+						className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+							typeFilter === chip.id
+								? 'border-primary/40 bg-primary/15 text-primary'
+								: 'border-border bg-card text-muted-foreground hover:border-primary/20 hover:text-foreground'
+						}`}
+					>
+						{chip.label}
+					</button>
+				))}
+
+				<button
+					type="button"
+					onClick={() => setHasDeals((current) => !current)}
+					className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+						hasDeals
+							? 'border-primary/40 bg-primary/15 text-primary'
+							: 'border-border bg-card text-muted-foreground hover:border-primary/20 hover:text-foreground'
+					}`}
+				>
+					Punya deal
+				</button>
+
+				{cities.length > 0 ? (
+					<select
+						value={cityFilter}
+						onChange={(event) => setCityFilter(event.target.value)}
+						className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+					>
+						<option value="">Semua kota</option>
+						{cities.map((city) => (
+							<option key={city} value={city}>
+								{city}
+							</option>
+						))}
+					</select>
+				) : null}
+
+				{isLeader ? (
+					<>
+						<select
+							value={teamFilter}
+							onChange={(event) => setTeamFilter(event.target.value)}
+							className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+						>
+							<option value="">Semua tim</option>
+							{teamOptions.map((team) => (
+								<option key={team.id} value={team.id}>
+									{team.name}
+								</option>
+							))}
+						</select>
+						<select
+							value={ownerFilter}
+							onChange={(event) => setOwnerFilter(event.target.value)}
+							className="rounded-full border border-border bg-card px-3 py-1.5 text-[11px] font-semibold text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+						>
+							<option value="">Semua sales</option>
+							{salesOptions.map((option) => (
+								<option key={option.userId} value={option.userId}>
+									{option.name || option.email}
+								</option>
+							))}
+						</select>
+					</>
+				) : null}
+
+				{hasActiveFilter ? (
+					<button
+						type="button"
+						onClick={() => {
+							setSearch('')
+							setTypeFilter('')
+							setCityFilter('')
+							setHasDeals(false)
+							setTeamFilter('')
+							setOwnerFilter('')
+						}}
 						className="rounded-full px-2 py-1.5 text-[11px] font-semibold text-muted-foreground underline hover:text-foreground"
 					>
 						Reset
@@ -212,17 +397,16 @@ function CompaniesPage() {
 					</div>
 				) : (
 					<div className="overflow-x-auto">
-						<div className="min-w-[880px]">
+						<div className="min-w-[940px]">
 							<div
 								className={`grid ${COLUMNS} items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground`}
 							>
 								<div />
 								<div>Perusahaan</div>
-								<div>Kota</div>
-								<div className="text-right">Kontak</div>
-								<div className="text-right">Deal</div>
-								<div className="text-right">Nilai Deal</div>
-								<div>Aktivitas Terakhir</div>
+								<div>PIC</div>
+								<div>Tipe</div>
+								<div>Terakhir Diperbarui</div>
+								<div>Sales</div>
 							</div>
 							{rows.map((row) => (
 								<div
@@ -242,24 +426,48 @@ function CompaniesPage() {
 									</div>
 									<div className="min-w-0 pr-3">
 										<p className="truncate font-semibold">{row.name}</p>
-										{row.website ? (
-											<p className="truncate text-[11px] text-muted-foreground">
-												{row.website.replace(/^https?:\/\//, '')}
-											</p>
-										) : null}
+										<p className="truncate text-[11px] text-muted-foreground">
+											{[
+												row.city,
+												row.deal_count > 0
+													? `${row.deal_count} deal · ${formatValue(row.deal_value)}`
+													: null,
+											]
+												.filter(Boolean)
+												.join(' · ') || 'Belum ada deal'}
+										</p>
 									</div>
-									<div className="truncate text-sm text-muted-foreground">{row.city || '-'}</div>
-									<div className="text-right font-mono text-sm">{row.contact_count}</div>
-									<div className="text-right font-mono text-sm">{row.deal_count}</div>
-									<div
-										className={`text-right font-mono text-sm ${
-											row.deal_value > 0 ? 'text-foreground' : 'text-muted-foreground'
-										}`}
-									>
-										{formatValue(row.deal_value)}
+									<div>
+										<ContactStack names={row.contact_preview} total={row.contact_count} />
 									</div>
-									<div className="text-xs text-muted-foreground">
-										{formatLastActivity(row.last_activity_at)}
+									<div>
+										<span
+											className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+												row.type === 'perorangan'
+													? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+													: 'bg-muted text-muted-foreground'
+											}`}
+										>
+											{row.type === 'perorangan' ? 'Perorangan' : 'Perusahaan'}
+										</span>
+									</div>
+									<div className="text-[11px] text-muted-foreground">
+										{formatUpdated(row.updated_at)}
+										<span className="block">{formatLastActivity(row.last_activity_at)}</span>
+									</div>
+									<div className="min-w-0 text-xs text-muted-foreground">
+										{row.owners.length === 0
+											? 'Belum ada'
+											: row.owners.map((owner) => (
+													<span key={`${owner.name}-${owner.team}`} className="block truncate">
+														{owner.name}
+														{owner.team ? (
+															<span className="ml-1 rounded bg-muted px-1 py-0.5 text-[9px] font-semibold">
+																{owner.team}
+															</span>
+														) : null}
+													</span>
+												))}
 									</div>
 								</div>
 							))}
