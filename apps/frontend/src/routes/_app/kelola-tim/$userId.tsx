@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Info, Loader2, Save, TriangleAlert } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { salesProfiles, type SalesProfileRow } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/kelola-tim/$userId')({
@@ -110,6 +110,7 @@ function SalesProfileDetailPage() {
 	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [saved, setSaved] = useState(false)
+	const [products, setProducts] = useState<string[]>([])
 
 	// There is no GET for a single profile. The list endpoint returns every
 	// sales the leader manages, which is a team-sized list, so picking the row
@@ -134,6 +135,13 @@ function SalesProfileDetailPage() {
 	}, [userId])
 
 	useEffect(() => {
+		void salesProfiles
+			.products()
+			.then((response) => setProducts(response.data || []))
+			.catch(() => undefined)
+	}, [])
+
+	useEffect(() => {
 		void load()
 	}, [load])
 
@@ -141,6 +149,27 @@ function SalesProfileDetailPage() {
 		setDraft((prev) => (prev ? { ...prev, ...next } : prev))
 		setSaved(false)
 	}, [])
+
+	// The draft still stores skills as a comma string, so a value saved before
+	// the picker existed keeps working and still shows as a chip.
+	const selectedSkills = useMemo(() => splitList(draft?.productSkills || ''), [draft])
+
+	// Catalogue first, then anything already stored that is not on it. Dropping
+	// unknown values would silently delete a skill on the next save.
+	const productOptions = useMemo(() => {
+		const extra = selectedSkills.filter((skill) => !products.includes(skill))
+		return [...products, ...extra]
+	}, [products, selectedSkills])
+
+	const toggleSkill = useCallback(
+		(product: string) => {
+			const next = selectedSkills.includes(product)
+				? selectedSkills.filter((skill) => skill !== product)
+				: [...selectedSkills, product]
+			patch({ productSkills: next.join(', ') })
+		},
+		[selectedSkills, patch],
+	)
 
 	const save = useCallback(async () => {
 		if (!row || !draft) return
@@ -255,180 +284,210 @@ function SalesProfileDetailPage() {
 				</div>
 			) : null}
 
-			<section className="ocm-card space-y-4 p-5">
-				<div>
-					<h2 className="text-sm font-semibold">Persona</h2>
-					<p className="text-xs text-muted-foreground">
-						Cara orang ini menjual, ditulis untuk dibaca leader sebelum menyerahkan
-						lead. Bukan tag, karena bagian yang bergunanya justru yang tidak muat
-						jadi tag.
-					</p>
-				</div>
-				<textarea
-					rows={4}
-					className={`${inputClass} resize-y`}
-					value={draft.persona}
-					onChange={(event) => patch({ persona: event.target.value })}
-					placeholder="mis. Kuat di akun konsultan besar, sabar menghadapi tender panjang, lambat membalas di luar jam kerja."
-				/>
-			</section>
-
-			<section className="ocm-card space-y-4 p-5">
-				<div>
-					<h2 className="text-sm font-semibold">Data diri</h2>
-					<p className="text-xs text-muted-foreground">
-						Disimpan di profil sales, bukan di akun login, karena ini menggambarkan
-						perannya sebagai sales.
-					</p>
-				</div>
-				<div className="grid gap-4 sm:grid-cols-2">
-					<Field label="Posisi">
-						<input
-							className={inputClass}
-							value={draft.position}
-							onChange={(event) => patch({ position: event.target.value })}
-							placeholder="mis. Account Executive AEC"
-						/>
-					</Field>
-					<Field label="Nomor telepon">
-						<input
-							className={inputClass}
-							value={draft.phone}
-							onChange={(event) => patch({ phone: event.target.value })}
-							placeholder="628xx"
-						/>
-					</Field>
-					<Field label="Bergabung sejak">
-						<input
-							type="date"
-							className={inputClass}
-							value={draft.joinedAt}
-							onChange={(event) => patch({ joinedAt: event.target.value })}
-						/>
-					</Field>
-					<Field
-						label="Pengalaman (tahun)"
-						hint="Lama menjual. Berbeda dari level, yang menggambarkan kepercayaan."
-					>
-						<input
-							type="number"
-							min={0}
-							max={60}
-							className={inputClass}
-							value={draft.experienceYears}
-							onChange={(event) => patch({ experienceYears: event.target.value })}
-						/>
-					</Field>
-				</div>
-			</section>
-
-			{/* Only these two fields change how leads are shared out. */}
-			<section className="ocm-card space-y-4 p-5">
-				<div>
-					<h2 className="text-sm font-semibold">Dipakai untuk bagi lead</h2>
-					<p className="text-xs text-muted-foreground">
-						Hanya dua hal di bawah ini yang memengaruhi ke siapa lead dibagikan.
-					</p>
-				</div>
-				<div className="grid gap-4 sm:grid-cols-2">
-					<Field
-						label="Keahlian produk"
-						hint="Pisahkan dengan koma. Lead yang produknya cocok diarahkan ke sini."
-					>
-						<input
-							className={inputClass}
-							value={draft.productSkills}
-							onChange={(event) => patch({ productSkills: event.target.value })}
-							placeholder="ZWCAD, Archicad"
-						/>
-					</Field>
-					<Field
-						label="Kapasitas maks (lead aktif)"
-						hint="Makin penuh bebannya, makin kecil peluang dapat lead baru."
-					>
-						<input
-							type='number'
-							min={1}
-							max={1000}
-							className={inputClass}
-							value={draft.maxActive}
-							onChange={(event) => patch({ maxActive: event.target.value })}
-						/>
-					</Field>
-				</div>
-			</section>
-
-			{/* Kept because the Sales Character DB plan wants them, but they are
-			    inert today, routing reads productSkills and maxActive only. Saying
-			    so beats letting a leader tune fields that change nothing. */}
-			<section className="ocm-card space-y-4 p-5">
-				<div>
-					<h2 className="text-sm font-semibold">Catatan tim</h2>
-					<div className="mt-1 flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
-						<Info size={14} className="mt-0.5 shrink-0" />
-						<span>
-							Belum memengaruhi pembagian lead. Disimpan sebagai catatan karakter sales
-							untuk dipakai nanti.
-						</span>
+			{/* Who they are on the left, how leads reach them on the right. The
+			    same two-column shape as the Kontak and Perusahaan detail pages. */}
+			<div className="grid items-start gap-5 lg:grid-cols-2">
+				<div className="space-y-5">
+				<section className="ocm-card space-y-4 p-5">
+					<div>
+						<h2 className="text-sm font-semibold">Persona</h2>
+						<p className="text-xs text-muted-foreground">
+							Cara orang ini menjual, ditulis untuk dibaca leader sebelum menyerahkan
+							lead. Bukan tag, karena bagian yang bergunanya justru yang tidak muat
+							jadi tag.
+						</p>
 					</div>
-				</div>
-				<div className="grid gap-4 sm:grid-cols-2">
-					<Field label="Level / pengalaman">
-						<select
-							className={inputClass}
-							value={draft.level}
-							onChange={(event) => patch({ level: event.target.value })}
-						>
-							{LEVELS.map((level) => (
-								<option key={level.value} value={level.value}>
-									{level.label}
-								</option>
-							))}
-						</select>
-					</Field>
-					<Field label="Segmen andalan" hint="mis. korporat, mahasiswa">
-						<input
-							className={inputClass}
-							value={draft.segments}
-							onChange={(event) => patch({ segments: event.target.value })}
-							placeholder="korporat, individu"
-						/>
-					</Field>
-					<Field label="Wilayah" hint="mis. Jawa Timur">
-						<input
-							className={inputClass}
-							value={draft.regions}
-							onChange={(event) => patch({ regions: event.target.value })}
-							placeholder="Jawa Timur"
-						/>
-					</Field>
-					<Field label="Bahasa" hint="mis. id, en">
-						<input
-							className={inputClass}
-							value={draft.languages}
-							onChange={(event) => patch({ languages: event.target.value })}
-							placeholder='id, en'
-						/>
-					</Field>
-				</div>
-				<Field label="Tag" hint="opsional, mis. cocok_customer_teknis">
-					<input
-						className={inputClass}
-						value={draft.tags}
-						onChange={(event) => patch({ tags: event.target.value })}
-						placeholder="cocok_customer_teknis"
-					/>
-				</Field>
-				<Field label="Catatan">
 					<textarea
-						rows={3}
+						rows={4}
 						className={`${inputClass} resize-y`}
-						value={draft.notes}
-						onChange={(event) => patch({ notes: event.target.value })}
-						placeholder="Catatan internal"
+						value={draft.persona}
+						onChange={(event) => patch({ persona: event.target.value })}
+						placeholder="mis. Kuat di akun konsultan besar, sabar menghadapi tender panjang, lambat membalas di luar jam kerja."
 					/>
-				</Field>
-			</section>
+				</section>
+
+				<section className="ocm-card space-y-4 p-5">
+					<div>
+						<h2 className="text-sm font-semibold">Data diri</h2>
+						<p className="text-xs text-muted-foreground">
+							Disimpan di profil sales, bukan di akun login, karena ini menggambarkan
+							perannya sebagai sales.
+						</p>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<Field label="Posisi">
+							<input
+								className={inputClass}
+								value={draft.position}
+								onChange={(event) => patch({ position: event.target.value })}
+								placeholder="mis. Account Executive AEC"
+							/>
+						</Field>
+						<Field label="Nomor telepon">
+							<input
+								className={inputClass}
+								value={draft.phone}
+								onChange={(event) => patch({ phone: event.target.value })}
+								placeholder="628xx"
+							/>
+						</Field>
+						<Field label="Bergabung sejak">
+							<input
+								type="date"
+								className={inputClass}
+								value={draft.joinedAt}
+								onChange={(event) => patch({ joinedAt: event.target.value })}
+							/>
+						</Field>
+						<Field
+							label="Pengalaman (tahun)"
+							hint="Lama menjual. Berbeda dari level, yang menggambarkan kepercayaan."
+						>
+							<input
+								type="number"
+								min={0}
+								max={60}
+								className={inputClass}
+								value={draft.experienceYears}
+								onChange={(event) => patch({ experienceYears: event.target.value })}
+							/>
+						</Field>
+					</div>
+				</section>
+				</div>
+
+				<div className="space-y-5">
+				{/* Only these two fields change how leads are shared out. */}
+				<section className="ocm-card space-y-4 p-5">
+					<div>
+						<h2 className="text-sm font-semibold">Dipakai untuk bagi lead</h2>
+						<p className="text-xs text-muted-foreground">
+							Hanya dua hal di bawah ini yang memengaruhi ke siapa lead dibagikan.
+						</p>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<div className="sm:col-span-2">
+							<span className="text-xs font-medium text-muted-foreground">
+								Keahlian produk
+							</span>
+							{/* Toggles, not a comma string: routing matches a skill against the
+							    lead's product interest by token overlap, so one person typing
+							    "ZWCAD 2026" quietly stops matching leads that say "ZWCAD". */}
+							<div className="mt-1.5 flex flex-wrap gap-1.5">
+								{productOptions.map((product) => {
+									const on = selectedSkills.includes(product)
+									return (
+										<button
+											key={product}
+											type="button"
+											onClick={() => toggleSkill(product)}
+											className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+												on
+													? 'border-primary/40 bg-primary/15 text-primary'
+													: 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'
+											}`}
+										>
+											{product}
+										</button>
+									)
+								})}
+							</div>
+							<p className="mt-1.5 text-[11px] text-muted-foreground">
+								Pilih satu atau beberapa. Lead yang produknya cocok diarahkan ke sini.
+								{selectedSkills.length === 0
+									? ' Tanpa keahlian, orang ini tidak pernah menang pencocokan produk.'
+									: ''}
+							</p>
+						</div>
+						<Field
+							label="Kapasitas maks (lead aktif)"
+							hint="Makin penuh bebannya, makin kecil peluang dapat lead baru."
+						>
+							<input
+								type='number'
+								min={1}
+								max={1000}
+								className={inputClass}
+								value={draft.maxActive}
+								onChange={(event) => patch({ maxActive: event.target.value })}
+							/>
+						</Field>
+					</div>
+				</section>
+
+				{/* Kept because the Sales Character DB plan wants them, but they are
+				    inert today, routing reads productSkills and maxActive only. Saying
+				    so beats letting a leader tune fields that change nothing. */}
+				<section className="ocm-card space-y-4 p-5">
+					<div>
+						<h2 className="text-sm font-semibold">Catatan tim</h2>
+						<div className="mt-1 flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+							<Info size={14} className="mt-0.5 shrink-0" />
+							<span>
+								Belum memengaruhi pembagian lead. Disimpan sebagai catatan karakter sales
+								untuk dipakai nanti.
+							</span>
+						</div>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2">
+						<Field label="Level / pengalaman">
+							<select
+								className={inputClass}
+								value={draft.level}
+								onChange={(event) => patch({ level: event.target.value })}
+							>
+								{LEVELS.map((level) => (
+									<option key={level.value} value={level.value}>
+										{level.label}
+									</option>
+								))}
+							</select>
+						</Field>
+						<Field label="Segmen andalan" hint="mis. korporat, mahasiswa">
+							<input
+								className={inputClass}
+								value={draft.segments}
+								onChange={(event) => patch({ segments: event.target.value })}
+								placeholder="korporat, individu"
+							/>
+						</Field>
+						<Field label="Wilayah" hint="mis. Jawa Timur">
+							<input
+								className={inputClass}
+								value={draft.regions}
+								onChange={(event) => patch({ regions: event.target.value })}
+								placeholder="Jawa Timur"
+							/>
+						</Field>
+						<Field label="Bahasa" hint="mis. id, en">
+							<input
+								className={inputClass}
+								value={draft.languages}
+								onChange={(event) => patch({ languages: event.target.value })}
+								placeholder='id, en'
+							/>
+						</Field>
+					</div>
+					<Field label="Tag" hint="opsional, mis. cocok_customer_teknis">
+						<input
+							className={inputClass}
+							value={draft.tags}
+							onChange={(event) => patch({ tags: event.target.value })}
+							placeholder="cocok_customer_teknis"
+						/>
+					</Field>
+					<Field label="Catatan">
+						<textarea
+							rows={3}
+							className={`${inputClass} resize-y`}
+							value={draft.notes}
+							onChange={(event) => patch({ notes: event.target.value })}
+							placeholder="Catatan internal"
+						/>
+					</Field>
+				</section>
+				</div>
+			</div>
 
 			<div className="flex items-center justify-end gap-3">
 				{saved ? <span className="text-xs text-emerald-600 dark:text-emerald-300">Tersimpan.</span> : null}

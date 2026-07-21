@@ -3413,6 +3413,9 @@ export type SalesProfileUpdate = {
 export const salesProfiles = {
 	list: () => apiRequest<{ data: SalesProfileRow[] }>('/sales-profiles'),
 
+	/** The product catalogue the skill picker offers. Free entries still work. */
+	products: () => apiRequest<{ data: string[] }>('/sales-profiles/meta/products'),
+
 	update: (userId: string, input: SalesProfileUpdate) =>
 		apiRequest<{ data: SalesProfileRow }>(
 			`/sales-profiles/${encodeURIComponent(userId)}`,

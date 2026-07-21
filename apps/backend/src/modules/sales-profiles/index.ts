@@ -7,6 +7,7 @@ import {
 	SalesProfileService,
 	type SalesProfileActor,
 } from './service'
+import { SALES_PRODUCTS } from './products'
 
 // Managing sales routing profiles is a leadership action.
 const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'administrator', 'ceo', 'superadmin']
@@ -83,3 +84,4 @@ export const salesProfiles = new Elysia({ prefix: '/sales-profiles', tags: ['Sal
 			joinedAt: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
 		}),
 	})
+	.get('/meta/products', () => ({ data: SALES_PRODUCTS }))
