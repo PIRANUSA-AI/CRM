@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import {
 	Columns3,
 	LayoutList,
@@ -8,7 +8,6 @@ import {
 	TriangleAlert,
 	Building2,
 	Plus,
-	UserPlus,
 	UserRound,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -23,10 +22,13 @@ import {
 	DialogTitle,
 } from '@/components/ui/dialog'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
-import { isSupervisorRole } from '@/lib/role-access'
+import { isMultiTeamRole, isSupervisorRole } from '@/lib/role-access'
 import {
 	customers as customersApi,
+	leadImport,
 	opportunities as dealsApi,
+	prospects,
+	type ProspectChannel,
 	type DealBucket,
 	type DealColumn,
 	type DealStage,
@@ -46,6 +48,15 @@ export const Route = createFileRoute('/_app/deals')({
 })
 
 type ViewMode = 'table' | 'board'
+
+const PROSPECT_CHANNELS: Array<{ value: ProspectChannel; label: string }> = [
+	{ value: 'event', label: 'Event / Pameran' },
+	{ value: 'linkedin', label: 'LinkedIn' },
+	{ value: 'instagram', label: 'Instagram' },
+	{ value: 'whatsapp', label: 'WhatsApp' },
+	{ value: 'referral', label: 'Referral' },
+	{ value: 'other', label: 'Lainnya' },
+]
 
 /** The fields the contact picker needs; the customers list carries more. */
 type ContactOption = {
@@ -115,10 +126,13 @@ function isBucket(value: unknown): value is DealBucket {
 }
 
 function DealsPage() {
-	const navigate = useNavigate()
 	const search = Route.useSearch()
 	const currentUser = useCurrentUser()
 	const isLeader = isSupervisorRole(currentUser?.role)
+	// An administrator carries no leads of their own, so createProspect refuses a
+	// prospect from them that names nobody. Without this picker the "new contact"
+	// branch would fail for exactly the role most likely to file one.
+	const mustPickAssignee = isMultiTeamRole(currentUser?.role)
 
 	const [stages, setStages] = useState<DealStage[]>([])
 	const [deals, setDeals] = useState<Opportunity[]>([])
@@ -390,6 +404,29 @@ function DealsPage() {
 	const [pickedContact, setPickedContact] = useState<ContactOption | null>(null)
 	const [creatingBusy, setCreatingBusy] = useState(false)
 
+	// The "this person is new" branch. It replaces the separate Tambah Prospek
+	// page: same call, same follow-up task, reached at the point the search
+	// comes up empty instead of guessed before you start.
+	const [makingContact, setMakingContact] = useState(false)
+	const [newContact, setNewContact] = useState({
+		name: '',
+		phone: '',
+		email: '',
+		company: '',
+		followUpAt: '',
+		channel: 'event' as ProspectChannel,
+	})
+	const [assigneeId, setAssigneeId] = useState('')
+	const [assignables, setAssignables] = useState<
+		Array<{ userId: string; name: string | null; email: string; teamName: string | null }>
+	>([])
+	const [duplicate, setDuplicate] = useState<{
+		name: string | null
+		ownerName: string | null
+		openTasks: number
+		openDeals: number
+	} | null>(null)
+
 	// Searched server-side, so a sales only ever finds contacts that are theirs.
 	useEffect(() => {
 		if (!creating) return
@@ -414,11 +451,62 @@ function DealsPage() {
 		}
 	}, [contactQuery, creating])
 
+	// Checked while the number is typed, so re-logging someone the team already
+	// has is a decision rather than a surprise. It used to attach a second
+	// follow-up task to the same contact with nothing on screen saying so.
+	useEffect(() => {
+		if (!makingContact) return
+		const phone = newContact.phone.trim()
+		const email = newContact.email.trim()
+		if (phone.length < 6 && !email) {
+			setDuplicate(null)
+			return
+		}
+		let cancelled = false
+		const timer = setTimeout(() => {
+			void leadImport
+				.contactLookup({ phone: phone || undefined, email: email || undefined })
+				.then((response) => {
+					if (cancelled) return
+					setDuplicate(response.data.found ? response.data : null)
+				})
+				.catch(() => undefined)
+		}, 400)
+		return () => {
+			cancelled = true
+			clearTimeout(timer)
+		}
+	}, [makingContact, newContact.phone, newContact.email])
+
+	useEffect(() => {
+		if (!mustPickAssignee) return
+		void leadImport
+			.assignables()
+			.then((response) => setAssignables(response.data || []))
+			.catch(() => undefined)
+	}, [mustPickAssignee])
+
 	const openCreate = useCallback(() => {
 		setNewDeal({ name: '', product: '', value: '', stage: stages[0]?.id || '', contactId: '' })
 		setContactQuery('')
 		setContactResults([])
 		setPickedContact(null)
+		setMakingContact(false)
+		setDuplicate(null)
+		setAssigneeId('')
+		// Tomorrow 09:00: a prospect with no follow-up date is one nobody chases.
+		const tomorrow = new Date()
+		tomorrow.setDate(tomorrow.getDate() + 1)
+		tomorrow.setHours(9, 0, 0, 0)
+		const pad = (n: number) => String(n).padStart(2, '0')
+		setNewContact({
+			name: '',
+			phone: '',
+			email: '',
+			company: '',
+			channel: 'event',
+			followUpAt: `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T09:00`,
+		})
 		setCreating(true)
 	}, [stages])
 
@@ -428,9 +516,23 @@ function DealsPage() {
 			setError('Nama deal wajib diisi.')
 			return
 		}
-		if (!pickedContact) {
+		if (!makingContact && !pickedContact) {
 			setError('Pilih kontak untuk deal ini.')
 			return
+		}
+		if (makingContact) {
+			if (!newContact.name.trim()) {
+				setError('Nama kontak wajib diisi.')
+				return
+			}
+			if (!newContact.phone.trim() && !newContact.email.trim()) {
+				setError('Isi minimal nomor WhatsApp atau email.')
+				return
+			}
+			if (mustPickAssignee && !assigneeId) {
+				setError('Pilih sales yang akan menangani kontak ini.')
+				return
+			}
 		}
 		const raw = newDeal.value.trim()
 		const value = raw === '' ? null : Number(raw.replace(/[^0-9]/g, ''))
@@ -441,16 +543,37 @@ function DealsPage() {
 		setCreatingBusy(true)
 		setError(null)
 		try {
-			await dealsApi.create({
-				name,
-				contactId: pickedContact.id,
-				product: newDeal.product.trim() || null,
-				value,
-				stage: newDeal.stage || undefined,
-				// The deal follows whoever already works the contact, so an
-				// administrator filing one does not become its owner by accident.
-				ownerId: pickedContact.owner_id || undefined,
-			})
+			if (makingContact) {
+				// One call, not two: the prospect path already creates the contact,
+				// the company, the follow-up task and the deal in one transaction,
+				// so the deal fields ride along rather than being patched after.
+				await prospects.create({
+					name: newContact.name.trim(),
+					phone: newContact.phone.trim() || undefined,
+					email: newContact.email.trim() || undefined,
+					company: newContact.company.trim() || undefined,
+					channel: newContact.channel,
+					followUpAt: newContact.followUpAt
+						? new Date(newContact.followUpAt).toISOString()
+						: undefined,
+					dealName: name,
+					dealValue: value,
+					dealStage: newDeal.stage || undefined,
+					productInterest: newDeal.product.trim() || undefined,
+					assigneeId: mustPickAssignee ? assigneeId : undefined,
+				})
+			} else {
+				await dealsApi.create({
+					name,
+					contactId: pickedContact!.id,
+					product: newDeal.product.trim() || null,
+					value,
+					stage: newDeal.stage || undefined,
+					// The deal follows whoever already works the contact, so an
+					// administrator filing one does not become its owner by accident.
+					ownerId: pickedContact!.owner_id || undefined,
+				})
+			}
 			setCreating(false)
 			await load()
 		} catch (reason) {
@@ -458,7 +581,7 @@ function DealsPage() {
 		} finally {
 			setCreatingBusy(false)
 		}
-	}, [newDeal, pickedContact, load])
+	}, [newDeal, pickedContact, makingContact, newContact, mustPickAssignee, assigneeId, load])
 
 	const visible = deals
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -474,20 +597,18 @@ function DealsPage() {
 				}
 				actions={
 					<>
-<button
+						{/* One entry point. "Tambah Prospek" used to sit beside this and
+						    also produced a deal, so from this page the two read as two
+						    ways to do the same thing. Creating the person now happens
+						    inside the dialog, at the moment the contact search comes up
+						    empty. */}
+						<button
 							type="button"
 							className="ocm-btn bg-primary text-primary-foreground hover:bg-primary/90"
 							onClick={openCreate}
 							disabled={loading || stages.length === 0}
 						>
 							<Plus size={14} /> Tambah Deal
-						</button>
-												<button
-							type='button'
-							className='ocm-btn'
-							onClick={() => navigate({ to: '/prospek' })}
-						>
-							<UserPlus size={14} /> Tambah Prospek
 						</button>
 						<button type="button" className="ocm-btn" onClick={() => void load()} disabled={loading}>
 							<RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Muat ulang
@@ -748,7 +869,121 @@ function DealsPage() {
 							<span className="mb-1 block text-xs font-medium text-muted-foreground">
 								Kontak *
 							</span>
-							{pickedContact ? (
+							{makingContact ? (
+								<div className="space-y-2 rounded-lg border border-border p-2.5">
+									<div className="flex items-center justify-between gap-2">
+										<span className="text-xs font-semibold">Kontak baru</span>
+										<button
+											type="button"
+											className="text-xs text-muted-foreground hover:text-foreground"
+											onClick={() => {
+												setMakingContact(false)
+												setDuplicate(null)
+											}}
+										>
+											Cari yang sudah ada
+										</button>
+									</div>
+
+									{/* Stated before saving, not after: a sales who cannot see
+									    that the person is already someone's is exactly who
+									    creates the second follow-up task. */}
+									{duplicate ? (
+										<div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300">
+											<TriangleAlert size={13} className="mt-0.5 shrink-0" />
+											<span>
+												<strong>{duplicate.name || 'Kontak ini'}</strong> sudah ada di CRM
+												{duplicate.ownerName ? `, dipegang ${duplicate.ownerName}` : ''}.
+												{duplicate.openTasks > 0
+													? ` Ada ${duplicate.openTasks} tugas follow-up terbuka.`
+													: ''}
+												{duplicate.openDeals > 0
+													? ` Ada ${duplicate.openDeals} deal berjalan.`
+													: ''}{' '}
+												Menyimpan akan menambah tugas follow-up baru untuk orang yang sama.
+											</span>
+										</div>
+									) : null}
+
+									<div className="grid gap-2 sm:grid-cols-2">
+										<input
+											className="ocm-input"
+											value={newContact.name}
+											onChange={(event) =>
+												setNewContact((c) => ({ ...c, name: event.target.value }))
+											}
+											placeholder="Nama kontak *"
+										/>
+										<input
+											className="ocm-input"
+											value={newContact.phone}
+											onChange={(event) =>
+												setNewContact((c) => ({ ...c, phone: event.target.value }))
+											}
+											placeholder="No. WhatsApp"
+										/>
+										<input
+											className="ocm-input"
+											value={newContact.email}
+											onChange={(event) =>
+												setNewContact((c) => ({ ...c, email: event.target.value }))
+											}
+											placeholder="Email"
+										/>
+										<input
+											className="ocm-input"
+											value={newContact.company}
+											onChange={(event) =>
+												setNewContact((c) => ({ ...c, company: event.target.value }))
+											}
+											placeholder="Perusahaan"
+										/>
+										<select
+											className="ocm-input"
+											value={newContact.channel}
+											onChange={(event) =>
+												setNewContact((c) => ({
+													...c,
+													channel: event.target.value as ProspectChannel,
+												}))
+											}
+										>
+											{PROSPECT_CHANNELS.map((option) => (
+												<option key={option.value} value={option.value}>
+													Dari {option.label}
+												</option>
+											))}
+										</select>
+										<input
+											type="datetime-local"
+											className="ocm-input"
+											value={newContact.followUpAt}
+											onChange={(event) =>
+												setNewContact((c) => ({ ...c, followUpAt: event.target.value }))
+											}
+											title="Tanggal follow-up"
+										/>
+									</div>
+								{mustPickAssignee ? (
+										<select
+											className="ocm-input"
+											value={assigneeId}
+											onChange={(event) => setAssigneeId(event.target.value)}
+										>
+											<option value="">Tugaskan ke *</option>
+											{assignables.map((option) => (
+												<option key={option.userId} value={option.userId}>
+													{option.name || option.email}
+													{option.teamName ? ` · ${option.teamName}` : ''}
+												</option>
+											))}
+										</select>
+									) : null}
+									<p className="text-[11px] text-muted-foreground">
+										Kontak, perusahaan, dan tugas follow-up dibuat sekalian dengan deal ini.
+									</p>
+								</div>
+							) : pickedContact ? (
 								<div className="flex items-start justify-between gap-2 rounded-lg border border-border p-2.5">
 									<div className="min-w-0">
 										<p className="truncate text-sm font-semibold">
@@ -812,6 +1047,18 @@ function DealsPage() {
 											Tidak ada kontak yang cocok.
 										</p>
 									) : null}
+									{/* Offered where the dead end happens, so "orang ini belum ada
+									    di CRM" does not mean starting over on another page. */}
+									<button
+										type="button"
+										onClick={() => {
+											setMakingContact(true)
+											setNewContact((c) => ({ ...c, name: contactQuery.trim() }))
+										}}
+										className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+									>
+										<Plus size={12} /> Kontak belum ada? Buat baru
+									</button>
 								</>
 							)}
 						</div>
@@ -875,7 +1122,11 @@ function DealsPage() {
 							type="button"
 							className="ocm-btn bg-primary text-primary-foreground hover:bg-primary/90"
 							onClick={() => void submitCreate()}
-							disabled={creatingBusy || !newDeal.name.trim() || !pickedContact}
+							disabled={
+								creatingBusy ||
+								!newDeal.name.trim() ||
+								(makingContact ? !newContact.name.trim() : !pickedContact)
+							}
 						>
 							{creatingBusy ? <Loader2 size={14} className="animate-spin" /> : null}
 							Simpan

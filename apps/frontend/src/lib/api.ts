@@ -3272,6 +3272,25 @@ export const leadImport = {
 
 	history: () => apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
 
+	/** Is this phone/email already someone's? Checked before a prospect is saved. */
+	contactLookup: (params: { phone?: string; email?: string }) => {
+		const q = new URLSearchParams()
+		if (params.phone) q.set('phone', params.phone)
+		if (params.email) q.set('email', params.email)
+		return apiRequest<{
+			data:
+				| { found: false }
+				| {
+						found: true
+						contactId: string
+						name: string | null
+						ownerName: string | null
+						openTasks: number
+						openDeals: number
+				  }
+		}>(`/import/contact-lookup?${q.toString()}`)
+	},
+
 	assignables: () =>
 		apiRequest<{
 			data: Array<{
@@ -3325,6 +3344,10 @@ export const prospects = {
 		followUpAt?: string
 		/** Required when a leader creates the prospect, leaders assign, not handle. */
 		assigneeId?: string
+		/** Deal fields, so Tambah Deal can create the person and the sale in one call. */
+		dealName?: string
+		dealValue?: number | null
+		dealStage?: string
 	}) =>
 		apiRequest<{
 			data: {

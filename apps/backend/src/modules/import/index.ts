@@ -118,6 +118,30 @@ export const importLeads = new Elysia({ prefix: '/import', tags: ['Import'] })
 			notes: t.Optional(t.String({ maxLength: 2000 })),
 			followUpAt: t.Optional(t.String({ maxLength: 40 })),
 			assigneeId: t.Optional(t.String({ maxLength: 64 })),
+			dealName: t.Optional(t.String({ maxLength: 255 })),
+			dealValue: t.Optional(t.Nullable(t.Number())),
+			dealStage: t.Optional(t.String({ maxLength: 60 })),
+		}),
+	})
+	// Same roles as /prospect: this serves the form that calls it, and a sales
+	// who cannot check for a duplicate is exactly who creates one.
+	.get('/contact-lookup', async ({ resolvedAppId, userId, query, set }) => {
+		const actor = await resolveActorFor(PROSPECT_ROLES, resolvedAppId, userId, set)
+		if (!actor) return { error: 'Sesi CRM tidak valid' }
+		try {
+			return {
+				data: await ImportService.lookupContact(actor, {
+					phone: query.phone || null,
+					email: query.email || null,
+				}),
+			}
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, {
+		query: t.Object({
+			phone: t.Optional(t.String({ maxLength: 40 })),
+			email: t.Optional(t.String({ maxLength: 255 })),
 		}),
 	})
 	.post('/csv/preview', async ({ resolvedAppId, userId, body, set }) => {

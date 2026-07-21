@@ -628,6 +628,63 @@ export abstract class ImportService {
 		}
 	}
 
+	/**
+	 * Does this phone or email already belong to someone?
+	 *
+	 * Answered before the form saves, so logging a prospect the team already has
+	 * is a decision rather than a surprise. Re-adding one used to silently attach
+	 * a second follow-up task to the same contact, which is how a sales ends up
+	 * chasing the same person twice.
+	 *
+	 * Deliberately unscoped by owner: the point is to say "this person is already
+	 * someone's", and hiding that from a sales who cannot see the contact is what
+	 * creates the duplicate. Only the owner's name is returned, never the
+	 * contact's other details.
+	 */
+	static async lookupContact(
+		actor: ImportActor,
+		input: { phone?: string | null; email?: string | null },
+	) {
+		const phone = input.phone ? normalizePhone(String(input.phone)) : null
+		const email = input.email ? String(input.email).trim().toLowerCase() : null
+		if (!phone && !email) return { found: false as const }
+
+		const or: Array<Record<string, unknown>> = []
+		if (phone) {
+			or.push({ phone_number: phone })
+			or.push({ whatsapp_id: phone })
+		}
+		if (email) or.push({ email })
+
+		const contact = await prisma.contacts.findFirst({
+			where: { app_id: actor.appId, deleted_at: null, OR: or },
+			select: { id: true, name: true, owner_id: true },
+		})
+		if (!contact) return { found: false as const }
+
+		const [owner, openTasks, openDeals] = await Promise.all([
+			contact.owner_id
+				? prisma.users.findUnique({
+						where: { id: contact.owner_id },
+						select: { name: true, email: true },
+					})
+				: Promise.resolve(null),
+			prisma.tasks.count({
+				where: { contact_id: contact.id, status: { in: ['open', 'in_progress'] } },
+			}),
+			prisma.opportunities.count({ where: { contact_id: contact.id, status: 'open' } }),
+		])
+
+		return {
+			found: true as const,
+			contactId: contact.id,
+			name: contact.name,
+			ownerName: owner?.name || owner?.email?.split('@')[0] || null,
+			openTasks,
+			openDeals,
+		}
+	}
+
 	// Who the actor may hand a lead to (for the assignee dropdowns). Team and
 	// role travel with each entry: an administrator picks across every team at
 	// once, where a bare list of first names gives no way to tell an AEC sales
@@ -811,6 +868,14 @@ export abstract class ImportService {
 			notes?: string | null
 			followUpAt?: string | null
 			assigneeId?: string | null
+			/**
+			 * Deal fields, for when this is called from Tambah Deal rather than the
+			 * standalone form. The prospect flow already opens a deal; these let one
+			 * call finish it instead of the caller patching it straight afterwards.
+			 */
+			dealName?: string | null
+			dealValue?: number | null
+			dealStage?: string | null
 		},
 	) {
 		const name = String(input.name || '').trim()
@@ -983,15 +1048,19 @@ export abstract class ImportService {
 			})
 			let dealId: string | null = openDeal?.id ?? null
 			if (!openDeal) {
-				const stage = resolveStage(DEFAULT_STAGE_ID)
+				const stage = resolveStage(input.dealStage || DEFAULT_STAGE_ID)
+				const dealName =
+					input.dealName?.trim() ||
+					(productInterest ? `${name} (${productInterest})` : name)
 				const deal = await tx.opportunities.create({
 					data: {
 						app_id: actor.appId,
 						contact_id: contactId,
 						owner_id: assigneeId,
 						team_id: teamId,
-						name: productInterest ? `${name} (${productInterest})` : name,
+						name: dealName.slice(0, 255),
 						product: productInterest,
+						value: input.dealValue ?? null,
 						currency: 'IDR',
 						status: stage.status,
 						stage: stage.id,
