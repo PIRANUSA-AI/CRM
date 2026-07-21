@@ -111,7 +111,7 @@ type DealFilters = {
 	contactId?: string
 	search?: string
 	bucket?: DealBucket
-	/** One stage only — what the board's "muat lebih banyak" pages through. */
+	/** One stage only: what the board's "muat lebih banyak" pages through. */
 	stage?: string
 }
 
@@ -120,7 +120,7 @@ type DealFilters = {
  *
  * The bucket is resolved here rather than after loading, against the owning
  * team's threshold with the global default for a deal that has no team. Doing
- * it in SQL is what lets a filtered count stay true — filtering enriched rows
+ * it in SQL is what lets a filtered count stay true, filtering enriched rows
  * can only ever describe the page that was already fetched.
  */
 function dealFiltersSql(filters: DealFilters): Prisma.Sql {
@@ -275,8 +275,8 @@ export abstract class OpportunityService {
 	 * The board: every stage, with the count and value of everything in it, and
 	 * only the first `perStage` cards.
 	 *
-	 * A kanban cannot page the way a table does — cutting the result set in half
-	 * gives half-filled columns rather than a second page — so the limit is per
+	 * A kanban cannot page the way a table does, cutting the result set in half
+	 * gives half-filled columns rather than a second page, so the limit is per
 	 * column and the count beside the heading is the true one. That is what stops
 	 * a column from quietly ending at card 25 with no sign there are 1069.
 	 */
@@ -367,7 +367,7 @@ export abstract class OpportunityService {
 	}
 
 	/**
-	 * Move a deal to another stage. This is how a deal becomes an opportunity —
+	 * Move a deal to another stage. This is how a deal becomes an opportunity
 	 * there is no separate "promote" action, and nothing is entered by hand.
 	 * Probability follows the stage unless the sales overrides it.
 	 */
@@ -404,7 +404,7 @@ export abstract class OpportunityService {
 
 	/**
 	 * Header totals. Counted per bucket rather than per status, because that is
-	 * the split the page shows — and because the bucket needs each deal's team
+	 * the split the page shows, and because the bucket needs each deal's team
 	 * threshold, which a groupBy cannot reach.
 	 */
 	static async stats(actor: OpportunityActor) {
@@ -456,7 +456,7 @@ export abstract class OpportunityService {
 
 		const ownerId = input.ownerId || actor.userId || null
 		const teamId = await resolveTeamId(actor.appId, ownerId)
-		// Status follows the stage rather than being set independently — the two
+		// Status follows the stage rather than being set independently. The two
 		// disagreeing is how a deal ends up "won" while still sitting at 10%.
 		const stage = resolveStage(input.stage)
 

@@ -153,7 +153,7 @@ export async function enqueueProfileContact(appId: string, channelId: string, co
 // Start the profile-sync consumer. Called explicitly from the worker entry
 // (src/workers) so it runs ONCE in the worker process only. Importing this module
 // from an API route (for the enqueue helpers below) must not spin up a duplicate
-// consumer in every process — that side effect left multiple half-dead workers
+// consumer in every process. That side effect left multiple half-dead workers
 // that stopped draining the queue after hot-reloads.
 export function startWhatsappProfileSyncWorker() {
 	return new Worker<ProfileJob>(

@@ -1,5 +1,5 @@
 /**
- * Ownership of a contact — who works it, and which team it belongs to.
+ * Ownership of a contact, who works it, and which team it belongs to.
  *
  * This used to be derived on every read by OR-ing an assigned conversation, an
  * assigned task and a `custom_attributes.assigned_user_id` JSON key. That made
@@ -8,7 +8,7 @@
  * could disagree with the other two. `contacts.owner_id` / `contacts.team_id`
  * replace it, and this module is the only place that writes them.
  *
- * Call it wherever ownership genuinely changes hands — lead routing, handing a
+ * Call it wherever ownership genuinely changes hands: lead routing, handing a
  * conversation over, importing a lead against a named sales. Do NOT call it on
  * every inbound message: a contact writing in does not change who owns them.
  */
@@ -26,7 +26,7 @@ export type ContactOwnershipTarget = {
 	ownerId: string | null
 	/**
 	 * The team the contact now belongs to. Omit to infer it from the owner's
-	 * membership, which only works when they belong to exactly one team — an
+	 * membership, which only works when they belong to exactly one team, an
 	 * administrator sits in every team, so for them the caller must say which.
 	 */
 	teamId?: string | null
@@ -47,7 +47,7 @@ async function soleTeamOf(client: Client, userId: string): Promise<string | null
 
 /**
  * Point a contact at its owner. Safe to call when nothing changed, and safe to
- * call with a conversation that has no contact yet — it resolves to a no-op
+ * call with a conversation that has no contact yet. It resolves to a no-op
  * rather than throwing, because ownership is never the reason a caller's main
  * job (routing a lead, saving an import) should fail.
  *

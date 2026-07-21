@@ -1,4 +1,4 @@
-# HANDOVER — CRM PIRANUSA
+# HANDOVER: CRM PIRANUSA
 
 Dokumen serah terima untuk developer yang melanjutkan proyek ini.
 Fokus: **peran Leader dan Sales**. Peran `ceo` dan `superadmin` disinggung
@@ -32,23 +32,23 @@ pembagian ini menentukan hampir semua logika tim di aplikasi:
 | MFG | ZWCAD | `MFG` | manufaktur, mekanikal |
 | AEC | Archicad | `AEC` | arsitektur, konstruksi |
 
-CRM ini **WhatsApp-first**. Customer tidak mengisi form — mereka chat WhatsApp,
+CRM ini **WhatsApp-first**. Customer tidak mengisi form. Mereka chat WhatsApp,
 dan seluruh siklus penjualan terjadi di dalam chat.
 
 ### Dua peran yang jadi fokus
 
-**Leader** (contoh: Benny) — pintu masuk. Semua lead baru mendarat di nomor
+**Leader** (contoh: Benny), pintu masuk. Semua lead baru mendarat di nomor
 WhatsApp leader. Tugasnya: kualifikasi awal lewat chat, lalu **membagikan lead
 ke sales** yang paling cocok. Leader **tidak** menangani lead sampai closing.
 
-**Sales** (contoh: Deska, Yoel, Fathur) — penerima lead. Setelah lead
+**Sales** (contoh: Deska, Yoel, Fathur), penerima lead. Setelah lead
 di-assign, sales menghubungi customer **dari nomor WhatsApp-nya sendiri**, dan
 membawanya sampai deal.
 
 > **Konsekuensi teknis paling penting dari pembagian ini:** percakapan awal ada
 > di inbox leader, dan percakapan lanjutan ada di inbox sales. **Keduanya
 > percakapan yang berbeda.** Banyak keputusan desain di kode ini berakar dari
-> sana — lihat [§7](#7-detail-kecil-yang-menjebak).
+> sana, lihat [§7](#7-detail-kecil-yang-menjebak).
 
 ### Alur besar dalam satu tarikan napas
 
@@ -96,9 +96,9 @@ Ini menjalankan `scripts/dev.ts`, yang berturut-turut:
 | 3005 | Frontend (Vite dev server) | `apps/frontend` |
 | 3010 | Backend REST API, prefix `/api` | `apps/backend`, `APP_MODE=api` |
 | 3011 | Socket.IO (realtime) | proses yang sama dengan 3010 |
-| 3012 | **Baileys / WhatsApp service** | `whatsapp-service/` — **proses terpisah** |
+| 3012 | **Baileys / WhatsApp service** | `whatsapp-service/`, **proses terpisah** |
 
-### Database dan Redis — BACA INI
+### Database dan Redis: BACA INI
 
 `docker-compose.yml` mendefinisikan Postgres dan Redis, **tapi aplikasi tidak
 memakainya.** Yang dipakai adalah container lain yang sudah jalan di mesin dev:
@@ -152,7 +152,7 @@ simpan file backend otomatis reload.** Tidak perlu restart manual.
 
 > **JANGAN mematikan atau merestart proses `bun run dev` yang sedang jalan.**
 > Ini lingkungan yang tersambung ke WhatsApp sungguhan. Kalau butuh menguji
-> backend, ingat port 3010/3011 sudah terpakai — instansi keduamu akan gagal
+> backend, ingat port 3010/3011 sudah terpakai, instansi keduamu akan gagal
 > bind dan mati diam-diam. (Kesalahan ini pernah terjadi: tes yang dikira
 > mengenai instansi sendiri ternyata mengenai dev server yang sedang jalan.)
 
@@ -202,7 +202,7 @@ Didefinisikan di `apps/backend/src/lib/queue.ts`:
 `incoming-messages`, `outbound-messages`, `ai-processing`, `webhooks`,
 `maintenance`, `cron-jobs`, `conversation-bulk`, `whatsapp-profile-sync`
 
-Pesan keluar **selalu** lewat antrean `outbound-messages` — jangan pernah
+Pesan keluar **selalu** lewat antrean `outbound-messages`, jangan pernah
 memanggil Baileys langsung dari handler HTTP.
 
 ### Struktur satu modul backend
@@ -225,17 +225,17 @@ Kalau menambah fitur, ikuti pola ini. Rute tidak query Prisma langsung.
 
 Ini lapisan yang paling sering disalahpahami. Ada **empat** lapis terpisah.
 
-### Lapis 1 — `app-context` (backend, global)
+### Lapis 1: `app-context` (backend, global)
 
 **File: `apps/backend/src/plugins/app-context.ts`**
 
 Elysia plugin dengan `.derive({ as: 'global' })`, jadi **berlaku untuk semua
 rute**. Tugasnya menyuntikkan dua nilai ke setiap handler:
 
-- **`userId`** — diambil berurutan dari:
+- **`userId`**: diambil berurutan dari:
   1. `Authorization: Bearer <token>` → `getSessionFromBearerToken()`
   2. kalau kosong, session cookie better-auth → `auth.api.getSession()`
-- **`resolvedAppId`** — tenant aktif, dari header `x-app-id`, slug organisasi,
+- **`resolvedAppId`**: tenant aktif, dari header `x-app-id`, slug organisasi,
   atau query.
 
 ```ts
@@ -247,13 +247,13 @@ rute**. Tugasnya menyuntikkan dua nilai ke setiap handler:
 
 > **Untuk debugging manual:** kirim header `x-app-id`. Kalau sebuah endpoint
 > membalas `400 {"error":"App ID required"}`, artinya endpoint itu hidup dan
-> sudah sampai ke penjaganya — bukan 404.
+> sudah sampai ke penjaganya. Bukan 404.
 >
 > Endpoint yang butuh `userId` **tidak bisa** diuji dengan header saja; ia
 > perlu token sesi. Untuk itu lebih praktis menguji di level service lewat
 > skrip sementara (lihat [§8](#8-konvensi-kerja)).
 
-### Lapis 2 — `requireRole` (backend, per rute)
+### Lapis 2: `requireRole` (backend, per rute)
 
 **File: `apps/backend/src/lib/require-role.ts`**
 
@@ -273,7 +273,7 @@ const authorization = await requireRole(userId, ALLOWED_ROLES)
 `canGrantRole()` mengatur siapa boleh membuat akun peran apa: `sales`/`leader`
 hanya boleh peran **di bawahnya**; `ceo`/`superadmin` boleh peran setara.
 
-### Lapis 3 — policy per modul (backend, per baris data)
+### Lapis 3: policy per modul (backend, per baris data)
 
 Ini yang menentukan **baris mana** yang boleh dilihat, bukan sekadar boleh
 masuk atau tidak.
@@ -300,7 +300,7 @@ Pola serupa ada di:
 > leader. Kalau halaman leader terlihat sama dengan halaman sales, itu masalah
 > tampilan, bukan masalah data. Ini persis yang diperbaiki di Fase 1.
 
-### Lapis 4 — gating rute (frontend)
+### Lapis 4: gating rute (frontend)
 
 **File: `apps/frontend/src/lib/role-access.ts`**
 
@@ -318,21 +318,21 @@ Pencocokan pakai prefix, jadi `/sales-profiles` otomatis mengizinkan
 `/sales-profiles/<id>`.
 
 Dipakai oleh:
-- `apps/frontend/src/routes/_app.tsx` — penjaga layout
-- `apps/frontend/src/components/Sidebar.tsx` — menyaring menu
-- `apps/frontend/src/lib/crm-navigation.ts` — definisi menu
+- `apps/frontend/src/routes/_app.tsx`, penjaga layout
+- `apps/frontend/src/components/Sidebar.tsx`, menyaring menu
+- `apps/frontend/src/lib/crm-navigation.ts`, definisi menu
 
 > Ini **hanya kosmetik**. Otorisasi sungguhan ada di backend. Jangan pernah
 > mengandalkan lapis ini untuk keamanan.
 
 ### Klien HTTP frontend
 
-**File: `apps/frontend/src/lib/api.ts`** (besar, ±3000 baris — seluruh
+**File: `apps/frontend/src/lib/api.ts`** (besar, ±3000 baris, seluruh
 permukaan API ada di sini)
 
 - `API_BASE` dari `VITE_API_URL`
-- `getAuthHeaders()` — token dari `localStorage.crm_token`, plus slug organisasi
-- `apiRequest()` — `credentials: 'include'`, dan **auto-refresh saat 401**:
+- `getAuthHeaders()`, token dari `localStorage.crm_token`, plus slug organisasi
+- `apiRequest()`, `credentials: 'include'`, dan **auto-refresh saat 401**:
   memakai `localStorage.crm_refresh_token`, mencoba `/auth/refresh`, lalu
   mengulang request sekali (`_retry`)
 
@@ -360,7 +360,7 @@ const currentUser = useCurrentUser()          // null selama belum termuat
 const isLeader = currentUser?.role === 'leader' || currentUser?.role === 'ceo'
 ```
 
-Dibaca dari `localStorage.crm_user` **di dalam `useEffect`** — aplikasi
+Dibaca dari `localStorage.crm_user` **di dalam `useEffect`**: aplikasi
 di-SSR, jadi membaca localStorage saat render akan merusak hydration.
 Perlakukan `null` sebagai "belum diketahui", bukan "bukan leader", supaya
 tampilan tidak berkedip ganti layout.
@@ -386,7 +386,7 @@ Satu baris per orang/perusahaan.
 
 - Kolom asli: `name`, `phone_number`, `whatsapp_id`, `email`, `company`,
   **`city`**, `source`, `identifier`, `custom_attributes` (jsonb)
-- `identifier` berformat `wa:<appId>:<phone>` — dipakai pencocokan WhatsApp
+- `identifier` berformat `wa:<appId>:<phone>`, dipakai pencocokan WhatsApp
 - **`account_id` selalu NULL.** Kolom itu punya FK ke tabel `accounts` yang
   **kosong** di deployment ini. Mengisinya = FK violation.
 - Nomor telepon **selalu** dinormalisasi ke `62…` sebelum disimpan
@@ -394,8 +394,8 @@ Satu baris per orang/perusahaan.
 
 ### `conversations`, `messages`
 
-- `conversations.assignee_id` — pemilik percakapan
-- `conversations.team_id` — tim
+- `conversations.assignee_id`, pemilik percakapan
+- `conversations.team_id`, tim
 - `conversations.additional_attributes` (jsonb) menyimpan `lead_need`
   (profil kebutuhan hasil kualifikasi) dan `personal_whatsapp.owner_user_id`
 - `messages.message_type` = `incoming` (dari customer) / lainnya (dari tim)
@@ -409,10 +409,10 @@ Unit kerja sales.
   `handover_review` | `prospect_followup` | `manual`
 - `source`: `routing` | `prospect` | `import` | `ai_whatsapp` | `manual`
 - `status`: `open` | `in_progress` | `done` | `cancelled`
-- `ai_snapshot` (jsonb) — berisi `lead_need`, `summary`, `suggestedReply`
+- `ai_snapshot` (jsonb), berisi `lead_need`, `summary`, `suggestedReply`
 - **`conversation_id` sengaja NULL** untuk task hasil `routing`, `prospect`,
   dan `import`. Lihat [§7](#7-detail-kecil-yang-menjebak).
-- Tidak ada FK ke `teams` — menghapus tim akan meninggalkan `team_id` menggantung.
+- Tidak ada FK ke `teams`, menghapus tim akan meninggalkan `team_id` menggantung.
 
 ### `notifications`
 
@@ -425,9 +425,9 @@ Unit kerja sales.
 
 Status per (pemilik, percakapan) untuk inbox WhatsApp personal.
 
-- `owner_user_id` — **pemilik nomor WhatsApp**, kunci semua scoping inbox
-- `ai_handling_enabled` — `false` artinya sedang diambil alih manusia
-- `takeover_source` — `ai` (AI menyerah) atau `manual` (sales ambil sendiri)
+- `owner_user_id`, **pemilik nomor WhatsApp**, kunci semua scoping inbox
+- `ai_handling_enabled`, `false` artinya sedang diambil alih manusia
+- `takeover_source`, `ai` (AI menyerah) atau `manual` (sales ambil sendiri)
 
 ### `sales_profiles`
 
@@ -486,16 +486,16 @@ diarahkan ke `/whatsapp/connect` (lihat 6.2).
 
 **Detail yang gampang salah:**
 - Setiap render QR membuat object URL baru. URL lama **wajib** di-revoke, tapi
-  **hanya setelah penggantinya siap** — kalau di-revoke lebih awal, `<img>`
+  **hanya setelah penggantinya siap**: kalau di-revoke lebih awal, `<img>`
   yang masih memakainya jadi kosong. Lihat `swapQrImage()`.
 - Pakai `useRef`, bukan functional `setState` updater, karena efek samping di
   dalam updater berjalan dua kali di StrictMode.
-- `qr.getRawData()` mengembalikan `Buffer` di Node dan `Blob` di browser —
+- `qr.getRawData()` mengembalikan `Buffer` di Node dan `Blob` di browser
   efek ini hanya jalan di klien, jadi dipersempit ke `Blob`.
 
 > **Baileys ada di proses terpisah** (`whatsapp-service/`, port 3012).
 > `apps/backend/src/modules/whatsapp/baileys-runtime.ts` yang memuat
-> `makeWASocket` **tidak diimpor siapa pun** — kode mati, sisa arsitektur lama.
+> `makeWASocket` **tidak diimpor siapa pun**: kode mati, sisa arsitektur lama.
 > Artinya menjalankan `apps/backend` saja **tidak** menyentuh WhatsApp asli.
 
 ---
@@ -532,10 +532,10 @@ isi pesan customer sebagai data tidak tepercaya (anti prompt-injection).
 
 Dua jalur takeover otomatis:
 
-1. **Deterministik** (`detectDeterministicHandover`) — customer minta manusia,
+1. **Deterministik** (`detectDeterministicHandover`), customer minta manusia,
    komplain, atau menyatakan kecewa tepat setelah balasan AI. Tidak memanggil
    model sama sekali.
-2. **Keputusan model** — AI menilai sendiri perlu eskalasi.
+2. **Keputusan model**: AI menilai sendiri perlu eskalasi.
 
 Keduanya memanggil `PersonalTakeoverService.takeover({ source: 'ai', … })`,
 yang menyetel `ai_handling_enabled = false` (**AI berhenti membalas, sticky**)
@@ -573,7 +573,7 @@ Ini alur paling penting dan paling banyak lika-likunya.
 | Service | `modules/lead-routing/service.ts` |
 | Briefing | `modules/tasks/lead-brief.ts` |
 
-#### Langkah 1 — rekomendasi
+#### Langkah 1: rekomendasi
 
 `GET` suggest → `SalesProfileService.listWithProfiles(actor)` → disaring
 `leadRecipients()` → diberi skor.
@@ -602,15 +602,15 @@ assignee), **bukan** dari `assignment_history`.
 > **`leadRecipients()` menyaring agar hanya `role === 'sales'` yang jadi
 > kandidat.** Ini wajib: leader ikut terbawa `listWithProfiles` (karena ia
 > anggota tim sales-nya), dan karena leader mengerjakan intake alih-alih task,
-> skor *fairness*-nya selalu tinggi — dulu leader justru menang atas sales yang
+> skor *fairness*-nya selalu tinggi, dulu leader justru menang atas sales yang
 > keahliannya cocok. Filter ini **hanya di lead-routing**, tidak boleh
 > dipindah ke `resolveTeamSales()` karena fungsi itu juga dipakai halaman
 > Profil Sales yang memang perlu menampilkan leader.
 
-#### Langkah 2 — dialog
+#### Langkah 2: dialog
 
 `LeadRoutingDialog.tsx` menampilkan kandidat berperingkat. **Kandidat teratas
-langsung terpilih otomatis** (baris ~336) — jangan berasumsi leader selalu
+langsung terpilih otomatis** (baris ~336), jangan berasumsi leader selalu
 memilih sadar.
 
 Ada checkbox **"kirim intro"** (default **menyala**) dengan teks otomatis:
@@ -618,9 +618,9 @@ Ada checkbox **"kirim intro"** (default **menyala**) dengan teks otomatis:
 > Halo kak 🙏 Kebutuhan Kakak akan dibantu oleh **{nama}** dari tim kami.
 > Beliau akan menghubungi Kakak sebentar lagi ya. Terima kasih 🙏
 
-Pesan ini dikirim dari **nomor leader** — jadi orang ketiga di sini **benar**.
+Pesan ini dikirim dari **nomor leader**: jadi orang ketiga di sini **benar**.
 
-#### Langkah 3 — assign
+#### Langkah 3: assign
 
 `LeadRoutingService.assign()` melakukan, berurutan:
 
@@ -628,16 +628,16 @@ Pesan ini dikirim dari **nomor leader** — jadi orang ketiga di sini **benar**.
 2. cari task `routing` aktif untuk kontak itu → **update** kalau ada,
    **create** kalau belum (dedupe per kontak, supaya assign ulang tidak
    menumpuk task)
-3. `loadLeaderTranscript()` — 16 pesan terakhir sebagai konteks
+3. `loadLeaderTranscript()`, 16 pesan terakhir sebagai konteks
 4. `generateHandoffBrief()` → `summary` + `suggestedReply`, disimpan ke
    `tasks.ai_snapshot`
 5. notifikasi `lead_pending` **"Lead baru di-assign ke kamu"** ke sales,
-   membawa **`task_id`** (bukan `conversation_id` — lihat §7)
+   membawa **`task_id`** (bukan `conversation_id`, lihat §7)
 6. `task_events` dicatat
 7. event realtime dipancarkan
 
 Setelah `assign()` sukses, **frontend** mengirim pesan intro
-(`personalInbox.sendMessage`) — best-effort, kegagalannya tidak membatalkan
+(`personalInbox.sendMessage`), best-effort, kegagalannya tidak membatalkan
 assign.
 
 #### Briefing handoff
@@ -645,17 +645,17 @@ assign.
 `modules/tasks/lead-brief.ts` → `generateHandoffBrief()`.
 
 Menghasilkan dua hal:
-- **`summary`** — briefing internal untuk sales
-- **`suggestedReply`** — pesan pembuka siap kirim
+- **`summary`**: briefing internal untuk sales
+- **`suggestedReply`**: pesan pembuka siap kirim
 
 > **`suggestedReply` WAJIB ditulis sudut pandang orang pertama sebagai sales
 > yang menerima lead**, dan nama sales dikirim lewat parameter `salesName`.
 > Kalau tidak, model akan meniru kalimat leader dari transkrip dan menghasilkan
-> *"Deska akan menghubungi Anda sebentar lagi"* — dikirim oleh Deska, ke
+> *"Deska akan menghubungi Anda sebentar lagi"*, dikirim oleh Deska, ke
 > customer yang sedang bicara dengan Deska. Terbaca seperti lead dioper lagi.
 > Prompt sekarang melarang keras penyebutan orang ketiga.
 
-Ada fallback deterministik penuh kalau AI mati/gagal — assign **tidak pernah**
+Ada fallback deterministik penuh kalau AI mati/gagal, assign **tidak pernah**
 gagal gara-gara AI.
 
 ---
@@ -706,7 +706,7 @@ Task membawa `assigneeName` (di-resolve di `enrichTasks()`, pola yang sama
 dengan `teamName`).
 
 Aksi: centang selesai (manual), **Tunda 1 hari**, buka WhatsApp, buka email.
-Task **mulai** otomatis saat dibuka/dibalas — tidak ada tombol "mulai".
+Task **mulai** otomatis saat dibuka/dibalas. Tidak ada tombol "mulai".
 
 ---
 
@@ -733,7 +733,7 @@ Baris terakhir itu penting: **notifikasi lead ada dua bentuk.**
 | Judul | Untuk | Membawa | Alasan |
 |---|---|---|---|
 | "Lead baru perlu keputusan" | leader | `conversation_id` | percakapan ada di inbox leader sendiri |
-| "Lead baru di-assign ke kamu" | sales | `task_id` | percakapan ada di inbox **leader** — sales tidak bisa membukanya |
+| "Lead baru di-assign ke kamu" | sales | `task_id` | percakapan ada di inbox **leader**: sales tidak bisa membukanya |
 
 ---
 
@@ -743,7 +743,7 @@ Sistem ini hanya punya **dua** entitas nyata: **Kontak/Pelanggan** (permanen)
 dan **Deal** (satu percobaan penjualan; satu kontak bisa punya banyak, karena
 lisensi CAD diperpanjang tiap tahun).
 
-**"Prospek" dan "Opportunity" bukan entitas** — keduanya Deal yang sama pada
+**"Prospek" dan "Opportunity" bukan entitas**: keduanya Deal yang sama pada
 nilai `probability` berbeda. Di bawah ambang tim = prospek, di atas =
 opportunity. Tabelnya adalah `opportunities`.
 
@@ -769,7 +769,7 @@ opportunity. Tabelnya adalah `opportunities`.
 
 > Stage sengaja ditaruh di kode, bukan di tabel `pipeline_stages`. Tabel itu
 > `pipeline_type = 'contact'` dan mengatur siklus hidup **kontak** (New Leads →
-> Hot Leads → Payment → Customer) yang tampil di halaman Pelanggan — sumbu yang
+> Hot Leads → Payment → Customer) yang tampil di halaman Pelanggan, sumbu yang
 > berbeda: *siapa orangnya*, bukan *sejauh apa satu penjualan*.
 
 **Aturan yang dijaga:**
@@ -784,10 +784,10 @@ opportunity. Tabelnya adalah `opportunities`.
 - `bucket` (`prospek` | `opportunity` | `closed`) **dihitung saat dibaca**, dari
   `probability` versus ambang tim pemilik deal. Karena itu mengubah ambang
   langsung mengubah klasifikasi tanpa migrasi data. Konsekuensinya filter
-  `?bucket=` tidak bisa masuk ke query SQL — ia disaring setelah enrichment.
+  `?bucket=` tidak bisa masuk ke query SQL, ia disaring setelah enrichment.
 - `menang`/`kalah` masuk bucket `closed`, bukan `opportunity`. Deal yang sudah
   menang tidak boleh ikut menghitung pipeline yang sedang dibaca leader.
-- Baca di-scope per peran lewat `dealVisibilityScope()` — sales lihat miliknya,
+- Baca di-scope per peran lewat `dealVisibilityScope()`, sales lihat miliknya,
   leader lihat timnya. Berlaku juga untuk `moveStage`, `update`, `remove`.
 
 **Prospek** (`modules/import/service.ts` → `createProspect()`):
@@ -830,8 +830,8 @@ ada. `matchLead()` mengembalikan rekomendasi `surat_sakti` (kalau cocok) atau
   pustaka XLSX berarti dependensi baru untuk format yang toh akan diratakan ke
   baris yang sama. Parsernya dipakai ulang dari importer lead
   (`modules/import/parser.ts`, RFC 4180).
-- **Idempoten.** Nomor lisensi yang sudah tersimpan — atau berulang di dalam
-  file yang sama — dilewati, bukan disisipkan. Sheet vendor sering dikirim
+- **Idempoten.** Nomor lisensi yang sudah tersimpan, atau berulang di dalam
+  file yang sama, dilewati, bukan disisipkan. Sheet vendor sering dikirim
   ulang, jadi mengimpor file yang sama dua kali tidak boleh menggandakan data.
   Tanpa nomor lisensi, kunci jatuh ke pasangan customer + produk.
 - `dryRun: true` mengembalikan pratinjau yang sama tanpa menulis apa pun.
@@ -847,7 +847,7 @@ ada. `matchLead()` mengembalikan rekomendasi `surat_sakti` (kalau cocok) atau
 
 Empat template: **Penawaran Harga, Penunjukan Dealer Resmi, Keterangan Lisensi
 Asli, Serah Terima Lisensi.** Tiga di antaranya lampiran tender, jadi tiap
-template membawa nomor surat, tanggal, kop, dan blok tanda tangan — bukan
+template membawa nomor surat, tanggal, kop, dan blok tanda tangan, bukan
 sekadar body teks bebas.
 
 > **Isi suratnya masih DUMMY.** Strukturnya benar, tapi redaksinya perlu
@@ -869,12 +869,12 @@ rusak kalau surat itu dicetak.
 | Kelola Tim | `routes/_app/kelola-tim.tsx`, `modules/team/**` |
 | Profil Sales | `routes/_app/sales-profiles/index.tsx` + `$userId.tsx` |
 
-**Profil Sales** — daftar + halaman detail (dulu modal).
+**Profil Sales**: daftar + halaman detail (dulu modal).
 Kolom: `Sales · Tim · Keahlian produk · Beban aktif`.
 
 Halaman detail memisahkan dua kelompok dengan sengaja:
-- **"Dipakai untuk bagi lead"** — keahlian produk, kapasitas maksimum
-- **"Catatan tim"** — level, segmen, wilayah, bahasa, tag, catatan; diberi
+- **"Dipakai untuk bagi lead"**: keahlian produk, kapasitas maksimum
+- **"Catatan tim"**: level, segmen, wilayah, bahasa, tag, catatan; diberi
   keterangan eksplisit bahwa **belum memengaruhi pembagian lead**
 
 > Halaman detail mengambil data lewat `salesProfiles.list()` lalu memilih
@@ -908,8 +908,8 @@ Yang tampak seperti bug, padahal disengaja:
 
 | Terlihat seperti bug | Sebenarnya |
 |---|---|
-| Task hasil `routing` punya `conversation_id` NULL | benar — sales akan chat dari nomornya sendiri, percakapan yang berbeda |
-| Notifikasi "di-assign ke kamu" tidak membawa `conversation_id` | benar — sales tidak bisa membuka percakapan leader |
+| Task hasil `routing` punya `conversation_id` NULL | benar, sales akan chat dari nomornya sendiri, percakapan yang berbeda |
+| Notifikasi "di-assign ke kamu" tidak membawa `conversation_id` | benar, sales tidak bisa membuka percakapan leader |
 
 > Ada komentar penjelas persis di atas baris pembuatan task di
 > `lead-routing/service.ts`. **Sebelum menganggap `conversation_id` NULL sebagai
@@ -920,14 +920,14 @@ Yang tampak seperti bug, padahal disengaja:
 ### 7.2 `validateSearch` TanStack harus pakai key opsional
 
 ```ts
-// BENAR — key opsional, pemanggil boleh tidak mengirim apa-apa
+// BENAR, key opsional, pemanggil boleh tidak mengirim apa-apa
 validateSearch: (search: Record<string, unknown>) => {
   const next: { c?: string; draft?: string } = {}
   if (typeof search.c === 'string') next.c = search.c
   return next
 }
 
-// SALAH — mengembalikan `string | undefined` membuat `search` WAJIB
+// SALAH, mengembalikan `string | undefined` membuat `search` WAJIB
 // di SETIAP Link/navigate ke rute ini
 ```
 
@@ -935,7 +935,7 @@ Mengembalikan key wajib bertipe `string | undefined` memaksa **semua** pemanggil
 menuliskan semua key. Sekali kesalahan ini dibuat, muncul 9 error tsc di
 tempat yang tidak berhubungan.
 
-Juga: **`to` harus pathname murni.** `to={'/x?a=1'}` tidak berfungsi — router
+Juga: **`to` harus pathname murni.** `to={'/x?a=1'}` tidak berfungsi, router
 memperlakukan seluruh string sebagai pathname. Pakai
 `to="/x" search={{ a: '1' }}`.
 
@@ -945,7 +945,7 @@ memperlakukan seluruh string sebagai pathname. Pakai
 Semua 320 kontak punya `account_id` NULL.
 
 Akibatnya `POST /contacts` lama (`ContactService.createContact`) **tidak mungkin
-berhasil** — ia menulis `account_id = appId` dan langsung kena FK violation.
+berhasil**, ia menulis `account_id = appId` dan langsung kena FK violation.
 Pakai `POST /customers` yang baru.
 
 ### 7.4 GPT-5 hanya menerima `temperature: 1`
@@ -956,7 +956,7 @@ Nilai lain akan ditolak API. Semua pemanggilan AI di repo ini sudah memakai
 
 ### 7.5 Backend dev auto-reload
 
-`bun run --watch` — simpan file, proses restart sendiri. Tidak perlu (dan
+`bun run --watch`, simpan file, proses restart sendiri. Tidak perlu (dan
 jangan) restart manual. Baileys aman karena ada di proses terpisah (3012).
 
 ### 7.6 Postgres/Redis bukan dari docker-compose
@@ -973,25 +973,25 @@ Jangan hapus. Disimpan untuk pemakaian di masa depan.
 
 Dulu `customers/index.tsx` memfilter array `rows` yang hanya berisi **satu
 halaman (10 baris)**, jadi tiap chip menyaring 10 baris yang kebetulan tampil
-dan angkanya menyesatkan — terlihat masuk akal, padahal salah. Sudah dipindah
+dan angkanya menyesatkan, terlihat masuk akal, padahal salah. Sudah dipindah
 ke SQL. **Pola yang sama masih mungkin terulang di halaman lain**: kalau sebuah
 daftar dipaginasi, filternya wajib ikut ke query.
 
 Pengecualian yang sah ada satu: filter `?bucket=` di Pipeline. Bucket butuh
 ambang tim yang baru diketahui setelah enrichment, jadi ia memang disaring di
-memori — tapi atas **seluruh** hasil query, bukan satu halaman.
+memori, tapi atas **seluruh** hasil query, bukan satu halaman.
 
 ### 7.9 Leader ada di dalam semua tim
 
 Konsekuensinya, query "anggota tim saya" **selalu** ikut mengembalikan leader.
 Setiap kali kamu butuh "hanya sales", saring `role === 'sales'` secara eksplisit
-di sisi pemanggil — jangan mengubah helper bersama seperti `resolveTeamSales()`,
+di sisi pemanggil, jangan mengubah helper bersama seperti `resolveTeamSales()`,
 karena halaman lain justru butuh leader ikut tampil.
 
 ### 7.10 Satu field, satu tempat penyimpanan
 
 `city` dan `company` adalah **kolom asli** di `contacts`. Jangan menyimpannya di
-`custom_attributes` — jalur prospek memakai kolomnya, dan data yang tersembunyi
+`custom_attributes`, jalur prospek memakai kolomnya, dan data yang tersembunyi
 di jsonb tidak akan terlihat oleh apa pun yang query kolom.
 
 ---
@@ -1008,7 +1008,7 @@ di jsonb tidak akan terlihat oleh apa pun yang query kolom.
 - `docs/*`
 - `.env` atau file rahasia apa pun
 - `apps/backend/_drain.ts` (untracked, bukan milik kita)
-- skrip verifikasi sementara (`_v*.ts`) — hapus setelah dipakai
+- skrip verifikasi sementara (`_v*.ts`), hapus setelah dipakai
 
 ### Menguji logika backend
 
@@ -1051,7 +1051,7 @@ query hitung ulang. Ini menyentuh database yang sama dengan dev.
 
 ### Akun simulasi
 
-`apps/backend/scripts/seed-sim-sales.ts` — membuat/mereset Deska, Yoel, Fathur,
+`apps/backend/scripts/seed-sim-sales.ts`, membuat/mereset Deska, Yoel, Fathur,
 menempatkan mereka di AEC/MFG, dan leader di keduanya.
 
 > **Skrip ini me-reset password SEMUA akun menjadi `123`.** Jangan jalankan
@@ -1076,7 +1076,7 @@ menempatkan mereka di AEC/MFG, dan leader di keduanya.
 Plus pembersihan data: tim `Tim Sales` dihapus, 24 task + 1 conversation
 dipindah ke AEC/MFG sesuai pemiliknya.
 
-### Fase 2 — model deal (selesai)
+### Fase 2: model deal (selesai)
 
 | Commit | Isi |
 |---|---|
@@ -1091,7 +1091,7 @@ Perubahan skema (sudah di-`prisma db push`):
 
 Detail lengkapnya di [§6.9](#69-deal-prospek-pipeline-opportunity).
 
-### Fase 3 — Sakti (selesai)
+### Fase 3: Sakti (selesai)
 
 | Commit | Isi |
 |---|---|
@@ -1104,7 +1104,7 @@ Perubahan skema (sudah di-`prisma db push`): `surat_sakti.template` dan
 Detail di [§6.10](#610-database-sakti--surat-sakti).
 
 **Tindak lanjut yang masih menunggu bisnis:** redaksi keempat template masih
-teks contoh. Ganti isinya di `modules/sakti/letter-templates.ts` — strukturnya
+teks contoh. Ganti isinya di `modules/sakti/letter-templates.ts`, strukturnya
 tidak perlu diubah, cukup kalimatnya.
 
 ### Utang teknis yang ditunda sadar
@@ -1120,7 +1120,7 @@ tidak perlu diubah, cukup kalimatnya.
 ### Pertanyaan yang masih menunggu keputusan pemilik produk
 
 1. Leader boleh mencentang/menyelesaikan tugas milik sales? (sekarang **boleh**)
-2. Bagian `summary` briefing masih bisa menyebut sales sebagai orang ketiga —
+2. Bagian `summary` briefing masih bisa menyebut sales sebagai orang ketiga
    dirapikan juga? (tidak pernah terkirim ke customer)
 3. Task lama yang terlanjur punya opener salah: dibiarkan, dibersihkan, atau
    dibuat ulang?
@@ -1128,7 +1128,7 @@ tidak perlu diubah, cukup kalimatnya.
 
 ---
 
-## Lampiran — ID yang sering dipakai saat debugging
+## Lampiran: ID yang sering dipakai saat debugging
 
 Lingkungan dev, aman ditulis:
 

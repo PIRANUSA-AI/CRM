@@ -250,7 +250,7 @@ async function importFlows() {
 		const app = forcedTargetApp ?? appMap.get(flow.business_id)
 
 		if (!app) {
-			console.log(`  ⏭ Skipping "${flow.name}" — no app found for business_id ${flow.business_id}`)
+			console.log(`  ⏭ Skipping "${flow.name}". No app found for business_id ${flow.business_id}`)
 			skippedMissingApp++
 			continue
 		}

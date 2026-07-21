@@ -67,9 +67,9 @@ const TASK_ACTION_LABEL: Record<string, string> = {
 }
 
 function formatDate(value?: string | null) {
-	if (!value) return '—'
+	if (!value) return '-'
 	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return '—'
+	if (Number.isNaN(date.getTime())) return '-'
 	return new Intl.DateTimeFormat('id-ID', {
 		day: 'numeric',
 		month: 'short',
@@ -307,7 +307,7 @@ function CustomerDetail() {
 					product: result.records[0]?.product || undefined,
 					saktiRecordId: result.records[0]?.id || undefined,
 				})
-				toast.success('Surat Sakti dibuat — buka menu Database Sakti › Surat Sakti')
+				toast.success('Surat Sakti dibuat, buka menu Database Sakti › Surat Sakti')
 			}
 		} catch (err: any) {
 			toast.error(err?.message || 'Gagal cek Sakti')
@@ -513,7 +513,7 @@ function CustomerDetail() {
 				</div>
 			</section>
 
-			{/* Narrow rail on the left, the tabs on the right — the same shape as
+			{/* Narrow rail on the left, the tabs on the right. The same shape as
 			    the Perusahaan detail page, so the two read as one product. */}
 			<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
 				<div className="space-y-5 lg:sticky lg:top-4">
@@ -547,10 +547,10 @@ function CustomerDetail() {
 						<dl className="divide-y divide-border text-sm">
 							{(
 								[
-									['Email', customer.email || '—'],
-									['Nomor WA', customer.phone_number || '—'],
+									['Email', customer.email || '-'],
+									['Nomor WA', customer.phone_number || '-'],
 									['Perusahaan', customer.company_name || 'Belum terhubung'],
-									['Kota', customer.city || '—'],
+									['Kota', customer.city || '-'],
 									['Sales', customer.owner_name || 'Belum ada'],
 									[
 										'Deal',
@@ -774,7 +774,7 @@ function CustomerDetail() {
 																<td className="text-muted-foreground">
 																	{conv.last_message_at
 																		? formatDate(conv.last_message_at)
-																		: '—'}
+																		: '-'}
 																</td>
 																<td>
 																	<span
@@ -885,7 +885,7 @@ function CustomerDetail() {
 									{timeline.length === 0 ? (
 										<CrmEmptyState
 											title="Belum ada aktivitas"
-											description="Riwayat interaksi tim dengan lead ini — tugas, catatan, handover, dan perubahan tahap — akan muncul di sini."
+											description="Riwayat interaksi tim dengan lead ini, tugas, catatan, handover, dan perubahan tahap - akan muncul di sini."
 										/>
 									) : (
 										<ol className="relative px-1 py-1">

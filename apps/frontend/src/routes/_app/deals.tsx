@@ -57,7 +57,7 @@ type ContactOption = {
 	owner_id: string | null
 }
 
-/** Rows per table page, and cards per board column — the column heading still
+/** Rows per table page, and cards per board column. The column heading still
  *  reports the real count, so a capped column says how many it is hiding. */
 const PAGE_SIZE = 25
 const BOARD_PER_STAGE = 25
@@ -76,7 +76,7 @@ const IDR = new Intl.NumberFormat('id-ID', {
 })
 
 function formatValue(value: number | null) {
-	if (!value) return '—'
+	if (!value) return '-'
 	return IDR.format(value).replace(/ /g, ' ')
 }
 
@@ -142,7 +142,7 @@ function DealsPage() {
 	const [error, setError] = useState<string | null>(null)
 
 	// Details a sales fills in as the deal firms up. The stage stays on the row
-	// itself — it is the one thing changed constantly — while these three are
+	// itself. It is the one thing changed constantly - while these three are
 	// edited occasionally, so they live behind a click instead of cluttering
 	// every row with inputs.
 	const [editing, setEditing] = useState<Opportunity | null>(null)
@@ -250,8 +250,8 @@ function DealsPage() {
 	/**
 	 * Moving a card updates the board in place rather than reloading it.
 	 *
-	 * A drag should land instantly, and the four numbers a move disturbs — both
-	 * columns' counts and both columns' totals — are all derivable from the card
+	 * A drag should land instantly, and the four numbers a move disturbs, both
+	 * columns' counts and both columns' totals, are all derivable from the card
 	 * that moved, so they are adjusted here. The server's row then replaces the
 	 * optimistic one, and a failure puts the board back exactly as it was.
 	 */
@@ -267,7 +267,7 @@ function DealsPage() {
 				...deal,
 				stage: stageId,
 				stageLabel: target?.label ?? deal.stageLabel,
-				// Pending asserts no probability, so the card keeps the one it had —
+				// Pending asserts no probability, so the card keeps the one it had
 				// the same rule the backend applies.
 				probability: target?.probability ?? deal.probability,
 				status: target?.status ?? deal.status,
@@ -314,7 +314,7 @@ function DealsPage() {
 				)
 				setDeals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
 				// The header buckets depend on the team threshold, so they are asked
-				// for rather than guessed — but out of band, since nothing on screen
+				// for rather than guessed, but out of band, since nothing on screen
 				// waits for them.
 				void dealsApi
 					.stats()
@@ -618,7 +618,7 @@ function DealsPage() {
 											</span>
 										</td>
 											<td className="px-4 py-3 text-muted-foreground">
-											{deal.contactName || '—'}
+											{deal.contactName || '-'}
 											{deal.product ? (
 												<span className="block text-xs">{deal.product}</span>
 											) : null}
@@ -633,7 +633,7 @@ function DealsPage() {
 													{deal.companyName}
 												</Link>
 											) : (
-												deal.companyName || '—'
+												deal.companyName || '-'
 											)}
 										</td>
 										<td className='px-4 py-3'>
@@ -661,7 +661,7 @@ function DealsPage() {
 										<td className="px-4 py-3 text-muted-foreground">
 											<span className="inline-flex items-center gap-1">
 												<UserRound size={13} />
-												{deal.ownerName || '—'}
+												{deal.ownerName || '-'}
 											</span>
 											{deal.teamName ? (
 												<span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[11px]">
@@ -726,7 +726,7 @@ function DealsPage() {
 					<DialogHeader>
 						<DialogTitle>Tambah Deal</DialogTitle>
 						<DialogDescription>
-							Untuk deal yang tidak datang dari lead — misalnya hasil telepon atau
+							Untuk deal yang tidak datang dari lead, misalnya hasil telepon atau
 							pertemuan langsung.
 						</DialogDescription>
 					</DialogHeader>
@@ -740,7 +740,7 @@ function DealsPage() {
 								className="ocm-input"
 								value={newDeal.name}
 								onChange={(event) => setNewDeal((d) => ({ ...d, name: event.target.value }))}
-								placeholder="mis. ZWCAD 2026 — 10 seat"
+								placeholder="mis. ZWCAD 2026 untuk 10 seat"
 							/>
 						</label>
 
@@ -755,7 +755,7 @@ function DealsPage() {
 											{pickedContact.name || 'Tanpa nama'}
 										</p>
 										<p className="truncate text-xs text-muted-foreground">
-											{pickedContact.email || pickedContact.phone_number || '—'}
+											{pickedContact.email || pickedContact.phone_number || '-'}
 										</p>
 										{/* The firm is shown, not chosen: it follows the contact, which
 										    is the whole reason the two are linked. */}
@@ -802,7 +802,7 @@ function DealsPage() {
 														{contact.name || 'Tanpa nama'}
 													</span>
 													<span className="block truncate text-xs text-muted-foreground">
-														{contact.company_name || contact.email || contact.phone_number || '—'}
+														{contact.company_name || contact.email || contact.phone_number || '-'}
 													</span>
 												</button>
 											))}

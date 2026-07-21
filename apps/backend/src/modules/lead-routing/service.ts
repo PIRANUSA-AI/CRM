@@ -240,7 +240,7 @@ async function blockedAutoAssignTeamIds(appId: string): Promise<Set<string>> {
 // The exclusion is the other way up. An administrator sits over every team and
 // works intake rather than deals, but they appear in listWithProfiles because
 // they share teams with everyone. Fairness ranks whoever went longest without a
-// task, and someone who never takes tasks always looks starved — so left in,
+// task, and someone who never takes tasks always looks starved, so left in,
 // the administrator would outrank the sales whose skills actually match the
 // lead they are trying to hand out.
 function leadRecipients(candidates: Candidate[]): Candidate[] {
@@ -321,7 +321,7 @@ export abstract class LeadRoutingService {
 		const now = new Date()
 		const dueAt = new Date(now.getTime() + 24 * 3600_000)
 		const title = `Balas lead baru: ${context.contactName}${
-			context.productInterest ? ` — ${context.productInterest}` : ''
+			context.productInterest ? `, ${context.productInterest}` : ''
 		}`.slice(0, 255)
 
 		await prisma.conversations.update({
@@ -331,7 +331,7 @@ export abstract class LeadRoutingService {
 
 		// Routing a lead is the moment it stops being the intake pool's and
 		// becomes someone's. The team comes from the routing decision rather than
-		// the assignee's membership — that is the whole point of the decision.
+		// the assignee's membership. That is the whole point of the decision.
 		await setContactOwner(prisma, {
 			conversationId: context.id,
 			ownerId: target.userId,
@@ -458,7 +458,7 @@ export abstract class LeadRoutingService {
 		// Open a deal for the lead so it enters Pipeline at stage "baru". Nothing
 		// is entered by hand any more: a deal exists because a lead exists, and it
 		// becomes an opportunity when the sales moves it past the team threshold.
-		// Best-effort — a failure here must not undo an assignment that already
+		// Best-effort. A failure here must not undo an assignment that already
 		// changed the conversation, the task and the notification.
 		if (context.contactId) {
 			await OpportunityService.openForContact(
@@ -466,7 +466,7 @@ export abstract class LeadRoutingService {
 				{
 					contactId: context.contactId,
 					name: context.productInterest
-						? `${context.contactName} — ${context.productInterest}`
+						? `${context.contactName}, ${context.productInterest}`
 						: context.contactName,
 					product: context.productInterest || null,
 					ownerId: target.userId,
@@ -480,7 +480,7 @@ export abstract class LeadRoutingService {
 			userId: target.userId,
 			type: 'lead_pending',
 			title: 'Lead baru di-assign ke kamu',
-			body: `${context.contactName}${context.productInterest ? ` — ${context.productInterest}` : ''}`,
+			body: `${context.contactName}${context.productInterest ? `, ${context.productInterest}` : ''}`,
 			// Deliberately null, for the same reason the task above is not linked to
 			// it: this conversation lives in the leader's inbox, and the personal
 			// inbox is scoped to the owner's own channel. The sales cannot open it.

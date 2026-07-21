@@ -13,7 +13,7 @@
  * the relationship, and handing it over is the act that moves a contact between
  * people. The JSON key beats a task because import writes both together, but a
  * task can also be reassigned on its own without ownership being meant to move
- * — which was exactly the old derivation's silent failure mode.
+ *, which was exactly the old derivation's silent failure mode.
  *
  * A contact with no evidence at all keeps owner_id NULL. That is not a gap to
  * be papered over: it means nobody has picked the lead up yet, and the read
@@ -155,7 +155,7 @@ async function main() {
 
 		// Drop the legacy JSON key now that the column carries the answer. Guarded
 		// on owner_id being set so this can never destroy the only record of who
-		// owned a contact — a row that failed to backfill keeps its key.
+		// owned a contact. A row that failed to backfill keeps its key.
 		const purged = await prisma.$executeRawUnsafe(`
 			UPDATE contacts SET custom_attributes = custom_attributes - 'assigned_user_id', updated_at = NOW()
 			WHERE custom_attributes ? 'assigned_user_id' AND owner_id IS NOT NULL
@@ -168,7 +168,7 @@ async function main() {
 		`)
 		if (Number(stranded[0]?.jumlah || 0) > 0) {
 			console.log(
-				`PERHATIAN: ${stranded[0].jumlah} kontak masih menyimpan assigned_user_id tapi gagal dapat owner_id — periksa manual.`,
+				`PERHATIAN: ${stranded[0].jumlah} kontak masih menyimpan assigned_user_id tapi gagal dapat owner_id, periksa manual.`,
 			)
 		}
 	}

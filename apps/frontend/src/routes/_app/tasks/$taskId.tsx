@@ -451,7 +451,7 @@ function TaskDetailPage() {
 												<>
 													<b>Ambil Alih & Chat di CRM</b> membuka percakapan lead di inbox
 													WhatsApp-mu, menghentikan balasan otomatis AI, dan kamu yang
-													menangani — pesan pembuka sudah terisi otomatis. Alternatif:
+													menangani, pesan pembuka sudah terisi otomatis. Alternatif:
 													buka WhatsApp langsung di HP/desktop.
 												</>
 											)}
@@ -467,7 +467,7 @@ function TaskDetailPage() {
 						)}
 					</section>
 
-					{/* Chat history — only relevant when a WhatsApp conversation exists */}
+					{/* Chat history, only relevant when a WhatsApp conversation exists */}
 					{task.conversationId ? (
 					<section className="ocm-card overflow-hidden">
 						<div className="flex items-center justify-between border-b border-border p-4">
@@ -555,7 +555,7 @@ function TaskDetailPage() {
 						</dl>
 						<p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
 							Tugas otomatis berstatus <b>Sedang dikerjakan</b> saat kamu buka
-							atau mulai membalas. Membalas tidak menutup tugas — tandai
+							atau mulai membalas. Membalas tidak menutup tugas, tandai
 							<b> Selesai</b> sendiri kalau percakapan sudah tuntas.
 						</p>
 						{isActive ? (
@@ -588,7 +588,7 @@ function TaskDetailPage() {
 												{EVENT_LABEL[event.eventType] || event.eventType}
 											</p>
 											<p className="text-xs text-muted-foreground">
-												{event.actorName || (event.actorType === 'system' ? 'Sistem' : '—')}
+												{event.actorName || (event.actorType === 'system' ? 'Sistem' : '-')}
 												{' · '}
 												<span className="inline-flex items-center gap-1">
 													<Clock3 size={11} /> {formatTime(event.createdAt)}

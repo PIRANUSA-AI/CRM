@@ -1,8 +1,8 @@
 /**
  * Resolving free-text company names to `companies` rows.
  *
- * Every path that accepts a company name from a human — the contact form, the
- * CSV import, a prospect entered off the back of a WhatsApp chat — goes through
+ * Every path that accepts a company name from a human. The contact form, the
+ * CSV import, a prospect entered off the back of a WhatsApp chat, goes through
  * `resolveCompany` so that two people typing the same firm differently still
  * land on one row. The normalisation is deliberately conservative: it collapses
  * casing, punctuation and Indonesian legal forms, and nothing else. It does NOT
@@ -16,7 +16,7 @@ import prisma from './prisma'
 type Client = Prisma.TransactionClient | typeof prisma
 
 /**
- * Legal forms that carry no identity — a firm is "Maju Jaya" whether it is
+ * Legal forms that carry no identity. A firm is "Maju Jaya" whether it is
  * written PT, CV or UD. Stripped from both ends because "Maju Jaya, PT" is a
  * common way to write it on invoices.
  */
@@ -37,13 +37,13 @@ export function normalizeCompanyName(raw: string | null | undefined): string {
 	if (!value) return ''
 
 	// Guarded on length so "Persero Baja" keeps a word rather than stripping to
-	// nothing — the firm is "Baja", not blank.
+	// nothing. The firm is "Baja", not blank.
 	const words = value.split(' ')
 	while (words.length > 1 && LEGAL_FORMS.includes(words[0])) words.shift()
 	while (words.length > 1 && LEGAL_FORMS.includes(words[words.length - 1])) words.pop()
 
 	// That guard leaves a lone legal form intact, so a contact whose company was
-	// typed as just "PT" would normalise to "pt" — and every other bare "PT"
+	// typed as just "PT" would normalise to "pt", and every other bare "PT"
 	// would then join onto that one row as if they were the same firm. A legal
 	// form on its own names nobody, so it is treated as no company at all.
 	if (words.length === 1 && LEGAL_FORMS.includes(words[0])) return ''
@@ -53,7 +53,7 @@ export function normalizeCompanyName(raw: string | null | undefined): string {
 
 /**
  * Tidy a name for display without changing what it is. The stored `name` keeps
- * the legal form — dropping "PT" from what a leader reads would be wrong — so
+ * the legal form. Dropping "PT" from what a leader reads would be wrong, so
  * this only squashes whitespace.
  */
 export function displayCompanyName(raw: string): string {
@@ -68,7 +68,7 @@ export type ResolveCompanyInput = {
 
 /**
  * Find the company for `name`, creating it if this is the first time we have
- * seen it. Returns null when the name is blank or normalises to nothing — the
+ * seen it. Returns null when the name is blank or normalises to nothing, the
  * caller should leave `company_id` null and keep whatever text it was given.
  *
  * Safe to call concurrently: the unique index on (app_id, norm_name) is the
@@ -118,7 +118,7 @@ export async function resolveCompany(
 /**
  * Point a contact at a company, resolving the name first. Keeps the free-text
  * `company` column in step so a contact never displays one firm and links to
- * another — the text stays the fallback, not a second opinion.
+ * another. The text stays the fallback, not a second opinion.
  */
 export async function setContactCompany(
 	client: Client,

@@ -67,7 +67,7 @@ type LeadNeedPanelProps = {
 }
 
 // F1: qualified "lead need" profile with the deterministic "siap di-assign"
-// gate, plus inline leader override. The gate is a soft signal — the leader can
+// gate, plus inline leader override. The gate is a soft signal. The leader can
 // still assign even when it is incomplete.
 function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProps) {
 	const [need, setNeed] = useState<LeadNeed | null>(null)
@@ -197,7 +197,7 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 											}
 											className={commonClass}
 										>
-											<option value="">—</option>
+											<option value="">-</option>
 											<option value="AEC">AEC</option>
 											<option value="MFG">MFG</option>
 											<option value="other">Lainnya</option>
@@ -210,7 +210,7 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 											}
 											className={commonClass}
 										>
-											<option value="">—</option>
+											<option value="">-</option>
 											<option value="high">Tinggi</option>
 											<option value="medium">Sedang</option>
 											<option value="low">Rendah</option>

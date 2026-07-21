@@ -76,7 +76,7 @@ function SaktiPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Database Sakti — license records + the check tool.
+// Database Sakti, license records + the check tool.
 // ---------------------------------------------------------------------------
 
 const RECORDS_PAGE_SIZE = 25
@@ -196,7 +196,7 @@ function DatabaseTab() {
 				product: result?.records[0]?.product || undefined,
 				saktiRecordId: result?.records[0]?.id || undefined,
 			})
-			toast.success('Surat Sakti dibuat — buka tab "Surat Sakti"')
+			toast.success('Surat Sakti dibuat, buka tab "Surat Sakti"')
 		} catch (err: any) {
 			toast.error(err?.message || 'Gagal membuat surat')
 		}
@@ -284,7 +284,7 @@ function DatabaseTab() {
 										{result.records.map((r) => (
 											<li key={r.id}>
 												• {r.customerName}
-												{r.company ? ' — ${r.company}' : ''}
+												{r.company ? ', ${r.company}' : ''}
 												{r.vendor ? ` (vendor: ${r.vendor})` : ''}
 												{r.product ? ' · ${r.product}' : ''}
 											</li>
@@ -422,10 +422,10 @@ function DatabaseTab() {
 								{records.map((r) => (
 									<tr key={r.id}>
 										<td className="font-medium">{r.customerName}</td>
-										<td className="text-muted-foreground">{r.company || '—'}</td>
-										<td className="text-muted-foreground">{r.product || '—'}</td>
-										<td className="text-muted-foreground">{r.vendor || '—'}</td>
-										<td className="text-muted-foreground">{r.licenseNo || '—'}</td>
+										<td className="text-muted-foreground">{r.company || '-'}</td>
+										<td className="text-muted-foreground">{r.product || '-'}</td>
+										<td className="text-muted-foreground">{r.vendor || '-'}</td>
+										<td className="text-muted-foreground">{r.licenseNo || '-'}</td>
 										<td className='text-right'>
 											<button
 												type='button'
@@ -595,7 +595,7 @@ function DatabaseTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Surat Sakti — transfer letters + dual approval.
+// Surat Sakti, transfer letters + dual approval.
 // ---------------------------------------------------------------------------
 
 const LETTER_STATUS: Record<string, { label: string; tone: string }> = {

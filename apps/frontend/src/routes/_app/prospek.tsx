@@ -206,7 +206,7 @@ function ProspekPage() {
 								onChange={(e) => setAssigneeId(e.target.value)}
 								className="ocm-input"
 							>
-								<option value="">— Pilih penanggung jawab —</option>
+								<option value="">Pilih penanggung jawab</option>
 								{salesOptions.map((option) => (
 									<option key={option.userId} value={option.userId}>
 										{option.name || option.email}

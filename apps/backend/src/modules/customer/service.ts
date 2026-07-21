@@ -354,7 +354,7 @@ function mapContactToCustomer(
 		avatar_url: contact.avatar_url,
 		// Carried so a picker can show which firm a contact belongs to at the
 		// moment it is chosen, instead of naming a person with no context.
-		// The stored column first, then the JSON blob it used to live in — an
+		// The stored column first, then the JSON blob it used to live in, an
 		// older contact still keeps its city there and would otherwise read blank.
 		city:
 			contact.city ||
@@ -483,13 +483,13 @@ export abstract class CustomerService {
 		viewerRole?: string
 		viewerUserId?: string
 		/**
-		 * The teams the viewer leads. Only consulted for a leader — a sales is
+		 * The teams the viewer leads. Only consulted for a leader. A sales is
 		 * narrowed to their own contacts, and the administrator tier spans every
 		 * team. Empty for a leader with no team means they see nothing, which is
 		 * the correct fail-closed answer rather than falling back to everything.
 		 */
 		viewerTeamIds?: string[]
-		/** belum_beli | sering_beli | idle_90d | prospek — see CUSTOMER_SEGMENTS. */
+		/** belum_beli | sering_beli | idle_90d | prospek, see CUSTOMER_SEGMENTS. */
 		segment?: string
 		teamId?: string
 		ownerId?: string
@@ -523,7 +523,7 @@ export abstract class CustomerService {
 		if (viewerRole === 'sales' && params.viewerUserId) {
 			whereParts.push(Prisma.sql`c.owner_id = ${params.viewerUserId}::uuid`)
 		} else if (viewerRole === 'leader') {
-			// A leader runs one team and sees that team's contacts — including the
+			// A leader runs one team and sees that team's contacts, including the
 			// ones their sales own. Contacts with no team are the unassigned intake
 			// pool and belong to the administrator until they are handed out, so a
 			// leader must not see them: they are not yet anybody's, and showing them
@@ -556,7 +556,7 @@ export abstract class CustomerService {
 		}
 
 		// Both filters read the stored columns, so "tim: MFG" and "sales: Deska"
-		// now agree with what Deska sees in her own list by construction — the two
+		// now agree with what Deska sees in her own list by construction. The two
 		// used to be separate SQL expressions that could drift apart.
 		if (params.teamId) {
 			whereParts.push(Prisma.sql`c.team_id = ${params.teamId}::uuid`)
@@ -759,7 +759,7 @@ export abstract class CustomerService {
 			})
 		}
 
-		// Owner names and deal counts for this page only — two batched lookups
+		// Owner names and deal counts for this page only. Two batched lookups
 		// rather than a join, so the page query keeps its shape and neither can
 		// fan the row set out.
 		const pageOwnerIds = [
@@ -930,7 +930,7 @@ export abstract class CustomerService {
 	}
 
 	/**
-	 * Unified activity timeline for a contact — the sales↔lead history.
+	 * Unified activity timeline for a contact. The sales↔lead history.
 	 *
 	 * Merges events from several existing tables (no dedicated audit table):
 	 * lead creation, task lifecycle (task_events), internal notes, handover
@@ -1091,7 +1091,7 @@ export abstract class CustomerService {
 			started: { title: 'Tugas dimulai', tone: 'info' },
 			completed: { title: 'Tugas selesai', tone: 'success' },
 			cancelled: { title: 'Tugas dibatalkan', tone: 'warning' },
-			// Kept for history only — snoozing a task is no longer possible, but
+			// Kept for history only, snoozing a task is no longer possible, but
 			// the events from when it was still read on the timeline.
 			snoozed: { title: 'Tugas ditunda', tone: 'warning' },
 			reassigned: { title: 'Tugas dialihkan', tone: 'warning' },
@@ -1222,7 +1222,7 @@ export abstract class CustomerService {
 
 	/**
 	 * Add a contact by hand from the Kontak page. The other two ways contacts
-	 * appear — spreadsheet import and the WhatsApp webhook — both normalise the
+	 * appear, spreadsheet import and the WhatsApp webhook - both normalise the
 	 * phone the same way, so this does too; a number stored in a different shape
 	 * would never match an incoming message.
 	 */

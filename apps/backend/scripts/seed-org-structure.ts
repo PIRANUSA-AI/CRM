@@ -1,13 +1,13 @@
 /**
  * Set up the org structure introduced with the administrator role.
  *
- *   administrator : Benny   — oversees every team, hands leads out
- *   leader        : Reza (AEC), Adi (MFG) — each runs one team and sells
+ *   administrator : Benny, oversees every team, hands leads out
+ *   leader        : Reza (AEC), Adi (MFG). Each runs one team and sells
  *   sales         : unchanged, in the team they already belong to
  *
  * Idempotent: re-running promotes/creates nothing that already matches, so it
  * is safe to run again after adding a team. Passwords for accounts it creates
- * default to "123" — override with SIM_PASSWORD.
+ * default to "123", override with SIM_PASSWORD.
  */
 import prisma from '../src/lib/prisma'
 import { syncBetterAuthCredentialAccount } from '../src/lib/better-auth-credentials'

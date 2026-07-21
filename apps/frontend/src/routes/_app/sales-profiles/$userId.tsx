@@ -21,7 +21,7 @@ type Draft = {
 }
 
 const LEVELS = [
-	{ value: '', label: '—' },
+	{ value: '', label: '-' },
 	{ value: 'junior', label: 'Junior' },
 	{ value: 'mid', label: 'Menengah' },
 	{ value: 'senior', label: 'Senior' },
@@ -79,7 +79,7 @@ function SalesProfileDetailPage() {
 	const [error, setError] = useState<string | null>(null)
 	const [saved, setSaved] = useState(false)
 
-	// There is no GET /sales-profiles/:userId — the list endpoint returns every
+	// There is no GET /sales-profiles/:userId. The list endpoint returns every
 	// sales the leader manages, which is a team-sized list, so picking the row
 	// out of it costs less than adding an endpoint for one record.
 	const load = useCallback(async () => {
@@ -235,7 +235,7 @@ function SalesProfileDetailPage() {
 			</section>
 
 			{/* Kept because the Sales Character DB plan wants them, but they are
-			    inert today — routing reads productSkills and maxActive only. Saying
+			    inert today, routing reads productSkills and maxActive only. Saying
 			    so beats letting a leader tune fields that change nothing. */}
 			<section className="ocm-card space-y-4 p-5">
 				<div>

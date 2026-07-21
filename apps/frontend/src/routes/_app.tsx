@@ -287,7 +287,7 @@ function AppLayout() {
 						setRoleResolved(true)
 						return
 					}
-					// Authenticated but no role surfaced — retry before giving up.
+					// Authenticated but no role surfaced, retry before giving up.
 					scheduleRetry(attempt)
 				})
 				.catch(() => {

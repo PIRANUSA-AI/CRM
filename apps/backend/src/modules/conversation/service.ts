@@ -994,7 +994,7 @@ export abstract class ConversationService {
 		})
 
 		// Handing the conversation over hands the contact over with it. No team is
-		// passed, so it follows the new assignee's own team — unlike lead routing,
+		// passed, so it follows the new assignee's own team, unlike lead routing,
 		// this is a person-to-person move, not a team decision.
 		await setContactOwner(prisma, { contactId: updatedConv.contact_id, ownerId: agentId })
 

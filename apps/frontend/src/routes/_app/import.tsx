@@ -269,7 +269,7 @@ function ImportPage() {
 						<div>
 							<h2 className="text-base font-semibold">Tambah Lead Manual</h2>
 							<p className="text-sm text-muted-foreground">
-								Input satu lead dan assign ke sales — otomatis membuat task follow-up.
+								Input satu lead dan assign ke sales, otomatis membuat task follow-up.
 							</p>
 						</div>
 						<button type="button" className="ocm-btn" onClick={() => setManualOpen((o) => !o)}>
@@ -305,7 +305,7 @@ function ImportPage() {
 										onChange={(e) => setLead((l) => ({ ...l, assignedTo: e.target.value }))}
 										className="ocm-input"
 									>
-										<option value="">— pilih sales —</option>
+										<option value="">pilih sales</option>
 										{salesOptions.map((opt) => (
 											<option key={opt.userId} value={opt.userId}>
 												{opt.name || opt.email}
@@ -456,7 +456,7 @@ function ImportPage() {
 													onChange={(event) => void changeAssignee(row, event.target.value)}
 													className="w-full min-w-[160px] rounded-md border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 												>
-													<option value="">— pilih sales —</option>
+													<option value="">pilih sales</option>
 													{assignOptions.map((opt) => (
 														<option key={opt.email} value={opt.email}>
 															{opt.name || opt.email}

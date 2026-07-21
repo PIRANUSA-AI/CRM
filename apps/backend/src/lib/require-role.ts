@@ -20,7 +20,7 @@ export const ROLE_RANK: Record<CanonicalRole, number> = {
 /**
  * An administrator oversees every team; a leader oversees the one team they
  * belong to. Anywhere a query has to decide between "your team" and
- * "everything", this is the test — not `role === 'leader'`, which silently
+ * "everything", this is the test, not `role === 'leader'`, which silently
  * treats a new administrator as an ordinary user.
  */
 export function isMultiTeamRole(role: string | null | undefined): boolean {
@@ -69,7 +69,7 @@ export async function requireRole(
  * Who may create an account, and of what role.
  *
  * Staffing is an administrator's job: they add teams and the people in them.
- * A leader runs the team they are given and cannot enlarge it — so leader and
+ * A leader runs the team they are given and cannot enlarge it, so leader and
  * sales grant nothing at all, even though a leader outranks a sales.
  *
  * Above that, a role may grant at or below its own tier: `ceo` and

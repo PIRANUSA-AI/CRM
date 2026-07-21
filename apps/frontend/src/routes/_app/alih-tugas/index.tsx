@@ -117,7 +117,7 @@ function AlihTugasPage() {
 			return true
 		})
 		// Whoever has waited longest comes first, and anything past SLA above
-		// that — the order the work should actually be done in.
+		// that. The order the work should actually be done in.
 		return filtered.sort((a, b) => {
 			if (a.overdue !== b.overdue) return a.overdue ? -1 : 1
 			if (a.awaitingResponse !== b.awaitingResponse) return a.awaitingResponse ? -1 : 1
@@ -131,7 +131,7 @@ function AlihTugasPage() {
 				title="Alih Tugas"
 				subtitle={
 					isLeader
-						? 'Chat seluruh tim yang sedang dipegang manusia — AI berhenti membalas sampai dikembalikan.'
+						? 'Chat seluruh tim yang sedang dipegang manusia, AI berhenti membalas sampai dikembalikan.'
 						: 'Chat yang sedang kamu pegang. AI berhenti membalas sampai kamu kembalikan.'
 				}
 				actions={
@@ -310,11 +310,11 @@ function AlihTugasPage() {
 													: 'text-muted-foreground'
 											}`}
 										>
-											{item.awaitingResponse ? formatWaiting(item.waitingMinutes) : '—'}
+											{item.awaitingResponse ? formatWaiting(item.waitingMinutes) : '-'}
 											{item.overdue ? ' ⚠' : ''}
 										</div>
 										<div className="truncate text-xs text-muted-foreground">
-											{item.ownerName || '—'}
+											{item.ownerName || '-'}
 										</div>
 										<div>
 											<span

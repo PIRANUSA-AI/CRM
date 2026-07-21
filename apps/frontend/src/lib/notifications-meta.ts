@@ -35,7 +35,7 @@ export function notifLabel(type: string): string {
 type NotifTarget = Pick<NotificationItem, 'type' | 'taskId' | 'conversationId'>
 
 // Where clicking a notification takes the user. This navigates rather than
-// returning a path because the interesting destinations are parameterised —
+// returning a path because the interesting destinations are parameterised
 // a lead notification has to carry its conversation id through as a search
 // param, and building those by hand at each call site is how the bell ended up
 // dropping them and landing everyone on an empty inbox.
@@ -59,7 +59,7 @@ export function notifNavigate(
 		case 'lead_pending':
 		case 'ai_draft':
 			// A lead notification comes in two shapes. The leader's ("perlu
-			// keputusan") carries a conversation in their own inbox, so open it —
+			// keputusan") carries a conversation in their own inbox, so open it
 			// without `c` the inbox opens with nothing selected, which is the
 			// complaint this fixes. The sales' ("di-assign ke kamu") deliberately
 			// has no conversation, because the lead's chat lives in the leader's

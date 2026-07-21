@@ -12,7 +12,7 @@ export type CurrentUser = {
  *
  * Returns null until the effect runs: the app is server-rendered, so reading
  * localStorage during render would break hydration. Treat null as "not known
- * yet" rather than "not a leader" — rendering the sales view while the role
+ * yet" rather than "not a leader", rendering the sales view while the role
  * loads would make the page flip layouts on every visit.
  */
 export function useCurrentUser(): CurrentUser | null {

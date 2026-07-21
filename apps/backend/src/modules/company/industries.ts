@@ -5,7 +5,7 @@
  * demonstrated: left open, the same industry arrives as "arsitektur", "Arsitek",
  * "ARCHITECTURE" and "arch", and none of them can be filtered together.
  *
- * The list is deliberately short and shaped around what PIRANUSA sells — AEC
+ * The list is deliberately short and shaped around what PIRANUSA sells: AEC
  * tools to people who design buildings, MFG tools to people who make things.
  * Adding one is a line here; it does not touch the database, since the column
  * stores the id.
@@ -36,7 +36,7 @@ export function isIndustry(value: string | null | undefined): boolean {
 	return BY_ID.has(String(value || '').trim().toLowerCase())
 }
 
-/** The label for a stored id, or null — an unknown id is shown as unset rather
+/** The label for a stored id, or null. An unknown id is shown as unset rather
  *  than echoed back raw, so a bad write cannot leak into the UI as a category. */
 export function industryLabel(value: string | null | undefined): string | null {
 	return BY_ID.get(String(value || '').trim().toLowerCase())?.label ?? null

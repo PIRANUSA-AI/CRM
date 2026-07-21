@@ -87,7 +87,7 @@ function KelolaTimPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Teams tab — create/edit/delete teams and manage members.
+// Teams tab, create/edit/delete teams and manage members.
 // ---------------------------------------------------------------------------
 
 function TeamsTab({ accounts }: { accounts: Account[] }) {
@@ -175,7 +175,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 	/**
 	 * The probability at which this team's deals stop reading as prospek and
 	 * start reading as opportunity. Per team because AEC and MFG qualify
-	 * differently — an Archicad tender is committed later than a ZWCAD seat top-up.
+	 * differently. An Archicad tender is committed later than a ZWCAD seat top-up.
 	 */
 	async function handleThreshold(team: TeamWithMembers, value: number) {
 		const next = Math.max(0, Math.min(100, Math.round(value)))
@@ -480,7 +480,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Accounts tab — create user accounts and change their role (unchanged logic).
+// Accounts tab, create user accounts and change their role (unchanged logic).
 // ---------------------------------------------------------------------------
 
 function AccountsTab({

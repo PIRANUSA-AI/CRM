@@ -7,7 +7,7 @@ import { DEAL_STAGES, type DealBucket } from './stages'
 
 /**
  * Deals are visible per role (sales sees their own, leader their team), so
- * every handler needs the caller's role — not just their id.
+ * every handler needs the caller's role, not just their id.
  */
 async function resolveActor(
 	resolvedAppId: string | null,
@@ -30,7 +30,7 @@ function asBucket(value: unknown): DealBucket | undefined {
 
 export const opportunities = new Elysia({ prefix: '/opportunities', tags: ['Opportunities'] })
 	.use(appContext)
-	// Stage catalogue for the Pipeline board — the frontend renders one column
+	// Stage catalogue for the Pipeline board. The frontend renders one column
 	// per stage, so it must not hardcode its own copy of this list.
 	.get('/stages', () => ({ success: true, payload: DEAL_STAGES }))
 	.get(

@@ -167,7 +167,7 @@ function NotificationsPage() {
 		<main className="ocm-page space-y-5">
 			<CrmSectionHeader
 				title="Notifikasi"
-				subtitle="Semua pemberitahuan untuk kamu — lead baru, tugas, ambil alih, dan status WhatsApp."
+				subtitle="Semua pemberitahuan untuk kamu, lead baru, tugas, ambil alih, dan status WhatsApp."
 				actions={
 					<>
 						<button

@@ -11,7 +11,7 @@ import { CustomerDuplicateError, CustomerService } from './service'
  *
  * Kept as a standalone pure function (mirrors `resolveSalesRowScope` in
  * `orders/index.ts`) so the fail-closed branch is unit-testable without a
- * real DB round trip — `session.userId` has an ON DELETE CASCADE FK to
+ * real DB round trip, `session.userId` has an ON DELETE CASCADE FK to
  * `users`, so "a session with a userId that doesn't resolve to a user row"
  * can't be reproduced through the real HTTP/DB stack without dropping that
  * constraint.

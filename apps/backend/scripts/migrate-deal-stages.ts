@@ -4,7 +4,7 @@
  * Mapping is by meaning, not by probability: "Penawaran" becomes Initial
  * Quotation even though that drops it from 75% to 20%, because sending a first
  * quote is an early step in this pipeline, not a late one. The probability moves
- * with the stage so the two cannot disagree — a deal left at 75% while sitting
+ * with the stage so the two cannot disagree. A deal left at 75% while sitting
  * in a 20% column is exactly the drift this pipeline is meant to remove. Only a
  * handful of deals exist, so anything mapped to the wrong column is one drag to
  * fix; the alternative, keeping the old probability, is wrong silently.

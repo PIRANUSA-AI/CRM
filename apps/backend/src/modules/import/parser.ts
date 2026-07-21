@@ -1,5 +1,5 @@
 // Deterministic CSV parsing (RFC 4180) + header mapping + field validation.
-// No AI involved in reading the file — parsing must be exact and testable.
+// No AI involved in reading the file, parsing must be exact and testable.
 
 export type CsvTable = { headers: string[]; rows: string[][] }
 

@@ -38,8 +38,8 @@ function Chips({ items, max = 3 }: { items: string[]; max?: number }) {
 	)
 }
 
-// Columns are limited to what actually drives lead routing — product skills
-// (weight 0.4) and capacity, the denominator of the load score (0.3) — plus the
+// Columns are limited to what actually drives lead routing, product skills
+// (weight 0.4) and capacity, the denominator of the load score (0.3), plus the
 // team, because that is how the leader thinks about their sales. Level used to
 // occupy a column but is decorative: routing never reads it.
 const COLUMNS = 'md:grid-cols-[1.6fr_0.6fr_1.4fr_0.8fr_auto]'
@@ -172,7 +172,7 @@ function SalesProfilesPage() {
 													{row.teamName}
 												</span>
 											) : (
-												<span className="text-muted-foreground/70">—</span>
+												<span className="text-muted-foreground/70">-</span>
 											)}
 										</div>
 

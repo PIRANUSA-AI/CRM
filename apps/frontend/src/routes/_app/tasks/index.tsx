@@ -32,7 +32,7 @@ const TAB_OPTIONS: Array<{ value: TaskTab; label: string }> = [
 	{ value: 'done', label: 'Selesai' },
 ]
 
-// Checkbox · Tugas · Kontak · Tenggat · Prioritas · Sales — the same table
+// Checkbox · Tugas · Kontak · Tenggat · Prioritas · Sales. The same table
 // language as Kontak, Perusahaan and Alih Tugas.
 const COLUMNS = 'grid-cols-[32px_minmax(0,1.8fr)_minmax(0,1fr)_150px_110px_130px]'
 
@@ -321,7 +321,7 @@ function TasksPage() {
 					</div>
 
 					<div className="min-w-0 text-xs text-muted-foreground">
-						<p className="truncate">{task.contactName || task.contactPhone || '—'}</p>
+						<p className="truncate">{task.contactName || task.contactPhone || '-'}</p>
 						{!done && (waHref || mailHref) ? (
 							<span
 								className="mt-0.5 flex items-center gap-1.5"
@@ -380,7 +380,7 @@ function TasksPage() {
 				title="Daftar Tugas"
 				subtitle={
 					isLeader
-						? 'Pantau tugas tiap sales di timmu — siapa mengerjakan apa dan mana yang terlambat.'
+						? 'Pantau tugas tiap sales di timmu, siapa mengerjakan apa dan mana yang terlambat.'
 						: 'Ceklis tindak lanjut lead & percakapan yang butuh aksi sales.'
 				}
 				actions={

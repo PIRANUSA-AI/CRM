@@ -2,7 +2,7 @@
  * Theme tokens live on :root, not on .ocm-shell.
  *
  * Radix renders dialogs, dropdowns and tooltips through a portal on
- * document.body — outside the shell. A token scoped to the shell is simply
+ * document.body, outside the shell. A token scoped to the shell is simply
  * undefined there, and `border: 1px solid var(--ocm-line)` with an undefined
  * var is invalid at computed-value time, so the whole shorthand falls back to
  * border-style: none. That is why every field in every dialog had no box at
@@ -48,7 +48,7 @@
 /*
  * .ocm-page is a bounded flex column that owns the page scroll. Without this,
  * its children default to flex-shrink:1 and get compressed to fit the viewport
- * instead of overflowing — so the page never scrolls and cards with
+ * instead of overflowing, so the page never scrolls and cards with
  * overflow:hidden clip their content. Keeping children at natural height makes
  * the column overflow and scroll as intended.
  */

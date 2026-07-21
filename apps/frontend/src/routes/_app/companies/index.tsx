@@ -77,7 +77,7 @@ function initials(name: string): string {
 	return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
-/** Avatar stack for the PIC at a firm — Qontak's "Associations" column. */
+/** Avatar stack for the PIC at a firm, Qontak's "Associations" column. */
 function ContactStack({ names, total }: { names: string[]; total: number }) {
 	if (total === 0) return <span className="text-xs text-muted-foreground">-</span>
 	const hidden = total - names.length

@@ -1045,11 +1045,11 @@ model contacts {
   // assigned task, and custom_attributes.assigned_user_id), which meant a
   // contact could silently change hands when an unrelated task was reassigned,
   // and left leaders unscoped entirely. Materialised here so ownership is a
-  // fact that is written when it changes — see lib/contact-ownership.ts.
+  // fact that is written when it changes, see lib/contact-ownership.ts.
   owner_id                String?          @db.Uuid
   team_id                 String?          @db.Uuid
 
-  /// Where this person sits in the contact lifecycle — who they are to us,
+  /// Where this person sits in the contact lifecycle, who they are to us,
   /// which is a different axis from how far along any one sale is (that is
   /// opportunities.stage). Points at pipeline_stages of a contact pipeline.
   ///
@@ -1084,7 +1084,7 @@ model companies {
   id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   app_id     String     @db.Uuid
   name       String     @db.VarChar(255)
-  /// Lowercased, legal-form and punctuation stripped — "PT. Maju Jaya" and
+  /// Lowercased, legal-form and punctuation stripped, "PT. Maju Jaya" and
   /// "pt maju jaya" collapse to "maju jaya". Carries the uniqueness constraint
   /// so the same firm cannot be created twice by two people typing it
   /// differently. Written only by normalizeCompanyName in lib/company.ts.
@@ -2568,7 +2568,7 @@ model opportunities {
 
   // How far along the deal is, 0-100. Derived from `stage` by default but the
   // sales may override it. This is the single field that decides whether the
-  // deal reads as a prospek or an opportunity — see DEAL_STAGES in
+  // deal reads as a prospek or an opportunity, see DEAL_STAGES in
   // modules/opportunities/stages.ts.
   probability Int      @default(10)
 
@@ -2592,7 +2592,7 @@ model opportunities {
   @@index([contact_id], map: "idx_opportunities_contact")
 }
 
-// Database Sakti — cross-vendor license records. On a new lead we match the
+// Database Sakti: cross-vendor license records. On a new lead we match the
 // lead's name + company here to decide if they already hold a license bought
 // elsewhere (which requires a Surat Sakti transfer letter).
 model sakti_records {
@@ -2612,7 +2612,7 @@ model sakti_records {
   @@index([app_id], map: "idx_sakti_records_app")
 }
 
-// Surat Sakti — a license-transfer decision letter, approved by BOTH the
+// Surat Sakti. A license-transfer decision letter, approved by BOTH the
 // origin vendor and us before a foreign-license customer can become ours.
 model surat_sakti {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -2633,7 +2633,7 @@ model surat_sakti {
 
   // Which template the letter was written from, and the values filled into it.
   // Stored rather than only the rendered text so a letter can be re-rendered
-  // when the wording is corrected — the bodies in letter-templates.ts are still
+  // when the wording is corrected. The bodies in letter-templates.ts are still
   // placeholders awaiting official copy.
   template        String?  @db.VarChar(60)
   template_values Json?
@@ -2684,7 +2684,7 @@ model import_job_rows {
   @@index([job_id, row_number], map: "idx_import_job_rows_job")
 }
 
-// Sales routing profile — leader-managed characteristics + capacity used by the
+// Sales routing profile, leader-managed characteristics + capacity used by the
 // lead auto-assign routing engine (see docs/lead-auto-assign.md, milestone M1).
 // No relations declared (plain uuid columns) to avoid touching the users model;
 // joins are done in the service layer.

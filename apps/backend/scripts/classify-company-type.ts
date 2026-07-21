@@ -2,7 +2,7 @@
  * Mark the company rows that are not companies.
  *
  * The list was built from whatever people typed into a contact's company field,
- * so it holds occupations as well as firms — "Freelance Arsitek", "Mahasiswa
+ * so it holds occupations as well as firms, "Freelance Arsitek", "Mahasiswa
  * Arsitektur". They are real buyers and must not be deleted, but counting them
  * as corporate accounts overstates how many firms we sell to.
  *
@@ -32,7 +32,7 @@ const PERSONAL_MARKERS = [
 	'sendiri',
 ]
 
-/** Legal forms — their presence is decisive evidence of a real firm. */
+/** Legal forms. Their presence is decisive evidence of a real firm. */
 const CORPORATE_MARKERS = ['pt', 'cv', 'ud', 'pd', 'tbk', 'persero', 'perum', 'koperasi', 'yayasan']
 
 function classify(name: string): 'perusahaan' | 'perorangan' | null {

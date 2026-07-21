@@ -105,7 +105,7 @@ function cell(row: string[], index: number | undefined): string {
 /**
  * Parse and validate without touching the database. `existingLicenseNos` and
  * `existingKeys` let the caller mark rows that are already stored, so an import
- * run twice does not double the database — these sheets get re-sent often.
+ * run twice does not double the database. These sheets get re-sent often.
  */
 export function parseSaktiSheet(
 	content: string,

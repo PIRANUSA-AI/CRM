@@ -255,8 +255,8 @@ function AlihTugasDetailPage() {
 						<dl className="space-y-2 text-sm">
 							{(
 								[
-									['Sales', item.ownerName || '—'],
-									['Diambil oleh', item.takenByName || (isAi ? 'AI' : '—')],
+									['Sales', item.ownerName || '-'],
+									['Diambil oleh', item.takenByName || (isAi ? 'AI' : '-')],
 									['Sejak', formatDateTime(item.takenAt)],
 									[
 										'Status',

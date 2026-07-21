@@ -60,7 +60,7 @@ function dayBounds(now = new Date()) {
 }
 
 // Was "active and not snoozed". Snoozing is gone, so a task is either active
-// or it is not — nothing hides a task from the list any more.
+// or it is not. Nothing hides a task from the list any more.
 function activeAndVisibleAt(_now: Date) {
 	return { status: { in: ACTIVE_STATUSES } }
 }
@@ -218,7 +218,7 @@ export abstract class TaskService {
 		const filters: Record<string, unknown>[] = []
 		const view = input.view || 'today'
 		if (input.contactId) {
-			// All tasks for one contact (used by the customer detail page) —
+			// All tasks for one contact (used by the customer detail page)
 			// ignore the date/view window.
 			filters.push({ contact_id: input.contactId })
 		} else if (view === 'done') filters.push({ status: 'done' })
@@ -334,7 +334,7 @@ export abstract class TaskService {
 
 		// Lazily generate an AI "lead brief" (ringkasan + saran pembuka) for
 		// leads that came from CSV import / manual entry and have no WhatsApp
-		// conversation yet — so the sales instantly understands who the lead is
+		// conversation yet, so the sales instantly understands who the lead is
 		// and how to open the follow-up. Cached into ai_snapshot after the first
 		// open; falls back to a deterministic brief if the AI is unavailable.
 		let taskOut = task
@@ -396,8 +396,8 @@ export abstract class TaskService {
 	// production inbox routes stay untouched.
 	static async openChat(actor: TaskActor, taskId: string) {
 		const task = await TaskService.get(actor, taskId)
-		// F4: a lead shared by the leader (routing task) is handled AI-first — the
-		// sales' AI replies until the sales explicitly takes over — so opening it must
+		// F4: a lead shared by the leader (routing task) is handled AI-first, the
+		// sales' AI replies until the sales explicitly takes over, so opening it must
 		// NOT take over. Other task types keep the take-over-on-open behavior.
 		const isHandoff = task.source === 'routing'
 		const handoffOpener =
@@ -411,7 +411,7 @@ export abstract class TaskService {
 				// Keep the sales' AI in control; the sales takes over from the chat.
 				return { conversationId: task.conversationId }
 			}
-			// Already linked — just make sure the human owns it and return it.
+			// Already linked, just make sure the human owns it and return it.
 			await PersonalTakeoverService.takeover({
 				appId: actor.appId,
 				ownerUserId: actor.userId,
@@ -566,7 +566,7 @@ export abstract class TaskService {
 			// handles the customer's replies until the sales takes over.
 			await TaskService.sendHandoffOpener(actor, conversation.id, handoffOpener)
 		} else {
-			// Human takes over — the AI stops auto-replying to this lead.
+			// Human takes over. The AI stops auto-replying to this lead.
 			await PersonalTakeoverService.takeover({
 				appId: actor.appId,
 				ownerUserId: actor.userId,
@@ -632,7 +632,7 @@ export abstract class TaskService {
 		})
 		if (!session)
 			throw new TaskConflictError(
-				'WhatsApp kamu belum terhubung — hubungkan dulu untuk memulai chat AI.',
+				'WhatsApp kamu belum terhubung, hubungkan dulu untuk memulai chat AI.',
 			)
 		const channel = await prisma.whatsapp_channels.findFirst({
 			where: { id: session.channel_id, app_id: actor.appId, provider: 'baileys', deleted_at: null },
@@ -800,7 +800,7 @@ export abstract class TaskService {
 
 	// When the sales agent starts replying to the customer (via the chat inbox or
 	// the task reply box), move the task to "in progress" so it clearly shows as
-	// being worked on. Replying does NOT complete the task — the conversation is
+	// being worked on. Replying does NOT complete the task. The conversation is
 	// still ongoing and only the sales decides when it is done. Only untouched
 	// (open) tasks are advanced; in_progress tasks are left as-is. Fail-open.
 	static async markInProgressOnConversationReply(

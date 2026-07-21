@@ -57,7 +57,7 @@ type CustomerListMeta = {
 
 // Segments the business actually asks for. The previous set (VIP by LTV, cart
 // abandon, komplain, churn risk) came from an e-commerce template and had no
-// meaning for a CAD reseller — and none of it was filtered server-side, so the
+// meaning for a CAD reseller, and none of it was filtered server-side, so the
 // chip counts only ever described the ten rows on screen.
 type SegmentId = 'all' | 'belum_beli' | 'sering_beli' | 'idle_90d' | 'prospek'
 
@@ -368,7 +368,7 @@ function CustomersPage() {
 		void loadPage(1, { includeStats: true })
 	}, [])
 
-	// Team and sales pickers are a leader's tool — a sales only ever sees their
+	// Team and sales pickers are a leader's tool. A sales only ever sees their
 	// own contacts, so the dropdowns would filter a list of one person's rows by
 	// that same person.
 	useEffect(() => {
@@ -411,7 +411,7 @@ function CustomersPage() {
 			})
 			setAddOpen(false)
 			setNewCustomer(EMPTY_NEW_CUSTOMER)
-			// Back to page 1 with fresh stats — the new contact is the newest row.
+			// Back to page 1 with fresh stats. The new contact is the newest row.
 			await loadPage(1, { includeStats: true })
 		} catch (error) {
 			setAddError(

@@ -101,10 +101,9 @@ function normalizeProspectChannel(value: string | null | undefined): ProspectCha
 async function resolveOwnTeamId(actor: ImportActor): Promise<string | null> {
 	const appTeams = await prisma.teams.findMany({
 		where: { app_id: actor.appId, deleted_at: null },
-		select: { id: true, name: true },
+		select: { id: true },
 	})
 	const appTeamIds = appTeams.map((team) => team.id)
-	const teamNameById = new Map(appTeams.map((team) => [team.id, team.name]))
 	if (!appTeamIds.length) return null
 	const membership = await prisma.team_members.findFirst({
 		where: { team_id: { in: appTeamIds }, user_id: actor.userId },
@@ -263,12 +262,12 @@ function validateRow(
 		assignee = assignables.get(mapped.assigned_to) || null
 		if (!assignee) {
 			messages.push(
-				`Assignee "${mapped.assigned_to}" tidak ditemukan / di luar tim Anda — pilih manual`,
+				`Assignee "${mapped.assigned_to}" tidak ditemukan / di luar tim Anda, pilih manual`,
 			)
 			if (status !== 'error') status = 'warning'
 		}
 	} else if (!isClosedStage(mapped.pipeline_stage)) {
-		messages.push('Belum ada assignee — pilih sales tujuan')
+		messages.push('Belum ada assignee, pilih sales tujuan')
 		if (status !== 'error') status = 'warning'
 	}
 
@@ -543,7 +542,7 @@ export abstract class ImportService {
 					const closed = isClosedStage(mapped.pipeline_stage)
 					if (!closed && row.resolved_assignee_id) {
 						const dueAt = parseIsoDate(mapped.next_followup_at) || new Date(now.getTime() + 3 * 24 * 3600_000)
-						const title = `Follow-up ${mapped.product_interest || 'lead'} — ${mapped.name}`.slice(0, 255)
+						const title = `Follow-up ${mapped.product_interest || 'lead'} untuk ${mapped.name}`.slice(0, 255)
 						const task = await tx.tasks.create({
 							data: {
 								app_id: actor.appId,
@@ -646,7 +645,7 @@ export abstract class ImportService {
 			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
 	}
 
-	// Manual single-lead entry by a leader — mirrors the CSV commit path:
+	// Manual single-lead entry by a leader, mirrors the CSV commit path:
 	// create/update the contact and (unless the stage is closed) a follow-up task
 	// assigned to the chosen sales.
 	static async createManualLead(
@@ -753,7 +752,7 @@ export abstract class ImportService {
 			let taskId: string | null = null
 			if (!isClosedStage(pipelineStage)) {
 				const dueAt = new Date(now.getTime() + 3 * 24 * 3600_000)
-				const title = `Follow-up ${productInterest || 'lead'} — ${name}`.slice(0, 255)
+				const title = `Follow-up ${productInterest || 'lead'} untuk ${name}`.slice(0, 255)
 				const task = await tx.tasks.create({
 					data: {
 						app_id: actor.appId,
@@ -838,7 +837,7 @@ export abstract class ImportService {
 		}
 
 		// A prospect entered here is one the person found themselves, at an event
-		// or on LinkedIn, so it stays theirs — a leader sells alongside their team
+		// or on LinkedIn, so it stays theirs. A leader sells alongside their team
 		// and keeps what they source, exactly as a sales does. Handing work over
 		// afterwards is what /alih-tugas is for, and it records the handover.
 		//
@@ -942,11 +941,11 @@ export abstract class ImportService {
 			// The owner is the assignee, not the creator. The old JSON key recorded
 			// `actor.userId`, so a prospect an administrator entered on someone
 			// else's behalf was owned by the administrator while the follow-up task
-			// sat with the sales — the contact list and the task list disagreed
+			// sat with the sales. The contact list and the task list disagreed
 			// about whose prospect it was.
 			await setContactOwner(tx, { contactId, ownerId: assigneeId, teamId: teamId || undefined })
 
-			const title = `Follow-up prospek ${PROSPECT_CHANNEL_LABEL[channel]} — ${name}`.slice(0, 255)
+			const title = `Follow-up prospek ${PROSPECT_CHANNEL_LABEL[channel]} untuk ${name}`.slice(0, 255)
 			const task = await tx.tasks.create({
 				data: {
 					app_id: actor.appId,
@@ -977,7 +976,7 @@ export abstract class ImportService {
 			// re-typing it. Created in the same transaction as the contact and task
 			// because a prospect that exists without its deal is invisible on the
 			// page meant to track it. Skipped when the contact already has an open
-			// deal — re-adding a prospect should not fork their pipeline.
+			// deal, re-adding a prospect should not fork their pipeline.
 			const openDeal = await tx.opportunities.findFirst({
 				where: { app_id: actor.appId, contact_id: contactId, status: 'open' },
 				select: { id: true },
@@ -991,7 +990,7 @@ export abstract class ImportService {
 						contact_id: contactId,
 						owner_id: assigneeId,
 						team_id: teamId,
-						name: productInterest ? `${name} — ${productInterest}` : name,
+						name: productInterest ? `${name} (${productInterest})` : name,
 						product: productInterest,
 						currency: 'IDR',
 						status: stage.status,

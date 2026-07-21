@@ -836,7 +836,7 @@ export abstract class BaileysRuntimeService {
 		}
 		if (!nameByPhone.size) return
 		const phones = [...nameByPhone.keys()]
-		// Process in chunks — an initial contacts.upsert can carry the whole address
+		// Process in chunks. An initial contacts.upsert can carry the whole address
 		// book, but we only touch numbers that already exist as CRM contacts.
 		for (let index = 0; index < phones.length; index += 500) {
 			const chunk = phones.slice(index, index + 500)
@@ -965,11 +965,11 @@ export abstract class BaileysRuntimeService {
 					updated_at: new Date(),
 				},
 			})
-			// WhatsApp is back online — clear any "disconnected" notification.
+			// WhatsApp is back online, clear any "disconnected" notification.
 			void resolveWhatsappReconnected(sessionRow.id)
 			// Refresh contact profile photos now that fetching works again. Force a
 			// re-fetch (bypass the 7-day freshness gate) so photos that were missing
-			// while offline — or failed earlier — get retried on reconnect.
+			// while offline, or failed earlier - get retried on reconnect.
 			// Fire-and-forget.
 			if (channel.app_id) {
 				void enqueueProfileSweep(channel.app_id, channel.id, true).catch((error) => {

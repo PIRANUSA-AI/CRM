@@ -1,4 +1,4 @@
-# W2U — What Should Be Updated
+# W2U: What Should Be Updated
 
 ## Keputusan alignment
 

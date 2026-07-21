@@ -3,14 +3,14 @@
  *
  * Two problems, both from the stages having been created and then never used:
  *
- * 1. stage_order ran backwards — Customer 0, New Leads 3 — so any list sorted
+ * 1. stage_order ran backwards, Customer 0, New Leads 3 - so any list sorted
  *    by it showed the funnel upside down.
  * 2. No contact had a stage at all. The column existed (as a JSON key), the UI
  *    rendered it, and every row read "inquiry" because nothing ever wrote one.
  *
  * The starting status is derived from deals rather than guessed: someone who
  * has won a deal is a Customer, someone with a live deal is a Hot Lead, and
- * everyone else is a New Lead. Payment is left alone — money having changed
+ * everyone else is a New Lead. Payment is left alone, money having changed
  * hands is not something this database knows, so a human sets it.
  *
  * After this runs, the field is manually managed. It is deliberately not kept
@@ -95,7 +95,7 @@ async function main() {
 	}
 
 	console.log(
-		`\n${dryRun ? '[dry-run] ' : ''}${contacts.length} kontak diberi status — ` +
+		`\n${dryRun ? '[dry-run] ' : ''}${contacts.length} kontak diberi status, ` +
 			`Customer ${counts.customer}, Hot Leads ${counts.hot}, New Leads ${counts.new}.`,
 	)
 }

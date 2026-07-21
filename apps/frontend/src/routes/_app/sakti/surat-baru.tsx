@@ -20,7 +20,7 @@ export const Route = createFileRoute('/_app/sakti/surat-baru')({
  * server for. Rendering here also removes a whole failure mode: the previous
  * version round-tripped on every keystroke and swallowed errors, so a failed
  * request left the preview showing the empty-form version while the fields
- * were plainly filled in — it looked like the data was being ignored.
+ * were plainly filled in. It looked like the data was being ignored.
  *
  * Mirrors renderLetter() in modules/sakti/letter-templates.ts. Blanks render as
  * "-" rather than leaving `{{field}}` visible, because these get printed.
@@ -137,7 +137,7 @@ function SuratBaruPage() {
 									setValues({})
 								}}
 							>
-								<option value="">— Pilih template —</option>
+								<option value="">Pilih template</option>
 								{templates.map((item) => (
 									<option key={item.id} value={item.id}>
 										{item.name}
@@ -178,7 +178,7 @@ function SuratBaruPage() {
 						) : null}
 					</section>
 
-					{/* Preview, laid out like the printed page rather than a code block —
+					{/* Preview, laid out like the printed page rather than a code block
 					    this is what gets attached to a tender, so it should read like a
 					    letter while it is being written. */}
 					<section className="lg:sticky lg:top-4">
@@ -197,7 +197,7 @@ function SuratBaruPage() {
 							</div>
 						)}
 						<p className="mt-2 text-[11px] text-muted-foreground">
-							Isi surat masih contoh — ganti dengan redaksi resmi sebelum dikirim.
+							Isi surat masih contoh, ganti dengan redaksi resmi sebelum dikirim.
 						</p>
 					</section>
 				</div>

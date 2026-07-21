@@ -39,7 +39,7 @@ async function main() {
 	console.log(`Kontak dengan teks company: ${contacts.length}`)
 
 	// Group first so the report can show which spellings collapsed together
-	// before anything is written — that is the one decision worth eyeballing.
+	// before anything is written. That is the one decision worth eyeballing.
 	const groups = new Map<string, { appId: string; display: string; ids: string[]; spellings: Set<string> }>()
 	let skipped = 0
 
@@ -91,7 +91,7 @@ async function main() {
 	for (const [key, group] of groups) {
 		const norm = key.split('::')[1]
 
-		// Not resolveCompany() — this needs to report created vs reused, and an
+		// Not resolveCompany(). This needs to report created vs reused, and an
 		// upsert keeps the pass safe to re-run against a half-finished previous run.
 		const existing = await prisma.companies.findFirst({
 			where: { app_id: group.appId, norm_name: norm },
@@ -138,7 +138,7 @@ async function main() {
 	`)
 	const stranded = Number(orphan[0]?.jumlah || 0)
 	if (stranded > 0) {
-		console.log(`\nPERHATIAN: ${stranded} kontak punya teks company tapi belum tertaut — periksa manual.`)
+		console.log(`\nPERHATIAN: ${stranded} kontak punya teks company tapi belum tertaut, periksa manual.`)
 	}
 }
 

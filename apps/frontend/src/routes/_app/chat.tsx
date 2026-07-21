@@ -196,7 +196,7 @@ function PersonalWhatsappInbox() {
 	const { c: deepLinkConversationId, draft: deepLinkDraft } = Route.useSearch()
 	const [conversations, setConversations] = useState<Conversation[]>([])
 	const [pendingLeads, setPendingLeads] = useState<LeadRegistration[]>([])
-	// Real (uncapped) totals per lead status — the lists above are capped at 200
+	// Real (uncapped) totals per lead status. The lists above are capped at 200
 	// rows, so the badge/count uses these instead of the array length.
 	const [leadTotals, setLeadTotals] = useState<{ pending: number; blocked: number; ignored: number }>({ pending: 0, blocked: 0, ignored: 0 })
 	const [blockedLeads, setBlockedLeads] = useState<LeadRegistration[]>([])
@@ -973,7 +973,7 @@ function PersonalWhatsappInbox() {
 	}, [blockedLeads, filter, ignoredLeads, pendingLeads, query])
 
 	const active = conversations.find((item) => item.id === selectedId) || null
-	// While the AI holds this lead, the sales cannot type — they must "Ambil Alih"
+	// While the AI holds this lead, the sales cannot type. They must "Ambil Alih"
 	// first. Keeps the AI and the human from replying over each other.
 	const aiInControl = Boolean(active?.aiHandling)
 	const visibleMessages = messages.filter((message) => message.content_type !== 'reaction')
@@ -1378,7 +1378,7 @@ function PersonalWhatsappInbox() {
 										}}
 										rows={1}
 										maxLength={4096}
-										placeholder={aiInControl ? 'AI sedang menangani — klik "Ambil Alih" untuk membalas' : connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
+										placeholder={aiInControl ? 'AI sedang menangani, klik "Ambil Alih" untuk membalas' : connected ? pendingAttachments.length ? 'Tambahkan keterangan…' : 'Tulis pesan…' : 'WhatsApp sedang tidak terhubung'}
 										disabled={!connected || sendingMessage || uploadingMedia || aiInControl}
 										className="max-h-32 min-h-11 min-w-0 flex-1 resize-none rounded-xl bg-muted px-4 py-3 text-sm leading-5 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
 									/>

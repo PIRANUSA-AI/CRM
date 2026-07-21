@@ -102,7 +102,7 @@ async function aiContextByConversation(conversationIds: string[]) {
 // Leads currently handled by a human (AI off), with handed-off leads removed.
 // A lead assigned to a different user (routed to a sales via "Bagikan") is no
 // longer a human-takeover for its original owner, so it must not linger in the
-// leader's "Alih Tugas" — the leader still sees it, but attributed to the sales
+// leader's "Alih Tugas". The leader still sees it, but attributed to the sales
 // once that sales takes it over on their own number.
 async function loadActiveTakeoverRegistrations(actor: TakeoverActor) {
 	const registrations = await prisma.whatsapp_lead_registrations.findMany({
@@ -250,7 +250,7 @@ export abstract class PersonalTakeoverService {
 			actorType: 'user',
 			metadata: { note: input.note || null },
 		})
-		// The takeover is over — clear its notification for the owner.
+		// The takeover is over, clear its notification for the owner.
 		await NotificationService.resolve(
 			input.appId,
 			input.ownerUserId,
@@ -316,7 +316,7 @@ export abstract class PersonalTakeoverService {
 							_max: { created_at: true },
 						})
 					: Promise.resolve([]),
-				// Last human (sales) reply per conversation — bot replies do not count.
+				// Last human (sales) reply per conversation, bot replies do not count.
 				conversationIds.length
 					? prisma.messages.groupBy({
 							by: ['conversation_id'],

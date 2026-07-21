@@ -914,7 +914,7 @@ export abstract class FlowService {
 				inbox_id: null,
 				message_type: 'outgoing',
 				content_type: 'text',
-				content: `[Debug Run] ${nodeLabel} — re-run with adjusted input`,
+				content: `[Debug Run] ${nodeLabel}, re-run with adjusted input`,
 				sender_type: 'system',
 				private: true,
 				status: 'sent',

@@ -21,7 +21,7 @@ describe('role-access: sales/leader/ceo/superadmin', () => {
 
 	// Regression: the deals page was added for leaders only while the sidebar
 	// entry for /opportunity was removed, which left a sales with no route to
-	// their own deals at all — the nav item was gone and /opportunity redirected
+	// their own deals at all. The nav item was gone and /opportunity redirected
 	// to a page they were not allowed on. Asserting the constants against
 	// themselves (the test above) cannot catch a missing path, so name the pages
 	// explicitly. /pipeline and /opportunity are redirects and must stay allowed

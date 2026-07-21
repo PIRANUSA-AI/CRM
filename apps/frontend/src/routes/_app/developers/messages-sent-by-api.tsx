@@ -113,7 +113,7 @@ function DevelopersMessagesSentByApiPage() {
 											</span>
 										</TableCell>
 										<TableCell className="text-xs text-destructive">
-											{row.error ?? '—'}
+											{row.error ?? '-'}
 										</TableCell>
 										<TableCell className="text-gray-500">{row.inbox}</TableCell>
 										<TableCell className="text-gray-500">

@@ -1554,7 +1554,7 @@ export const customers = {
 
 }
 
-// Companies — the firm a contact buys for. Read-only for now: rows are created
+// Companies. The firm a contact buys for. Read-only for now: rows are created
 // by the write paths that already accept a company name (contact form, import,
 // prospek), so there is no "add company" that could produce an empty one.
 export type CompanyRow = {
@@ -1677,7 +1677,7 @@ export const companies = {
 		apiRequest<{ success: boolean; payload: CompanyDetail }>(`/companies/${id}`),
 }
 
-// Opportunities — qualified deals, distinct from raw leads (customers).
+// Opportunities, qualified deals, distinct from raw leads (customers).
 export type OpportunityStatus = 'open' | 'won' | 'lost'
 
 export interface Opportunity {
@@ -1706,7 +1706,7 @@ export interface Opportunity {
 	source: string
 	notes: string | null
 	closedAt: string | null
-	/** When the deal last changed column — what "N hari di tahap ini" counts from. */
+	/** When the deal last changed column, what "N hari di tahap ini" counts from. */
 	stageChangedAt: string | null
 	createdAt: string | null
 	updatedAt: string | null
@@ -1726,7 +1726,7 @@ export type DealBucket = 'prospek' | 'opportunity' | 'closed'
 export interface DealStage {
 	id: string
 	label: string
-	/** null for a stage that asserts no probability of its own — only Pending. */
+	/** null for a stage that asserts no probability of its own, only Pending. */
 	probability: number | null
 	status: 'open' | 'won' | 'lost'
 }
@@ -1753,7 +1753,7 @@ export const opportunities = {
 	stages: (): Promise<{ success: boolean; payload: DealStage[] }> =>
 		apiRequest('/opportunities/stages'),
 
-	/** Move a deal to another stage — this is the whole lifecycle. */
+	/** Move a deal to another stage. This is the whole lifecycle. */
 	moveStage: (
 		id: string,
 		stage: string,
@@ -1871,7 +1871,7 @@ export interface LetterTemplate {
 	body: string
 }
 
-// Database Sakti — cross-vendor license records + transfer letters (Surat Sakti).
+// Database Sakti, cross-vendor license records + transfer letters (Surat Sakti).
 export interface SaktiRecord {
 	id: string
 	customerName: string
@@ -3204,7 +3204,7 @@ export interface TaskDetail {
 }
 
 
-// Lead Import (CSV) — leader/ceo/superadmin only
+// Lead Import (CSV), leader/ceo/superadmin only
 export type ImportRowStatus = 'ok' | 'warning' | 'error' | 'imported' | 'skipped'
 
 export interface ImportJobRow {
@@ -3323,7 +3323,7 @@ export const prospects = {
 		channel?: ProspectChannel
 		notes?: string
 		followUpAt?: string
-		/** Required when a leader creates the prospect — leaders assign, not handle. */
+		/** Required when a leader creates the prospect, leaders assign, not handle. */
 		assigneeId?: string
 	}) =>
 		apiRequest<{
@@ -3435,7 +3435,7 @@ export const leadRouting = {
 		),
 }
 
-// F1 — structured lead-need profile qualified on the leader's intake number.
+// F1, structured lead-need profile qualified on the leader's intake number.
 export type LeadNeed = {
 	name: string | null
 	company: string | null

@@ -107,7 +107,7 @@ export const company = new Elysia({ prefix: '/companies', tags: ['Company'] })
 			})
 
 			// Also the answer when the company exists but none of its contacts are
-			// the viewer's — see the note on getCompanyById.
+			// the viewer's, see the note on getCompanyById.
 			if (!result) {
 				set.status = 404
 				return { error: 'Company not found' }

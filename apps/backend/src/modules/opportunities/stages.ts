@@ -1,7 +1,7 @@
 /**
  * Deal stages.
  *
- * A "prospek" and an "opportunity" are not separate records — they are one deal
+ * A "prospek" and an "opportunity" are not separate records. They are one deal
  * at different `probability` values. Below the owning team's `deal_threshold`
  * the deal reads as a prospek; at or above it, an opportunity. Keeping this as
  * one field is what stops the two from drifting apart, which is exactly what
@@ -48,7 +48,7 @@ export const DEFAULT_STAGE_ID = 'leads_generation'
 
 /**
  * Where a prospek becomes an opportunity. 30 rather than the old 50 because the
- * stage at 30 is now literally called Valid Opportunity — leaving the threshold
+ * stage at 30 is now literally called Valid Opportunity, leaving the threshold
  * above it would have the board and the counter calling the same deal two
  * different things.
  */
@@ -87,7 +87,7 @@ export function isDealStage(stageId: string | null | undefined): boolean {
  * Clamp a caller-supplied probability into 0-100, or fall back to the stage's.
  *
  * `current` is the probability the deal already has, and is what a stage with no
- * probability of its own falls back to — dragging a deal into Pending must not
+ * probability of its own falls back to, dragging a deal into Pending must not
  * reset the estimate the sales made, and must not invent one either.
  */
 export function resolveProbability(
@@ -101,7 +101,7 @@ export function resolveProbability(
 	}
 	if (stage.probability !== null) return stage.probability
 	// Guarded on null before the cast: Number(null) is 0 and passes isFinite, so
-	// a deal whose probability was never set would be parked at 0% — which reads
+	// a deal whose probability was never set would be parked at 0%, which reads
 	// as "hopeless" rather than "not estimated yet".
 	if (current !== null && current !== undefined) {
 		const carried = Number(current)
@@ -114,7 +114,7 @@ export function resolveProbability(
 
 /**
  * Which side of the threshold a deal sits on. `won`/`lost` deals are closed and
- * belong to neither bucket — surfacing a won deal as an "opportunity" would
+ * belong to neither bucket, surfacing a won deal as an "opportunity" would
  * double-count it against the pipeline the leader is trying to read.
  */
 export type DealBucket = 'prospek' | 'opportunity' | 'closed'

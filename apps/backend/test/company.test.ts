@@ -1,6 +1,6 @@
 /**
  * The normaliser decides which company names are the same firm. A bug here does
- * not throw — it silently merges two real customers into one row, or splits one
+ * not throw. It silently merges two real customers into one row, or splits one
  * customer across two. Both are only noticed once a leader is looking at a
  * number that is wrong, so the boundaries are pinned here instead.
  */
@@ -39,7 +39,7 @@ describe('normalizeCompanyName', () => {
 	test('does not strip a legal form that is the whole name', () => {
 		// "PT" alone normalises away entirely (above), but a firm actually called
 		// "Persero Baja" keeps its first word because dropping it would leave
-		// "baja" — a different, much broader match.
+		// "baja". A different, much broader match.
 		expect(normalizeCompanyName('Persero Baja')).toBe('baja')
 		expect(normalizeCompanyName('Baja')).toBe('baja')
 	})
@@ -47,7 +47,7 @@ describe('normalizeCompanyName', () => {
 
 describe('displayCompanyName', () => {
 	test('squashes whitespace but keeps the legal form', () => {
-		// What a leader reads should still say PT — only the dedupe key drops it.
+		// What a leader reads should still say PT, only the dedupe key drops it.
 		expect(displayCompanyName('  PT   Maju  Jaya ')).toBe('PT Maju Jaya')
 	})
 })

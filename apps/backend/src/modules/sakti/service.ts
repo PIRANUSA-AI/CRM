@@ -55,7 +55,7 @@ function letterDTO(row: Record<string, any>) {
 		template: row.template || null,
 		templateValues: (row.template_values as Record<string, unknown> | null) || null,
 		// Rendered on read so a letter picks up corrected wording without a
-		// migration — the template bodies are still placeholder copy.
+		// migration. The template bodies are still placeholder copy.
 		renderedBody: (() => {
 			const template = findTemplate(row.template)
 			if (!template) return null
@@ -111,7 +111,7 @@ export abstract class SaktiService {
 	/**
 	 * Import a CSV export of licence records. `dryRun` returns the same preview
 	 * without writing, so the person importing sees what will be skipped before
-	 * committing — these sheets are re-sent often and re-importing one must not
+	 * committing. These sheets are re-sent often and re-importing one must not
 	 * double the database.
 	 */
 	static async importRecords(
@@ -198,7 +198,7 @@ export abstract class SaktiService {
 	 * Match a lead's name + company against the Database Sakti. Deterministic
 	 * token matching: a company-name overlap is a strong signal; otherwise a
 	 * strong customer-name overlap. Returns matched records ranked by score and
-	 * a recommendation — a foreign license means a Surat Sakti is required
+	 * a recommendation. A foreign license means a Surat Sakti is required
 	 * before the lead can become our opportunity.
 	 */
 	static async check(
@@ -232,8 +232,8 @@ export abstract class SaktiService {
 			matched,
 			recommendation: matched ? ('surat_sakti' as const) : ('opportunity' as const),
 			message: matched
-				? 'Lisensi ditemukan di vendor lain — perlu Surat Sakti (alih lisensi) sebelum jadi opportunity kita.'
-				: 'Tidak ditemukan lisensi di vendor lain — lead bersih, bisa langsung jadi opportunity kita.',
+				? 'Lisensi ditemukan di vendor lain, perlu Surat Sakti (alih lisensi) sebelum jadi opportunity kita.'
+				: 'Tidak ditemukan lisensi di vendor lain, lead bersih, bisa langsung jadi opportunity kita.',
 			records: scored.map((m) => ({ ...recordDTO(m.row), score: m.score })),
 		}
 	}
@@ -299,7 +299,7 @@ export abstract class SaktiService {
 		return letterDTO(row)
 	}
 
-	/** Fill a template without saving — used by the live preview in the form. */
+	/** Fill a template without saving, used by the live preview in the form. */
 	static previewLetter(templateId: string, values: Record<string, unknown>) {
 		const template = findTemplate(templateId)
 		if (!template) throw new Error('Template surat tidak dikenal')

@@ -293,7 +293,7 @@ export const conversation = new Elysia({
 		},
 	)
 
-	// Update conversation status (POST — frontend uses POST)
+	// Update conversation status (POST, frontend uses POST)
 	.post(
 		'/:id/status',
 		async ({ params, body }) => {

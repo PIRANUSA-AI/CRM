@@ -55,7 +55,7 @@ function DialogContent({
 				className={cn(
 					// max-height + scroll: the panel is centred with -translate-y-1/2,
 					// so without a ceiling a tall dialog grows past both edges of the
-					// viewport and neither end can be reached — the footer buttons
+					// viewport and neither end can be reached. The footer buttons
 					// included. Every dialog in the app inherits this.
 					'bg-background data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 ring-foreground/10 shadow-2xl grid max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] gap-4 overflow-y-auto rounded-xl p-4 text-sm ring-1 duration-100 sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none',
 					className,

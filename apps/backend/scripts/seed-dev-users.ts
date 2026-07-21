@@ -1,5 +1,5 @@
 // One-shot dev seeder: creates the 4 core local accounts (ceo, leader, sales, superadmin).
-// Idempotent — upserts the org/app and skips users that already exist.
+// Idempotent, upserts the org/app and skips users that already exist.
 import prisma from '../src/lib/prisma'
 import { syncBetterAuthCredentialAccount } from '../src/lib/better-auth-credentials'
 

@@ -37,7 +37,7 @@ export function extractNormalizedRole(source: AnyRecord): string {
 /**
  * Sees more than their own work: a leader across their team, an administrator
  * across every team. Pages use this to decide between the personal view and the
- * grouped one — spelling the roles out inline is how a newly added role ends up
+ * grouped one. Spelling the roles out inline is how a newly added role ends up
  * silently rendering the sales view to a manager.
  */
 export function isSupervisorRole(role: string | null | undefined): boolean {
@@ -50,7 +50,7 @@ export function isSupervisorRole(role: string | null | undefined): boolean {
 	)
 }
 
-/** Oversees every team rather than one — the administrator tier and above. */
+/** Oversees every team rather than one. The administrator tier and above. */
 export function isMultiTeamRole(role: string | null | undefined): boolean {
 	const normalized = normalizeAppRole(role)
 	return (
@@ -69,7 +69,7 @@ export const SALES_PATHS = [
 	'/customers',
 	'/companies',
 	// '/opportunity' and '/pipeline' stay listed because they redirect to
-	// /deals — drop them and the redirect bounces the sales off their own deals
+	// /deals. Drop them and the redirect bounces the sales off their own deals
 	// before it ever arrives.
 	'/deals',
 	'/opportunity',
@@ -119,7 +119,7 @@ export const LEADER_PATHS = [
 
 /**
  * An administrator does everything a leader does, but across every team. The
- * pages are therefore the same set — what differs is the scope of the rows
+ * pages are therefore the same set. What differs is the scope of the rows
  * inside them, which the backend decides, not this list.
  */
 export const ADMINISTRATOR_PATHS = [...LEADER_PATHS]
@@ -131,11 +131,11 @@ export const SUPERADMIN_PATHS = ['/kelola-tim', '/developers', '/import', '/chan
 /**
  * Returns null when unrestricted, otherwise returns exact allowed top-level paths.
  * An unrecognized or missing role fails CLOSED to SALES_PATHS (the most
- * restrictive tier) rather than falling through to unrestricted — see the
+ * restrictive tier) rather than falling through to unrestricted, see the
  * Better Auth `role`-field bug fixed earlier, which made every role
  * silently empty and every page silently unrestricted.
  *
- * Each role has its own independent list — CEO and Superadmin are NOT
+ * Each role has its own independent list, CEO and Superadmin are NOT
  * supersets of Leader. CEO is monitoring-only (fewer operational pages
  * than Leader) and Superadmin is technical/IT-only (fewer business pages
  * than CEO), by design.

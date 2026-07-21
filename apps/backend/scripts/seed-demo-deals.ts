@@ -9,7 +9,7 @@
  *
  * This seeds a small, coherent set instead of bulk noise: five firms, two or
  * three PIC each, and deals spread across the stages and across both teams so
- * role scoping is visible too — a sales sees their own, a leader their team's.
+ * role scoping is visible too. A sales sees their own, a leader their team's.
  *
  * Everything it writes is marked `source = 'demo-seed'` and is removable:
  *
@@ -64,7 +64,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'wafa@swadayacipta.com',
 				owner: 'deska',
 				deals: [
-					{ name: 'Archicad 28 — tambah 5 seat', product: 'Archicad 28 Solo', value: 196_000_000, stage: 'negotiation_po', daysInStage: 6 },
+					{ name: 'Tambah 5 seat Archicad 28', product: 'Archicad 28 Solo', value: 196_000_000, stage: 'negotiation_po', daysInStage: 6 },
 				],
 			},
 			{
@@ -74,7 +74,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'bagus@swadayacipta.com',
 				owner: 'deska',
 				deals: [
-					{ name: 'Archicad — training tim desain', product: 'Training on-site', value: 24_500_000, stage: 'budget_timeframe', daysInStage: 11 },
+					{ name: 'Training Archicad tim desain', product: 'Training on-site', value: 24_500_000, stage: 'budget_timeframe', daysInStage: 11 },
 				],
 			},
 			{
@@ -84,7 +84,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'rani@swadayacipta.com',
 				owner: 'titin',
 				deals: [
-					{ name: 'Twinmotion — 3 seat', product: 'Twinmotion', value: 18_900_000, stage: 'product_demo', daysInStage: 3 },
+					{ name: 'Twinmotion 3 seat', product: 'Twinmotion', value: 18_900_000, stage: 'product_demo', daysInStage: 3 },
 				],
 			},
 		],
@@ -102,7 +102,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'hendra@grahakarya.co.id',
 				owner: 'deska',
 				deals: [
-					{ name: 'Archicad 28 — 8 seat', product: 'Archicad 28 Full', value: 312_000_000, stage: 'valid_opportunity', daysInStage: 19 },
+					{ name: 'Archicad 28 untuk 8 seat', product: 'Archicad 28 Full', value: 312_000_000, stage: 'valid_opportunity', daysInStage: 19 },
 				],
 			},
 			{
@@ -112,7 +112,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'sinta@grahakarya.co.id',
 				owner: 'titin',
 				deals: [
-					{ name: 'BIMcloud — setup server', product: 'BIMcloud Basic', value: 87_500_000, stage: 'initial_quotation', daysInStage: 4 },
+					{ name: 'Setup server BIMcloud', product: 'BIMcloud Basic', value: 87_500_000, stage: 'initial_quotation', daysInStage: 4 },
 				],
 			},
 		],
@@ -130,7 +130,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'dimas@rancangruang.id',
 				owner: 'titin',
 				deals: [
-					{ name: 'Archicad Solo — 2 seat', product: 'Archicad 28 Solo', value: 78_400_000, stage: 'won', daysInStage: 22 },
+					{ name: 'Archicad Solo 2 seat', product: 'Archicad 28 Solo', value: 78_400_000, stage: 'won', daysInStage: 22 },
 				],
 			},
 			{
@@ -149,7 +149,7 @@ const COMPANIES: SeedCompany[] = [
 		name: 'PT Baja Presisi Utama',
 		city: 'Bekasi',
 		website: 'https://bajapresisi.com',
-		notes: 'Fabrikasi baja. 24 workstation, sebagian masih AutoCAD bajakan — target konversi lisensi resmi.',
+		notes: 'Fabrikasi baja. 24 workstation, sebagian masih AutoCAD bajakan, target konversi lisensi resmi.',
 		contacts: [
 			{
 				name: 'Yusuf Maulana',
@@ -158,7 +158,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'yusuf@bajapresisi.com',
 				owner: 'yoel',
 				deals: [
-					{ name: 'ZWCAD 2026 — 24 seat', product: 'ZWCAD 2026 Professional', value: 447_600_000, stage: 'negotiation_po', daysInStage: 9 },
+					{ name: 'ZWCAD 2026 untuk 24 seat', product: 'ZWCAD 2026 Professional', value: 447_600_000, stage: 'negotiation_po', daysInStage: 9 },
 				],
 			},
 			{
@@ -168,7 +168,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'ratna@bajapresisi.com',
 				owner: 'yoel',
 				deals: [
-					{ name: 'ZWCAD — perpanjangan 6 seat', product: 'ZWCAD SSA', value: 52_800_000, stage: 'budget_timeframe', daysInStage: 16 },
+					{ name: 'Perpanjangan ZWCAD 6 seat', product: 'ZWCAD SSA', value: 52_800_000, stage: 'budget_timeframe', daysInStage: 16 },
 				],
 			},
 			{
@@ -178,7 +178,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'agung@bajapresisi.com',
 				owner: 'fathur',
 				deals: [
-					{ name: 'ZW3D — evaluasi 2 seat', product: 'ZW3D Professional', value: 63_200_000, stage: 'pending', daysInStage: 27 },
+					{ name: 'Evaluasi ZW3D 2 seat', product: 'ZW3D Professional', value: 63_200_000, stage: 'pending', daysInStage: 27 },
 				],
 			},
 		],
@@ -196,7 +196,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'bambang@mitrateknik.co.id',
 				owner: 'fathur',
 				deals: [
-					{ name: 'ZW3D — lini produksi baru', product: 'ZW3D Premium', value: 268_000_000, stage: 'product_demo', daysInStage: 7 },
+					{ name: 'ZW3D untuk lini produksi baru', product: 'ZW3D Premium', value: 268_000_000, stage: 'product_demo', daysInStage: 7 },
 				],
 			},
 			{
@@ -206,7 +206,7 @@ const COMPANIES: SeedCompany[] = [
 				email: 'citra@mitrateknik.co.id',
 				owner: 'fathur',
 				deals: [
-					{ name: 'ZWCAD Mechanical — 4 seat', product: 'ZWCAD Mechanical', value: 71_200_000, stage: 'lost', daysInStage: 34 },
+					{ name: 'ZWCAD Mechanical 4 seat', product: 'ZWCAD Mechanical', value: 71_200_000, stage: 'lost', daysInStage: 34 },
 				],
 			},
 		],
@@ -237,7 +237,7 @@ async function main() {
 		await prisma.tasks.deleteMany({ where: { contact_id: { in: contactIds } } })
 		await prisma.contacts.deleteMany({ where: { id: { in: contactIds } } })
 		// Companies are only removed when nothing else moved in behind the demo
-		// contacts — a real contact that happens to work at one of these firms
+		// contacts. A real contact that happens to work at one of these firms
 		// must not lose its company row.
 		let companiesRemoved = 0
 		for (const name of ALL_COMPANY_NAMES) {
@@ -342,7 +342,7 @@ async function main() {
 						stage: stage.id,
 						probability: stage.probability ?? 40,
 						source: SOURCE,
-						// Spread out so the board shows a real range of staleness —
+						// Spread out so the board shows a real range of staleness
 						// including a couple past the 14-day mark that turns amber.
 						stage_changed_at: daysAgo(deal.daysInStage),
 						created_at: daysAgo(deal.daysInStage + 14),

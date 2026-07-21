@@ -1,5 +1,5 @@
 // One-time bootstrap: creates the first CEO account (org + app + user).
-// Idempotent — safe to re-run; skips if a CEO already exists.
+// Idempotent, safe to re-run; skips if a CEO already exists.
 import prisma from '../src/lib/prisma'
 import { syncBetterAuthCredentialAccount } from '../src/lib/better-auth-credentials'
 

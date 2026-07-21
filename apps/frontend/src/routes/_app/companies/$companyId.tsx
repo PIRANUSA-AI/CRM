@@ -153,7 +153,7 @@ function CompanyDetailPage() {
 	}, [])
 
 	// Searched server-side, so a sales can only ever attach a contact that is
-	// already theirs — the same list the deal picker uses.
+	// already theirs. The same list the deal picker uses.
 	useEffect(() => {
 		if (!linking) return
 		const term = contactQuery.trim()
@@ -335,7 +335,7 @@ function CompanyDetailPage() {
 				</div>
 			</section>
 
-			{/* Narrow form on the left, the wide tables and the feed on the right —
+			{/* Narrow form on the left, the wide tables and the feed on the right
 			    the shape of the page the team already reads. Stacks on small
 			    screens, where two columns would leave both too narrow to use. */}
 			<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
@@ -418,7 +418,7 @@ function CompanyDetailPage() {
 							    its contacts; giving it an owner of its own would create a second
 							    answer that can disagree with the first. */}
 							<p className="border-t border-border pt-3 text-[11px] text-muted-foreground">
-								Pemilik perusahaan mengikuti sales yang memegang kontaknya — lihat kolom Sales di
+								Pemilik perusahaan mengikuti sales yang memegang kontaknya, lihat kolom Sales di
 								tabel Kontak. Tidak diatur terpisah supaya tidak ada dua jawaban yang bisa berbeda.
 							</p>
 						</div>
@@ -469,7 +469,7 @@ function CompanyDetailPage() {
 															{contact.name || 'Tanpa nama'}
 														</span>
 														<span className="block truncate text-xs text-muted-foreground">
-															{contact.email || contact.phone_number || '—'}
+															{contact.email || contact.phone_number || '-'}
 														</span>
 													</span>
 													{/* Moving a contact between firms is a real edit, not an

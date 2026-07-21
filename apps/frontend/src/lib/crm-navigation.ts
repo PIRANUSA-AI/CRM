@@ -74,7 +74,7 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 	},
 	{
 		// The firm a contact buys for. Sits next to Kontak because it is the
-		// same data seen the other way round — one company, several PIC.
+		// same data seen the other way round. One company, several PIC.
 		id: 'companies',
 		label: 'Perusahaan',
 		path: '/companies',

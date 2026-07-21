@@ -22,7 +22,7 @@ function storedFirstName() {
 
 // When should we (re)trigger a session start to (re)generate a QR? After the
 // device is unlinked from the phone the channel still exists (channelId is set),
-// so "no channel" is not enough — we also start when the session is not
+// so "no channel" is not enough, we also start when the session is not
 // connected and has no QR yet, except while a start/restart is already in
 // flight or the session is genuinely blocked (avoid hammering).
 function needsFreshQr(connection: PersonalWhatsAppConnection | null): boolean {
@@ -61,7 +61,7 @@ function WhatsAppConnectPage() {
 
 	// The QR is re-rendered on every poll, so each render leaks an object URL
 	// unless the previous one is released. Revoke only once the replacement is
-	// in hand — dropping it any earlier would blank the <img> still using it.
+	// in hand, dropping it any earlier would blank the <img> still using it.
 	const swapQrImage = useCallback((next: string | null) => {
 		const previous = qrImageRef.current
 		if (previous && previous !== next) URL.revokeObjectURL(previous)

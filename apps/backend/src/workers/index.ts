@@ -2238,7 +2238,7 @@ async function processOutboundMessageJob(job: Job) {
 				const mediaType = contentAttributes.media_type as string | undefined
 
 				const result = await sendInstagramMessage(
-					'', // pageId unused — Instagram API uses me/messages
+					'', // pageId unused, Instagram API uses me/messages
 					recipientId,
 					message.content || '',
 					token,
@@ -2461,7 +2461,7 @@ const dispatchDueChatbotFollowups = async () => {
 	}
 }
 
-// Profile-photo sync consumer — owned by the worker process (see profile-sync.ts).
+// Profile-photo sync consumer, owned by the worker process (see profile-sync.ts).
 export const whatsappProfileSyncWorker = WORKER_MODE_ENABLED
 	? startWhatsappProfileSyncWorker()
 	: null

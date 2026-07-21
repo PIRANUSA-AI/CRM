@@ -57,7 +57,7 @@ async function main() {
 	if (!app || !org) throw new Error('App/organization missing')
 
 	const leader = await prisma.users.findUnique({ where: { email: LEADER_EMAIL } })
-	if (!leader) throw new Error(`Leader ${LEADER_EMAIL} not found — run db:seed:dev-users first`)
+	if (!leader) throw new Error(`Leader ${LEADER_EMAIL} not found, run db:seed:dev-users first`)
 	await syncBetterAuthCredentialAccount(prisma, { userId: leader.id, password: PASSWORD })
 	console.log(`reset password: ${LEADER_EMAIL} (leader)`)
 
@@ -67,7 +67,7 @@ async function main() {
 		salesUsers.push({ ...s, id: user.id })
 	}
 
-	// Put each sales in their product team, and the leader in both — the leader
+	// Put each sales in their product team, and the leader in both. The leader
 	// has to be a member of every team they oversee for routing to resolve the
 	// team at all. Teams are expected to exist already; this seeder no longer
 	// creates them, so a missing one is a real setup problem worth failing on.
@@ -76,7 +76,7 @@ async function main() {
 		const team = await prisma.teams.findFirst({
 			where: { app_id: app.id, name: teamName, deleted_at: null },
 		})
-		if (!team) throw new Error(`Team ${teamName} not found — create it in Kelola Tim first`)
+		if (!team) throw new Error(`Team ${teamName} not found, create it in Kelola Tim first`)
 		memberships.push({ team_id: team.id, user_id: leader.id })
 		for (const s of salesUsers.filter((u) => u.team === teamName)) {
 			memberships.push({ team_id: team.id, user_id: s.id })

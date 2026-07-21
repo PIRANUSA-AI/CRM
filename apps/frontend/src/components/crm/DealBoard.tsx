@@ -18,7 +18,7 @@ import type { DealColumn, DealStage, Opportunity } from '@/lib/api'
  *
  * One column per stage, in the order the sales team already reads them. Won is a
  * single column filtered by year rather than the two literal "Won 2025" / "Won
- * 2026" columns it replaces — a year is a property of when a deal closed, not a
+ * 2026" columns it replaces. A year is a property of when a deal closed, not a
  * step in how it closed, and stages-per-year means somebody has to create a
  * column every January and drag deals into it.
  */
@@ -30,18 +30,18 @@ const IDR = new Intl.NumberFormat('id-ID', {
 })
 
 function formatValue(value: number | null): string {
-	if (!value) return '—'
+	if (!value) return '-'
 	return IDR.format(value)
 }
 
 function formatDate(value: string | null): string {
-	if (!value) return '—'
+	if (!value) return '-'
 	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return '—'
+	if (Number.isNaN(date.getTime())) return '-'
 	return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
-/** How long the deal has sat in its current column — the board's staleness signal. */
+/** How long the deal has sat in its current column. The board's staleness signal. */
 function daysAtStage(value: string | null): number | null {
 	if (!value) return null
 	const then = new Date(value).getTime()
@@ -87,14 +87,14 @@ function DealCard({ deal, onOpen }: { deal: Opportunity; onOpen: (deal: Opportun
 				</div>
 			</dl>
 			<div className="mt-1.5 flex items-center justify-between gap-2">
-				<span className="truncate text-[10px] text-muted-foreground">{deal.ownerName || '—'}</span>
+				<span className="truncate text-[10px] text-muted-foreground">{deal.ownerName || '-'}</span>
 				<span
 					className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
 						stale ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'text-muted-foreground'
 					}`}
 					title={stale ? 'Belum bergerak lebih dari dua minggu' : undefined}
 				>
-					{days === null ? '—' : `${days} hari di tahap ini`}
+					{days === null ? '-' : `${days} hari di tahap ini`}
 				</span>
 			</div>
 		</div>

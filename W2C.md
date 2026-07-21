@@ -1,4 +1,4 @@
-# W2C — What Changed
+# W2C: What Changed
 
 ## Snapshot perbandingan
 

@@ -910,7 +910,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			io?.to(`app:${resolvedAppId}`).emit('message:created', realtimePayload)
 			io?.to(`conversation:${conversation.id}`).emit('message:created', realtimePayload)
 			// Replying starts the task (marks it "in progress"), it does NOT finish
-			// it — the sales decides when the conversation is actually done.
+			// it. The sales decides when the conversation is actually done.
 			void TaskService.markInProgressOnConversationReply(
 				resolvedAppId,
 				conversation.id,

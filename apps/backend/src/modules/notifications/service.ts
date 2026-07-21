@@ -165,7 +165,7 @@ export abstract class NotificationService {
 	 * Runs on the maintenance queue. Fires once per task as it crosses `due_at`
 	 * (windowed to the run interval so it is not re-sent every tick), deduped by
 	 * `task-due:<id>` so an accidental repeat refreshes rather than stacks.
-	 * Fail-open — a reminder
+	 * Fail-open. A reminder
 	 * failure must never break the maintenance cycle.
 	 */
 	static async remindDueTasks(windowMs = 5 * 60 * 1000) {

@@ -9,7 +9,7 @@ import { industryLabel, isIndustry } from './industries'
  *
  * Visibility is deliberately derived rather than owned: a company is visible to
  * whoever can already see at least one of its contacts. That keeps one answer to
- * "whose is this" — the one Phase 1 materialised onto contacts.owner_id — instead
+ * "whose is this": the one Phase 1 materialised onto contacts.owner_id, instead
  * of adding a second ownership model that would be free to disagree with it.
  * A sales who is handed a contact gains the company with it, and loses it the
  * same way, without anybody maintaining a separate list.
@@ -28,7 +28,7 @@ export type CompanyDTO = {
 	last_activity_at: Date | null
 	updated_at: Date | null
 	created_at: Date | null
-	/** A few PIC names, for the avatar stack — not the whole list. */
+	/** A few PIC names, for the avatar stack, not the whole list. */
 	contact_preview: string[]
 	/** The sales working this firm, with their team. Usually one, sometimes two. */
 	owners: Array<{ name: string; team: string | null }>
@@ -111,7 +111,7 @@ export const CompanyService = {
 		const search = String(params.search || '').trim()
 
 		// Every narrowing the caller asked for, gathered once so the page query
-		// and the count query cannot drift apart — a filtered list above a total
+		// and the count query cannot drift apart. A filtered list above a total
 		// that ignored the filter is the classic way this breaks.
 		const filters: Prisma.Sql[] = []
 		if (search) filters.push(Prisma.sql`AND co.name ILIKE ${`%${search}%`}`)
@@ -129,7 +129,7 @@ export const CompanyService = {
 			)`)
 		}
 		// Team and owner narrow through the contacts, because that is where
-		// ownership lives — a company has no owner of its own, deliberately.
+		// ownership lives. A company has no owner of its own, deliberately.
 		if (params.teamId) {
 			filters.push(Prisma.sql`AND EXISTS (
 				SELECT 1 FROM contacts c
@@ -234,7 +234,7 @@ export const CompanyService = {
 		const total = Number(totalRows[0]?.total || 0)
 
 		// The cities the filter can offer. Built without the city filter applied,
-		// so picking Bandung does not empty the dropdown that offered it — the
+		// so picking Bandung does not empty the dropdown that offered it, the
 		// same mistake the won-year filter on the deals board had to avoid.
 		const cityFilters = filters.filter((_, index) => index !== cityFilterIndex)
 		const cityClause = cityFilters.length ? Prisma.sql`${Prisma.join(cityFilters, ' ')}` : Prisma.empty
@@ -281,7 +281,7 @@ export const CompanyService = {
 
 	/**
 	 * Returns null when the company does not exist OR when none of its contacts
-	 * are visible to the viewer — the two are deliberately indistinguishable, so
+	 * are visible to the viewer. The two are deliberately indistinguishable, so
 	 * a 404 does not confirm that a firm we hide from this user exists.
 	 */
 	async getCompanyById(
@@ -367,7 +367,7 @@ export const CompanyService = {
 	 * the two rules cannot drift apart by being stated twice.
 	 *
 	 * The name goes through normalizeCompanyName because norm_name carries the
-	 * uniqueness constraint — renaming "PT Maju" to something that collapses onto
+	 * uniqueness constraint, renaming "PT Maju" to something that collapses onto
 	 * an existing firm has to be refused rather than left to the database.
 	 */
 	async updateCompany(
@@ -502,8 +502,8 @@ export const CompanyService = {
 	 *
 	 * Two sources merged into one feed. Edits come from company_activity_log,
 	 * because nothing else records them. Everything else is derived from rows
-	 * that already exist — the firm's own creation, contacts joining, deals
-	 * opening and closing — which follows how the contact timeline is built and
+	 * that already exist. The firm's own creation, contacts joining, deals
+	 * opening and closing, which follows how the contact timeline is built and
 	 * means no event has to be written twice to be shown.
 	 *
 	 * Scoped through getCompanyById, so a company the viewer cannot read has no

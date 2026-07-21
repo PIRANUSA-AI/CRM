@@ -1,8 +1,8 @@
 /**
  * Surat templates.
  *
- * **Isi surat di bawah ini masih DUMMY.** Strukturnya sudah benar — nomor
- * surat, tanggal, penerima, badan surat, penanda tangan — tapi kalimatnya perlu
+ * **Isi surat di bawah ini masih DUMMY.** Strukturnya sudah benar, nomor
+ * surat, tanggal, penerima, badan surat, penanda tangan, tapi kalimatnya perlu
  * diganti dengan redaksi resmi PIRANUSA sebelum dikirim ke pelanggan atau
  * dilampirkan ke tender. Jangan anggap teks ini sudah disetujui legal.
  *
