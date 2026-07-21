@@ -76,5 +76,10 @@ export const salesProfiles = new Elysia({ prefix: '/sales-profiles', tags: ['Sal
 			languages: t.Optional(t.Array(t.String({ maxLength: 120 }))),
 			tags: t.Optional(t.Array(t.String({ maxLength: 120 }))),
 			notes: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+			persona: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+			experienceYears: t.Optional(t.Union([t.Number(), t.Null()])),
+			phone: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
+			position: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+			joinedAt: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
 		}),
 	})

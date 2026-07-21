@@ -43,14 +43,33 @@ function KelolaTimPage() {
 	const [tab, setTab] = useState<MainTab>('tim')
 	const [accounts, setAccounts] = useState<Account[]>([])
 
+	// Fetched once here rather than in each tab: both need to know who already
+	// has a routing profile, and two copies would drift the moment one saves.
+	const [profiles, setProfiles] = useState<SalesProfileRow[]>([])
+
 	const loadAccounts = useCallback(async () => {
 		const response = await agentsManagement.list()
 		setAccounts(((response as any).data ?? []) as Account[])
 	}, [])
 
+	const loadProfiles = useCallback(async () => {
+		try {
+			const response = await salesProfiles.list()
+			setProfiles(response.data || [])
+		} catch {
+			/* the page still works without the profile markers */
+		}
+	}, [])
+
 	useEffect(() => {
 		void loadAccounts()
-	}, [loadAccounts])
+		void loadProfiles()
+	}, [loadAccounts, loadProfiles])
+
+	const profileByUser = useMemo(
+		() => new Map(profiles.map((row) => [row.userId, row])),
+		[profiles],
+	)
 
 	return (
 		<main className="ocm-page space-y-5">
@@ -84,9 +103,13 @@ function KelolaTimPage() {
 
 				<div className="p-4">
 					{tab === 'tim' ? (
-						<TeamsTab accounts={accounts} />
+						<TeamsTab accounts={accounts} profiles={profiles} profileByUser={profileByUser} />
 					) : (
-						<AccountsTab accounts={accounts} reloadAccounts={loadAccounts} />
+						<AccountsTab
+							accounts={accounts}
+							reloadAccounts={loadAccounts}
+							profileByUser={profileByUser}
+						/>
 					)}
 				</div>
 			</section>
@@ -98,7 +121,15 @@ function KelolaTimPage() {
 // Teams tab, create/edit/delete teams and manage members.
 // ---------------------------------------------------------------------------
 
-function TeamsTab({ accounts }: { accounts: Account[] }) {
+function TeamsTab({
+	accounts,
+	profiles,
+	profileByUser,
+}: {
+	accounts: Account[]
+	profiles: SalesProfileRow[]
+	profileByUser: Map<string, SalesProfileRow>
+}) {
 	const [teams, setTeams] = useState<TeamWithMembers[]>([])
 	const [loading, setLoading] = useState(true)
 	const [name, setName] = useState('')
@@ -108,11 +139,6 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 	const [editingId, setEditingId] = useState<string | null>(null)
 	const [editName, setEditName] = useState('')
 	const [busyTeam, setBusyTeam] = useState<string | null>(null)
-
-	// Which sales already have a routing profile, and which are still on
-	// defaults. Every profile field has a fallback, so without this a sales
-	// nobody has configured looks identical to one that was set deliberately.
-	const [profiles, setProfiles] = useState<SalesProfileRow[]>([])
 
 	const loadTeams = useCallback(async () => {
 		setLoading(true)
@@ -128,16 +154,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 
 	useEffect(() => {
 		void loadTeams()
-		void salesProfiles
-			.list()
-			.then((response) => setProfiles(response.data || []))
-			.catch(() => undefined)
 	}, [loadTeams])
-
-	const profileByUser = useMemo(
-		() => new Map(profiles.map((row) => [row.userId, row])),
-		[profiles],
-	)
 
 	// A sales in no team never appears under a team heading, so before this they
 	// were unreachable once the standalone Profil Sales page went away.
@@ -573,9 +590,11 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 function AccountsTab({
 	accounts,
 	reloadAccounts,
+	profileByUser,
 }: {
 	accounts: Account[]
 	reloadAccounts: () => Promise<void>
+	profileByUser: Map<string, SalesProfileRow>
 }) {
 	const [name, setName] = useState('')
 	const [email, setEmail] = useState('')
@@ -670,30 +689,57 @@ function AccountsTab({
 								<th>Nama</th>
 								<th>Email</th>
 								<th>Role</th>
+								<th>Profil Sales</th>
 							</tr>
 						</thead>
 						<tbody>
-							{accounts.map((member) => (
-								<tr key={member.id}>
-									<td>{member.name}</td>
-									<td>{member.email}</td>
-									<td>
-										<NativeSelect
-											value={
-												extractNormalizedRole(
-													member as unknown as Record<string, unknown>,
-												) || member.role
-											}
-											onChange={(e) => handleRoleChange(member.id, e.target.value)}
-										>
-											<NativeSelectOption value="sales">Sales</NativeSelectOption>
-											<NativeSelectOption value="leader">Sales Leader</NativeSelectOption>
-											<NativeSelectOption value="ceo">CEO</NativeSelectOption>
-											<NativeSelectOption value="superadmin">Superadmin</NativeSelectOption>
-										</NativeSelect>
-									</td>
-								</tr>
-							))}
+							{accounts.map((member) => {
+								const role =
+									extractNormalizedRole(member as unknown as Record<string, unknown>) ||
+									member.role
+								// Only sales and leaders carry a routing profile, so the rest
+								// get a dash rather than a link to a page with nothing on it.
+								const sells = role === 'sales' || role === 'leader'
+								const profile = profileByUser.get(member.id)
+								return (
+									<tr key={member.id}>
+										<td>{member.name}</td>
+										<td>{member.email}</td>
+										<td>
+											<NativeSelect
+												value={role}
+												onChange={(e) => handleRoleChange(member.id, e.target.value)}
+											>
+												<NativeSelectOption value="sales">Sales</NativeSelectOption>
+												<NativeSelectOption value="leader">Sales Leader</NativeSelectOption>
+												<NativeSelectOption value="ceo">CEO</NativeSelectOption>
+												<NativeSelectOption value="superadmin">Superadmin</NativeSelectOption>
+											</NativeSelect>
+										</td>
+										<td>
+											{!sells ? (
+												<span className="text-xs text-muted-foreground">-</span>
+											) : (
+												<Link
+													to="/kelola-tim/$userId"
+													params={{ userId: member.id }}
+													className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+												>
+													{profile?.profile.configured === false ? (
+														<>
+															<Plus size={12} /> Isi profil
+														</>
+													) : (
+														<>
+															<Users size={12} /> Lihat profil
+														</>
+													)}
+												</Link>
+											)}
+										</td>
+									</tr>
+								)
+							})}
 						</tbody>
 					</table>
 				</div>

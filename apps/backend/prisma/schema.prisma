@@ -2706,6 +2706,23 @@ model sales_profiles {
   languages      Json      @default("[]")
   tags           Json      @default("[]")
   notes          String?
+
+  /// How this person sells: tone, strengths, what they are trusted with. Read
+  /// by a leader deciding who to hand a lead to, and by the lead router's
+  /// briefing. Prose rather than tags, because the useful part is the part
+  /// that does not fit a tag.
+  persona        String?
+
+  /// Years selling. Separate from `level`: level is the band they are paid
+  /// and trusted at, this is time served, and the two do not always agree.
+  experience_years Int?
+
+  /// Personal details a leader needs to reach them, kept here rather than on
+  /// `users` because they describe the sales role, not the login.
+  phone          String?   @db.VarChar(40)
+  position       String?   @db.VarChar(120)
+  joined_at      DateTime? @db.Date
+
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 

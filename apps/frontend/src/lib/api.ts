@@ -3372,6 +3372,11 @@ export type SalesProfileData = {
 	languages: string[]
 	tags: string[]
 	notes: string | null
+	persona: string | null
+	experienceYears: number | null
+	phone: string | null
+	position: string | null
+	joinedAt: string | null
 	updatedAt: string | null
 }
 
@@ -3383,6 +3388,8 @@ export type SalesProfileRow = {
 	teamId: string | null
 	teamName: string | null
 	activeLoad: number
+	/** Newest of: a task touched, a deal moved, a contact they own active. */
+	lastActivityAt: string | null
 	profile: SalesProfileData
 }
 
@@ -3396,6 +3403,11 @@ export type SalesProfileUpdate = {
 	languages?: string[]
 	tags?: string[]
 	notes?: string | null
+	persona?: string | null
+	experienceYears?: number | null
+	phone?: string | null
+	position?: string | null
+	joinedAt?: string | null
 }
 
 export const salesProfiles = {

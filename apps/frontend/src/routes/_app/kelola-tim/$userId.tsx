@@ -18,14 +18,40 @@ type Draft = {
 	languages: string
 	tags: string
 	notes: string
+	persona: string
+	experienceYears: string
+	phone: string
+	position: string
+	joinedAt: string
 }
 
 const LEVELS = [
 	{ value: '', label: '-' },
 	{ value: 'junior', label: 'Junior' },
-	{ value: 'mid', label: 'Menengah' },
+	{ value: 'menengah', label: 'Menengah' },
 	{ value: 'senior', label: 'Senior' },
+	{ value: 'lead', label: 'Lead' },
 ]
+
+function formatDate(value: string | null): string {
+	if (!value) return '-'
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '-'
+	return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+/** How long ago, in the words a leader would use. */
+function sinceLabel(value: string | null): string {
+	if (!value) return 'Belum ada aktivitas'
+	const then = new Date(value).getTime()
+	if (Number.isNaN(then)) return '-'
+	const days = Math.floor((Date.now() - then) / 86_400_000)
+	if (days <= 0) return 'Hari ini'
+	if (days === 1) return 'Kemarin'
+	if (days < 30) return `${days} hari lalu`
+	const months = Math.floor(days / 30)
+	return months < 12 ? `${months} bulan lalu` : `${Math.floor(months / 12)} tahun lalu`
+}
 
 function toDraft(row: SalesProfileRow): Draft {
 	const p = row.profile
@@ -38,6 +64,12 @@ function toDraft(row: SalesProfileRow): Draft {
 		languages: p.languages.join(', '),
 		tags: p.tags.join(', '),
 		notes: p.notes || '',
+		persona: p.persona || '',
+		experienceYears: p.experienceYears == null ? '' : String(p.experienceYears),
+		phone: p.phone || '',
+		position: p.position || '',
+		// The column is date-only; <input type="date"> wants exactly that slice.
+		joinedAt: p.joinedAt ? String(p.joinedAt).slice(0, 10) : '',
 	}
 }
 
@@ -124,6 +156,11 @@ function SalesProfileDetailPage() {
 				languages: splitList(draft.languages),
 				tags: splitList(draft.tags),
 				notes: draft.notes.trim() || null,
+				persona: draft.persona.trim() || null,
+				experienceYears: draft.experienceYears.trim() === '' ? null : Number(draft.experienceYears),
+				phone: draft.phone.trim() || null,
+				position: draft.position.trim() || null,
+				joinedAt: draft.joinedAt || null,
 			})
 			setRow((prev) => (prev ? { ...prev, profile: response.data.profile } : prev))
 			setSaved(true)
@@ -180,16 +217,36 @@ function SalesProfileDetailPage() {
 						</p>
 					</div>
 				</div>
-				<span
-					className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-						overloaded
-							? 'bg-red-500/10 text-red-600 dark:text-red-300'
-							: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
-					}`}
-				>
-					Beban aktif {row.activeLoad} / {cap}
-				</span>
+				<div className="flex flex-wrap items-center gap-2">
+					{/* Derived, not stored: the newest of a task touched, a deal moved,
+					    or a contact they own going active. */}
+					<span
+						className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
+						title={row.lastActivityAt ? formatDate(row.lastActivityAt) : undefined}
+					>
+						Aktivitas terakhir: {sinceLabel(row.lastActivityAt)}
+					</span>
+					<span
+						className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+							overloaded
+								? 'bg-red-500/10 text-red-600 dark:text-red-300'
+								: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+						}`}
+					>
+						Beban aktif {row.activeLoad} / {cap}
+					</span>
+				</div>
 			</div>
+
+			{!row.profile.configured ? (
+				<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+					<TriangleAlert size={16} className="mt-0.5 shrink-0" />
+					<span>
+						Profil ini belum pernah diisi, jadi angka di bawah masih nilai bawaan.
+						Lengkapi supaya pembagian lead memakai data yang benar.
+					</span>
+				</div>
+			) : null}
 
 			{error ? (
 				<div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
@@ -197,6 +254,73 @@ function SalesProfileDetailPage() {
 					<span>{error}</span>
 				</div>
 			) : null}
+
+			<section className="ocm-card space-y-4 p-5">
+				<div>
+					<h2 className="text-sm font-semibold">Persona</h2>
+					<p className="text-xs text-muted-foreground">
+						Cara orang ini menjual, ditulis untuk dibaca leader sebelum menyerahkan
+						lead. Bukan tag, karena bagian yang bergunanya justru yang tidak muat
+						jadi tag.
+					</p>
+				</div>
+				<textarea
+					rows={4}
+					className={`${inputClass} resize-y`}
+					value={draft.persona}
+					onChange={(event) => patch({ persona: event.target.value })}
+					placeholder="mis. Kuat di akun konsultan besar, sabar menghadapi tender panjang, lambat membalas di luar jam kerja."
+				/>
+			</section>
+
+			<section className="ocm-card space-y-4 p-5">
+				<div>
+					<h2 className="text-sm font-semibold">Data diri</h2>
+					<p className="text-xs text-muted-foreground">
+						Disimpan di profil sales, bukan di akun login, karena ini menggambarkan
+						perannya sebagai sales.
+					</p>
+				</div>
+				<div className="grid gap-4 sm:grid-cols-2">
+					<Field label="Posisi">
+						<input
+							className={inputClass}
+							value={draft.position}
+							onChange={(event) => patch({ position: event.target.value })}
+							placeholder="mis. Account Executive AEC"
+						/>
+					</Field>
+					<Field label="Nomor telepon">
+						<input
+							className={inputClass}
+							value={draft.phone}
+							onChange={(event) => patch({ phone: event.target.value })}
+							placeholder="628xx"
+						/>
+					</Field>
+					<Field label="Bergabung sejak">
+						<input
+							type="date"
+							className={inputClass}
+							value={draft.joinedAt}
+							onChange={(event) => patch({ joinedAt: event.target.value })}
+						/>
+					</Field>
+					<Field
+						label="Pengalaman (tahun)"
+						hint="Lama menjual. Berbeda dari level, yang menggambarkan kepercayaan."
+					>
+						<input
+							type="number"
+							min={0}
+							max={60}
+							className={inputClass}
+							value={draft.experienceYears}
+							onChange={(event) => patch({ experienceYears: event.target.value })}
+						/>
+					</Field>
+				</div>
+			</section>
 
 			{/* Only these two fields change how leads are shared out. */}
 			<section className="ocm-card space-y-4 p-5">

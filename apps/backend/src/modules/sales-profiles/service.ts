@@ -23,6 +23,11 @@ export type SalesProfileInput = {
 	languages?: string[]
 	tags?: string[]
 	notes?: string | null
+	persona?: string | null
+	experienceYears?: number | null
+	phone?: string | null
+	position?: string | null
+	joinedAt?: string | null
 }
 
 type TeamSales = {
@@ -121,6 +126,11 @@ type ProfileRow = {
 	languages: unknown
 	tags: unknown
 	notes: string | null
+	persona: string | null
+	experience_years: number | null
+	phone: string | null
+	position: string | null
+	joined_at: Date | null
 	updated_at: Date
 }
 
@@ -139,6 +149,11 @@ function profileShape(row: ProfileRow | null) {
 		languages: asArray(row?.languages),
 		tags: asArray(row?.tags),
 		notes: row?.notes ?? null,
+		persona: row?.persona ?? null,
+		experienceYears: row?.experience_years ?? null,
+		phone: row?.phone ?? null,
+		position: row?.position ?? null,
+		joinedAt: row?.joined_at ?? null,
 		updatedAt: row?.updated_at ?? null,
 	}
 }
@@ -151,7 +166,10 @@ export abstract class SalesProfileService {
 		const ids = [...sales.keys()]
 		if (!ids.length) return []
 
-		const [profiles, loads] = await Promise.all([
+		// Last activity is derived, never stored: a "last seen" column has to be
+		// written on every action to stay true, and one missed write makes it a
+		// lie. These three rows already exist.
+		const [profiles, loads, lastTask, lastDeal, lastOwned] = await Promise.all([
 			prisma.sales_profiles.findMany({
 				where: { app_id: actor.appId, user_id: { in: ids } },
 			}),
@@ -164,7 +182,32 @@ export abstract class SalesProfileService {
 				},
 				_count: { _all: true },
 			}),
+			prisma.tasks.groupBy({
+				by: ['assignee_id'],
+				where: { app_id: actor.appId, assignee_id: { in: ids } },
+				_max: { updated_at: true },
+			}),
+			prisma.opportunities.groupBy({
+				by: ['owner_id'],
+				where: { app_id: actor.appId, owner_id: { in: ids } },
+				_max: { stage_changed_at: true },
+			}),
+			prisma.contacts.groupBy({
+				by: ['owner_id'],
+				where: { app_id: actor.appId, owner_id: { in: ids }, deleted_at: null },
+				_max: { last_activity_at: true },
+			}),
 		])
+
+		const latest = new Map<string, Date | null>()
+		const note = (id: string | null, at: Date | null | undefined) => {
+			if (!id || !at) return
+			const current = latest.get(id)
+			if (!current || at.getTime() > current.getTime()) latest.set(id, at)
+		}
+		for (const row of lastTask) note(row.assignee_id, row._max.updated_at)
+		for (const row of lastDeal) note(row.owner_id, row._max.stage_changed_at)
+		for (const row of lastOwned) note(row.owner_id, row._max.last_activity_at)
 
 		const profileByUser = new Map(profiles.map((p) => [p.user_id, p]))
 		const loadByUser = new Map(
@@ -180,6 +223,7 @@ export abstract class SalesProfileService {
 				teamId: s.teamId,
 				teamName: s.teamName,
 				activeLoad: loadByUser.get(s.userId) || 0,
+				lastActivityAt: latest.get(s.userId) ?? null,
 				profile: profileShape((profileByUser.get(s.userId) as ProfileRow) || null),
 			}))
 			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
@@ -218,6 +262,20 @@ export abstract class SalesProfileService {
 			languages: cleanStringArray(input.languages),
 			tags: cleanStringArray(input.tags),
 			notes: input.notes ? String(input.notes).trim().slice(0, 2000) : null,
+			persona: input.persona ? String(input.persona).trim().slice(0, 2000) : null,
+			experience_years:
+				input.experienceYears === null || input.experienceYears === undefined
+					? null
+					: Math.max(0, Math.min(60, Math.floor(Number(input.experienceYears) || 0))),
+			phone: input.phone ? String(input.phone).trim().slice(0, 40) : null,
+			position: input.position ? String(input.position).trim().slice(0, 120) : null,
+			// Date-only column, so a bad string becomes null rather than throwing
+			// at the driver and losing the rest of the save.
+			joined_at: (() => {
+				if (!input.joinedAt) return null
+				const parsed = new Date(input.joinedAt)
+				return Number.isNaN(parsed.getTime()) ? null : parsed
+			})(),
 		}
 
 		const row = await prisma.sales_profiles.upsert({
