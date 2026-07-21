@@ -3361,6 +3361,8 @@ export const prospects = {
 }
 
 export type SalesProfileData = {
+	/** False until someone saves this profile. Every other field has a default. */
+	configured: boolean
 	productSkills: string[]
 	segments: string[]
 	level: string | null

@@ -126,6 +126,10 @@ type ProfileRow = {
 
 function profileShape(row: ProfileRow | null) {
 	return {
+		// Whether anyone has actually filled this in. Every other field has a
+		// sensible default, so without this a sales nobody has configured is
+		// indistinguishable from one deliberately left at maxActive 20.
+		configured: row !== null,
 		productSkills: asArray(row?.product_skills),
 		segments: asArray(row?.segments),
 		level: row?.level ?? null,

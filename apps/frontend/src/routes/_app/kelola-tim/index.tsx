@@ -1,7 +1,4 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-
-/** Mirrors DEFAULT_DEAL_THRESHOLD on the backend; the two must not disagree. */
-const DEFAULT_DEAL_THRESHOLD = 30
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	Check,
@@ -13,13 +10,21 @@ import {
 	X,
 } from 'lucide-react'
 import { agentsManagement } from '@/lib/agents-api'
-import { teams as teamsApi, type TeamWithMembers } from '@/lib/api'
+import {
+	salesProfiles,
+	teams as teamsApi,
+	type SalesProfileRow,
+	type TeamWithMembers,
+} from '@/lib/api'
 import { extractNormalizedRole } from '@/lib/role-access'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { CrmAvatar, CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { toast } from 'sonner'
+
+/** Mirrors DEFAULT_DEAL_THRESHOLD on the backend; the two must not disagree. */
+const DEFAULT_DEAL_THRESHOLD = 30
 
 export const Route = createFileRoute('/_app/kelola-tim/')({
 	component: KelolaTimPage,
@@ -104,6 +109,11 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 	const [editName, setEditName] = useState('')
 	const [busyTeam, setBusyTeam] = useState<string | null>(null)
 
+	// Which sales already have a routing profile, and which are still on
+	// defaults. Every profile field has a fallback, so without this a sales
+	// nobody has configured looks identical to one that was set deliberately.
+	const [profiles, setProfiles] = useState<SalesProfileRow[]>([])
+
 	const loadTeams = useCallback(async () => {
 		setLoading(true)
 		try {
@@ -118,7 +128,25 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 
 	useEffect(() => {
 		void loadTeams()
+		void salesProfiles
+			.list()
+			.then((response) => setProfiles(response.data || []))
+			.catch(() => undefined)
 	}, [loadTeams])
+
+	const profileByUser = useMemo(
+		() => new Map(profiles.map((row) => [row.userId, row])),
+		[profiles],
+	)
+
+	// A sales in no team never appears under a team heading, so before this they
+	// were unreachable once the standalone Profil Sales page went away.
+	const teamlessSales = useMemo(() => {
+		const inATeam = new Set(
+			teams.flatMap((team) => (team.team_members ?? []).map((m) => m.user_id)),
+		)
+		return profiles.filter((row) => !inATeam.has(row.userId))
+	}, [teams, profiles])
 
 	const accountName = useMemo(() => {
 		const map = new Map<string, Account>()
@@ -436,6 +464,14 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 										>
 											{label}
 										</Link>
+										{profileByUser.get(member.user_id)?.profile.configured === false ? (
+											<span
+												title="Profil sales belum diisi. Klik namanya untuk mengisi."
+												className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300"
+											>
+												Profil kosong
+											</span>
+										) : null}
 														<button
 															type='button'
 															className="text-muted-foreground hover:text-red-500"
@@ -486,6 +522,46 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 					})}
 				</div>
 			)}
+
+			{/* Sales who belong to no team. They never appear under a team heading,
+			    so without this they have no route to their profile at all. */}
+			{teamlessSales.length > 0 ? (
+				<section className="ocm-card mt-4">
+					<div className="ocm-card-header">
+						<span className="ocm-card-title">Belum masuk tim</span>
+						<span className="text-xs text-muted-foreground">
+							{teamlessSales.length} orang
+						</span>
+					</div>
+					<div className="ocm-card-body">
+						<p className="mb-3 text-xs text-muted-foreground">
+							Mereka tidak menerima lead otomatis sampai dimasukkan ke sebuah tim.
+						</p>
+						<ul className="flex flex-wrap gap-2">
+							{teamlessSales.map((row) => (
+								<li
+									key={row.userId}
+									className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 py-1 pl-1 pr-2"
+								>
+									<CrmAvatar name={row.name || row.email} size={22} />
+									<Link
+										to="/kelola-tim/$userId"
+										params={{ userId: row.userId }}
+										className="text-sm hover:underline"
+									>
+										{row.name || row.email}
+									</Link>
+									{!row.profile.configured ? (
+										<span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+											Profil kosong
+										</span>
+									) : null}
+								</li>
+							))}
+						</ul>
+					</div>
+				</section>
+			) : null}
 		</div>
 	)
 }
