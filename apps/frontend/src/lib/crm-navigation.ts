@@ -84,11 +84,11 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 	{
 		// Prospek and Opportunity used to sit here as separate entries. They are
 		// the same deal either side of the team's probability threshold, so both
-		// live in Pipeline now: /prospek is reached from a button on that page,
+		// live in Deals now: /prospek is reached from a button on that page,
 		// and /opportunity redirects to it pre-filtered.
-		id: 'pipeline',
-		label: 'Pipeline',
-		path: '/pipeline',
+		id: 'deals',
+		label: 'Deals',
+		path: '/deals',
 		group: 'data',
 		icon: Kanban,
 	},
@@ -219,12 +219,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 ]
 
 // Reachable but not in the sidebar: /prospek is opened from a button inside
-// Pipeline, /opportunity only redirects there, and /notifikasi is reached from
-// "Lihat semua notifikasi" in the bell dropdown (TopBar.tsx).
+// Deals, /opportunity and /pipeline only redirect there, and /notifikasi is
+// reached from "Lihat semua notifikasi" in the bell dropdown (TopBar.tsx).
 const CRM_EXTRA_ALLOWED_PATHS = [
 	'/channels/whatsapp',
 	'/prospek',
 	'/opportunity',
+	'/pipeline',
 	'/notifikasi',
 ]
 

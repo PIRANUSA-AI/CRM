@@ -31,6 +31,7 @@ import { Route as AppImportRouteImport } from './routes/_app/import'
 import { Route as AppHelpRouteImport } from './routes/_app/help'
 import { Route as AppHandoverRouteImport } from './routes/_app/handover'
 import { Route as AppFlowsRouteImport } from './routes/_app/flows'
+import { Route as AppDealsRouteImport } from './routes/_app/deals'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppChatRouteImport } from './routes/_app/chat'
 import { Route as AppBroadcastRouteImport } from './routes/_app/broadcast'
@@ -174,6 +175,11 @@ const AppHandoverRoute = AppHandoverRouteImport.update({
 const AppFlowsRoute = AppFlowsRouteImport.update({
   id: '/flows',
   path: '/flows',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDealsRoute = AppDealsRouteImport.update({
+  id: '/deals',
+  path: '/deals',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
@@ -371,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
   '/dashboard': typeof AppDashboardRoute
+  '/deals': typeof AppDealsRoute
   '/flows': typeof AppFlowsRouteWithChildren
   '/handover': typeof AppHandoverRoute
   '/help': typeof AppHelpRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/broadcast': typeof AppBroadcastRoute
   '/chat': typeof AppChatRoute
   '/dashboard': typeof AppDashboardRoute
+  '/deals': typeof AppDealsRoute
   '/flows': typeof AppFlowsRouteWithChildren
   '/handover': typeof AppHandoverRoute
   '/help': typeof AppHelpRoute
@@ -489,6 +497,7 @@ export interface FileRoutesById {
   '/_app/broadcast': typeof AppBroadcastRoute
   '/_app/chat': typeof AppChatRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/deals': typeof AppDealsRoute
   '/_app/flows': typeof AppFlowsRouteWithChildren
   '/_app/handover': typeof AppHandoverRoute
   '/_app/help': typeof AppHelpRoute
@@ -549,6 +558,7 @@ export interface FileRouteTypes {
     | '/broadcast'
     | '/chat'
     | '/dashboard'
+    | '/deals'
     | '/flows'
     | '/handover'
     | '/help'
@@ -607,6 +617,7 @@ export interface FileRouteTypes {
     | '/broadcast'
     | '/chat'
     | '/dashboard'
+    | '/deals'
     | '/flows'
     | '/handover'
     | '/help'
@@ -666,6 +677,7 @@ export interface FileRouteTypes {
     | '/_app/broadcast'
     | '/_app/chat'
     | '/_app/dashboard'
+    | '/_app/deals'
     | '/_app/flows'
     | '/_app/handover'
     | '/_app/help'
@@ -876,6 +888,13 @@ declare module '@tanstack/react-router' {
       path: '/flows'
       fullPath: '/flows'
       preLoaderRoute: typeof AppFlowsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/deals': {
+      id: '/_app/deals'
+      path: '/deals'
+      fullPath: '/deals'
+      preLoaderRoute: typeof AppDealsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/dashboard': {
@@ -1184,6 +1203,7 @@ interface AppRouteChildren {
   AppBroadcastRoute: typeof AppBroadcastRoute
   AppChatRoute: typeof AppChatRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppDealsRoute: typeof AppDealsRoute
   AppFlowsRoute: typeof AppFlowsRouteWithChildren
   AppHandoverRoute: typeof AppHandoverRoute
   AppHelpRoute: typeof AppHelpRoute
@@ -1231,6 +1251,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBroadcastRoute: AppBroadcastRoute,
   AppChatRoute: AppChatRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppDealsRoute: AppDealsRoute,
   AppFlowsRoute: AppFlowsRouteWithChildren,
   AppHandoverRoute: AppHandoverRoute,
   AppHelpRoute: AppHelpRoute,

@@ -10,7 +10,7 @@ describe('crm-navigation: new orphan-page nav items', () => {
 	})
 
 	test('new nav items exist with the correct path and group', () => {
-		expect(byId('pipeline')).toMatchObject({ path: '/pipeline', group: 'data' })
+		expect(byId('deals')).toMatchObject({ path: '/deals', group: 'data' })
 		expect(byId('templates')).toMatchObject({ path: '/templates', group: 'outreach' })
 		expect(byId('analytics')).toMatchObject({ path: '/analytics', group: 'laporan' })
 		expect(byId('metrics')).toMatchObject({ path: '/metrics', group: 'laporan' })
