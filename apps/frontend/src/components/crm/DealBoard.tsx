@@ -9,6 +9,7 @@ import {
 	type DragEndEvent,
 	type DragStartEvent,
 } from '@dnd-kit/core'
+import { Building2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { DealStage, Opportunity } from '@/lib/api'
 
@@ -69,6 +70,12 @@ function DealCard({ deal, onOpen }: { deal: Opportunity; onOpen: (deal: Opportun
 			<p className="mt-0.5 truncate text-[11px] text-muted-foreground">
 				{deal.contactName || 'Tanpa kontak'}
 			</p>
+			{deal.companyName ? (
+				<p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+					<Building2 size={10} className="shrink-0" />
+					<span className="truncate">{deal.companyName}</span>
+				</p>
+			) : null}
 			<dl className="mt-2 space-y-0.5 text-[10px] leading-tight text-muted-foreground">
 				<div className="flex justify-between gap-2">
 					<dt>Dibuat</dt>

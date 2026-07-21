@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import {
 	Columns3,
 	LayoutList,
@@ -214,7 +214,14 @@ function DealsPage() {
 		return deals.filter((deal) => {
 			if (bucket !== 'all' && deal.bucket !== bucket) return false
 			if (!q) return true
-			return [deal.name, deal.contactName, deal.product, deal.ownerName, deal.teamName]
+			return [
+					deal.name,
+					deal.contactName,
+					deal.companyName,
+					deal.product,
+					deal.ownerName,
+					deal.teamName,
+				]
 				.filter(Boolean)
 				.join(' ')
 				.toLowerCase()
@@ -343,6 +350,7 @@ function DealsPage() {
 								<tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
 									<th className="px-4 py-2 font-medium">Deal</th>
 									<th className="px-4 py-2 font-medium">Kontak</th>
+									<th className="px-4 py-2 font-medium">Perusahaan</th>
 									<th className="px-4 py-2 font-medium">Tahap</th>
 									<th className="px-4 py-2 font-medium">Progres</th>
 									<th className="px-4 py-2 font-medium">Pemilik</th>
@@ -366,11 +374,24 @@ function DealsPage() {
 												{bucketLabel(deal.bucket)}
 											</span>
 										</td>
-										<td className="px-4 py-3 text-muted-foreground">
+											<td className="px-4 py-3 text-muted-foreground">
 											{deal.contactName || '—'}
 											{deal.product ? (
 												<span className="block text-xs">{deal.product}</span>
 											) : null}
+										</td>
+										<td className="px-4 py-3 text-muted-foreground">
+											{deal.companyId && deal.companyName ? (
+												<Link
+													to="/companies/$companyId"
+													params={{ companyId: deal.companyId }}
+													className="hover:underline"
+												>
+													{deal.companyName}
+												</Link>
+											) : (
+												deal.companyName || '—'
+											)}
 										</td>
 										<td className='px-4 py-3'>
 											<select

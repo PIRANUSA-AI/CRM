@@ -1617,6 +1617,9 @@ export interface Opportunity {
 	teamId: string | null
 	teamName: string | null
 	name: string
+	/** The contact's employer, carried through the contact rather than stored on the deal. */
+	companyId: string | null
+	companyName: string | null
 	product: string | null
 	value: number | null
 	currency: string

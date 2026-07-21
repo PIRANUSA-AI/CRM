@@ -87,7 +87,19 @@ async function enrich(rows: Array<Record<string, any>>) {
 			? prisma.users.findMany({ where: { id: { in: ownerIds } }, select: { id: true, name: true, email: true } })
 			: [],
 		contactIds.length
-			? prisma.contacts.findMany({ where: { id: { in: contactIds } }, select: { id: true, name: true } })
+			? prisma.contacts.findMany({
+					where: { id: { in: contactIds } },
+					// The firm comes along with the contact rather than being stored on
+					// the deal: a deal belongs to a person, and that person's employer
+					// is already recorded once. Copying it onto the deal would give the
+					// two somewhere to disagree when a contact changes jobs.
+					select: {
+						id: true,
+						name: true,
+						company_id: true,
+						companies: { select: { name: true } },
+					},
+				})
 			: [],
 		teamIds.length
 			? prisma.teams.findMany({
@@ -110,6 +122,10 @@ async function enrich(rows: Array<Record<string, any>>) {
 		id: row.id,
 		contactId: row.contact_id,
 		contactName: row.contact_id ? contactById.get(row.contact_id)?.name || null : null,
+		companyId: row.contact_id ? contactById.get(row.contact_id)?.company_id || null : null,
+		companyName: row.contact_id
+			? contactById.get(row.contact_id)?.companies?.name || null
+			: null,
 		ownerId: row.owner_id,
 		ownerName: row.owner_id
 			? ownerById.get(row.owner_id)?.name || ownerById.get(row.owner_id)?.email?.split('@')[0] || null
