@@ -25,7 +25,6 @@ import { Route as AppOpportunityRouteImport } from './routes/_app/opportunity'
 import { Route as AppNotifikasiRouteImport } from './routes/_app/notifikasi'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
-import { Route as AppKelolaTimRouteImport } from './routes/_app/kelola-tim'
 import { Route as AppIntegrationRouteImport } from './routes/_app/integration'
 import { Route as AppImportRouteImport } from './routes/_app/import'
 import { Route as AppHelpRouteImport } from './routes/_app/help'
@@ -41,6 +40,7 @@ import { Route as AppAiRouteImport } from './routes/_app/ai'
 import { Route as AppTasksIndexRouteImport } from './routes/_app/tasks/index'
 import { Route as AppSalesProfilesIndexRouteImport } from './routes/_app/sales-profiles/index'
 import { Route as AppSaktiIndexRouteImport } from './routes/_app/sakti/index'
+import { Route as AppKelolaTimIndexRouteImport } from './routes/_app/kelola-tim/index'
 import { Route as AppDevelopersIndexRouteImport } from './routes/_app/developers/index'
 import { Route as AppCustomersIndexRouteImport } from './routes/_app/customers/index'
 import { Route as AppCompaniesIndexRouteImport } from './routes/_app/companies/index'
@@ -48,6 +48,7 @@ import { Route as AppAlihTugasIndexRouteImport } from './routes/_app/alih-tugas/
 import { Route as AppTasksTaskIdRouteImport } from './routes/_app/tasks/$taskId'
 import { Route as AppSalesProfilesUserIdRouteImport } from './routes/_app/sales-profiles/$userId'
 import { Route as AppSaktiSuratBaruRouteImport } from './routes/_app/sakti/surat-baru'
+import { Route as AppKelolaTimUserIdRouteImport } from './routes/_app/kelola-tim/$userId'
 import { Route as AppFlowsFlowIdRouteImport } from './routes/_app/flows/$flowId'
 import { Route as AppDevelopersWebhooksRouteImport } from './routes/_app/developers/webhooks'
 import { Route as AppDevelopersMessagesSentByApiRouteImport } from './routes/_app/developers/messages-sent-by-api'
@@ -148,11 +149,6 @@ const AppKnowledgeRoute = AppKnowledgeRouteImport.update({
   path: '/knowledge',
   getParentRoute: () => AppRoute,
 } as any)
-const AppKelolaTimRoute = AppKelolaTimRouteImport.update({
-  id: '/kelola-tim',
-  path: '/kelola-tim',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppIntegrationRoute = AppIntegrationRouteImport.update({
   id: '/integration',
   path: '/integration',
@@ -228,6 +224,11 @@ const AppSaktiIndexRoute = AppSaktiIndexRouteImport.update({
   path: '/sakti/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppKelolaTimIndexRoute = AppKelolaTimIndexRouteImport.update({
+  id: '/kelola-tim/',
+  path: '/kelola-tim/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDevelopersIndexRoute = AppDevelopersIndexRouteImport.update({
   id: '/developers/',
   path: '/developers/',
@@ -261,6 +262,11 @@ const AppSalesProfilesUserIdRoute = AppSalesProfilesUserIdRouteImport.update({
 const AppSaktiSuratBaruRoute = AppSaktiSuratBaruRouteImport.update({
   id: '/sakti/surat-baru',
   path: '/sakti/surat-baru',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppKelolaTimUserIdRoute = AppKelolaTimUserIdRouteImport.update({
+  id: '/kelola-tim/$userId',
+  path: '/kelola-tim/$userId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFlowsFlowIdRoute = AppFlowsFlowIdRouteImport.update({
@@ -389,7 +395,6 @@ export interface FileRoutesByFullPath {
   '/help': typeof AppHelpRoute
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
-  '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
@@ -416,6 +421,7 @@ export interface FileRoutesByFullPath {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/kelola-tim/$userId': typeof AppKelolaTimUserIdRoute
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
@@ -423,6 +429,7 @@ export interface FileRoutesByFullPath {
   '/companies/': typeof AppCompaniesIndexRoute
   '/customers/': typeof AppCustomersIndexRoute
   '/developers/': typeof AppDevelopersIndexRoute
+  '/kelola-tim/': typeof AppKelolaTimIndexRoute
   '/sakti/': typeof AppSaktiIndexRoute
   '/sales-profiles/': typeof AppSalesProfilesIndexRoute
   '/tasks/': typeof AppTasksIndexRoute
@@ -449,7 +456,6 @@ export interface FileRoutesByTo {
   '/help': typeof AppHelpRoute
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
-  '/kelola-tim': typeof AppKelolaTimRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
@@ -476,6 +482,7 @@ export interface FileRoutesByTo {
   '/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/kelola-tim/$userId': typeof AppKelolaTimUserIdRoute
   '/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/tasks/$taskId': typeof AppTasksTaskIdRoute
@@ -483,6 +490,7 @@ export interface FileRoutesByTo {
   '/companies': typeof AppCompaniesIndexRoute
   '/customers': typeof AppCustomersIndexRoute
   '/developers': typeof AppDevelopersIndexRoute
+  '/kelola-tim': typeof AppKelolaTimIndexRoute
   '/sakti': typeof AppSaktiIndexRoute
   '/sales-profiles': typeof AppSalesProfilesIndexRoute
   '/tasks': typeof AppTasksIndexRoute
@@ -511,7 +519,6 @@ export interface FileRoutesById {
   '/_app/help': typeof AppHelpRoute
   '/_app/import': typeof AppImportRoute
   '/_app/integration': typeof AppIntegrationRoute
-  '/_app/kelola-tim': typeof AppKelolaTimRoute
   '/_app/knowledge': typeof AppKnowledgeRoute
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/notifikasi': typeof AppNotifikasiRoute
@@ -538,6 +545,7 @@ export interface FileRoutesById {
   '/_app/developers/messages-sent-by-api': typeof AppDevelopersMessagesSentByApiRoute
   '/_app/developers/webhooks': typeof AppDevelopersWebhooksRoute
   '/_app/flows/$flowId': typeof AppFlowsFlowIdRoute
+  '/_app/kelola-tim/$userId': typeof AppKelolaTimUserIdRoute
   '/_app/sakti/surat-baru': typeof AppSaktiSuratBaruRoute
   '/_app/sales-profiles/$userId': typeof AppSalesProfilesUserIdRoute
   '/_app/tasks/$taskId': typeof AppTasksTaskIdRoute
@@ -545,6 +553,7 @@ export interface FileRoutesById {
   '/_app/companies/': typeof AppCompaniesIndexRoute
   '/_app/customers/': typeof AppCustomersIndexRoute
   '/_app/developers/': typeof AppDevelopersIndexRoute
+  '/_app/kelola-tim/': typeof AppKelolaTimIndexRoute
   '/_app/sakti/': typeof AppSaktiIndexRoute
   '/_app/sales-profiles/': typeof AppSalesProfilesIndexRoute
   '/_app/tasks/': typeof AppTasksIndexRoute
@@ -573,7 +582,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/import'
     | '/integration'
-    | '/kelola-tim'
     | '/knowledge'
     | '/metrics'
     | '/notifikasi'
@@ -600,6 +608,7 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/kelola-tim/$userId'
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
@@ -607,6 +616,7 @@ export interface FileRouteTypes {
     | '/companies/'
     | '/customers/'
     | '/developers/'
+    | '/kelola-tim/'
     | '/sakti/'
     | '/sales-profiles/'
     | '/tasks/'
@@ -633,7 +643,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/import'
     | '/integration'
-    | '/kelola-tim'
     | '/knowledge'
     | '/metrics'
     | '/notifikasi'
@@ -660,6 +669,7 @@ export interface FileRouteTypes {
     | '/developers/messages-sent-by-api'
     | '/developers/webhooks'
     | '/flows/$flowId'
+    | '/kelola-tim/$userId'
     | '/sakti/surat-baru'
     | '/sales-profiles/$userId'
     | '/tasks/$taskId'
@@ -667,6 +677,7 @@ export interface FileRouteTypes {
     | '/companies'
     | '/customers'
     | '/developers'
+    | '/kelola-tim'
     | '/sakti'
     | '/sales-profiles'
     | '/tasks'
@@ -694,7 +705,6 @@ export interface FileRouteTypes {
     | '/_app/help'
     | '/_app/import'
     | '/_app/integration'
-    | '/_app/kelola-tim'
     | '/_app/knowledge'
     | '/_app/metrics'
     | '/_app/notifikasi'
@@ -721,6 +731,7 @@ export interface FileRouteTypes {
     | '/_app/developers/messages-sent-by-api'
     | '/_app/developers/webhooks'
     | '/_app/flows/$flowId'
+    | '/_app/kelola-tim/$userId'
     | '/_app/sakti/surat-baru'
     | '/_app/sales-profiles/$userId'
     | '/_app/tasks/$taskId'
@@ -728,6 +739,7 @@ export interface FileRouteTypes {
     | '/_app/companies/'
     | '/_app/customers/'
     | '/_app/developers/'
+    | '/_app/kelola-tim/'
     | '/_app/sakti/'
     | '/_app/sales-profiles/'
     | '/_app/tasks/'
@@ -861,13 +873,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppKnowledgeRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/kelola-tim': {
-      id: '/_app/kelola-tim'
-      path: '/kelola-tim'
-      fullPath: '/kelola-tim'
-      preLoaderRoute: typeof AppKelolaTimRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/integration': {
       id: '/_app/integration'
       path: '/integration'
@@ -973,6 +978,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSaktiIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/kelola-tim/': {
+      id: '/_app/kelola-tim/'
+      path: '/kelola-tim'
+      fullPath: '/kelola-tim/'
+      preLoaderRoute: typeof AppKelolaTimIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/developers/': {
       id: '/_app/developers/'
       path: '/developers'
@@ -1020,6 +1032,13 @@ declare module '@tanstack/react-router' {
       path: '/sakti/surat-baru'
       fullPath: '/sakti/surat-baru'
       preLoaderRoute: typeof AppSaktiSuratBaruRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/kelola-tim/$userId': {
+      id: '/_app/kelola-tim/$userId'
+      path: '/kelola-tim/$userId'
+      fullPath: '/kelola-tim/$userId'
+      preLoaderRoute: typeof AppKelolaTimUserIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/flows/$flowId': {
@@ -1228,7 +1247,6 @@ interface AppRouteChildren {
   AppHelpRoute: typeof AppHelpRoute
   AppImportRoute: typeof AppImportRoute
   AppIntegrationRoute: typeof AppIntegrationRoute
-  AppKelolaTimRoute: typeof AppKelolaTimRoute
   AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppMetricsRoute: typeof AppMetricsRoute
   AppNotifikasiRoute: typeof AppNotifikasiRoute
@@ -1252,6 +1270,7 @@ interface AppRouteChildren {
   AppDevelopersApiToolsRoute: typeof AppDevelopersApiToolsRouteWithChildren
   AppDevelopersMessagesSentByApiRoute: typeof AppDevelopersMessagesSentByApiRoute
   AppDevelopersWebhooksRoute: typeof AppDevelopersWebhooksRoute
+  AppKelolaTimUserIdRoute: typeof AppKelolaTimUserIdRoute
   AppSaktiSuratBaruRoute: typeof AppSaktiSuratBaruRoute
   AppSalesProfilesUserIdRoute: typeof AppSalesProfilesUserIdRoute
   AppTasksTaskIdRoute: typeof AppTasksTaskIdRoute
@@ -1259,6 +1278,7 @@ interface AppRouteChildren {
   AppCompaniesIndexRoute: typeof AppCompaniesIndexRoute
   AppCustomersIndexRoute: typeof AppCustomersIndexRoute
   AppDevelopersIndexRoute: typeof AppDevelopersIndexRoute
+  AppKelolaTimIndexRoute: typeof AppKelolaTimIndexRoute
   AppSaktiIndexRoute: typeof AppSaktiIndexRoute
   AppSalesProfilesIndexRoute: typeof AppSalesProfilesIndexRoute
   AppTasksIndexRoute: typeof AppTasksIndexRoute
@@ -1277,7 +1297,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppHelpRoute: AppHelpRoute,
   AppImportRoute: AppImportRoute,
   AppIntegrationRoute: AppIntegrationRoute,
-  AppKelolaTimRoute: AppKelolaTimRoute,
   AppKnowledgeRoute: AppKnowledgeRoute,
   AppMetricsRoute: AppMetricsRoute,
   AppNotifikasiRoute: AppNotifikasiRoute,
@@ -1301,6 +1320,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevelopersApiToolsRoute: AppDevelopersApiToolsRouteWithChildren,
   AppDevelopersMessagesSentByApiRoute: AppDevelopersMessagesSentByApiRoute,
   AppDevelopersWebhooksRoute: AppDevelopersWebhooksRoute,
+  AppKelolaTimUserIdRoute: AppKelolaTimUserIdRoute,
   AppSaktiSuratBaruRoute: AppSaktiSuratBaruRoute,
   AppSalesProfilesUserIdRoute: AppSalesProfilesUserIdRoute,
   AppTasksTaskIdRoute: AppTasksTaskIdRoute,
@@ -1308,6 +1328,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCompaniesIndexRoute: AppCompaniesIndexRoute,
   AppCustomersIndexRoute: AppCustomersIndexRoute,
   AppDevelopersIndexRoute: AppDevelopersIndexRoute,
+  AppKelolaTimIndexRoute: AppKelolaTimIndexRoute,
   AppSaktiIndexRoute: AppSaktiIndexRoute,
   AppSalesProfilesIndexRoute: AppSalesProfilesIndexRoute,
   AppTasksIndexRoute: AppTasksIndexRoute,

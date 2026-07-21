@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	Check,
@@ -18,7 +18,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { CrmAvatar, CrmEmptyState, CrmSectionHeader } from '@/components/crm/shared'
 import { toast } from 'sonner'
 
-export const Route = createFileRoute('/_app/kelola-tim')({
+export const Route = createFileRoute('/_app/kelola-tim/')({
 	component: KelolaTimPage,
 })
 
@@ -61,7 +61,7 @@ function KelolaTimPage() {
 					).map((option) => (
 						<button
 							key={option.value}
-							type="button"
+							type='button'
 							onClick={() => setTab(option.value)}
 							className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
 								tab === option.value
@@ -272,7 +272,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
 						<input
-							type="checkbox"
+							type='checkbox'
 							checked={autoAssign}
 							onChange={(e) => setAutoAssign(e.target.checked)}
 						/>
@@ -313,7 +313,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 										{editingId === team.id ? (
 											<div className="flex items-center gap-1.5">
 												<input
-													className="ocm-input h-8 py-1"
+													className='ocm-input h-8 py-1'
 													value={editName}
 													autoFocus
 													onChange={(e) => setEditName(e.target.value)}
@@ -323,33 +323,33 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 													}}
 												/>
 												<button
-													type="button"
-													className="ocm-btn h-8 px-2"
+													type='button'
+													className='ocm-btn h-8 px-2'
 													onClick={() => void handleRename(team)}
 													disabled={busy}
 												>
 													<Check size={14} />
 												</button>
 												<button
-													type="button"
-													className="ocm-btn h-8 px-2"
+													type='button'
+													className='ocm-btn h-8 px-2'
 													onClick={() => setEditingId(null)}
 												>
 													<X size={14} />
 												</button>
 											</div>
 										) : (
-											<div className="min-w-0">
+											<div className='min-w-0'>
 												<div className="flex items-center gap-2">
 													<span className="truncate font-semibold">{team.name}</span>
 													<button
-														type="button"
+														type='button'
 														className="text-muted-foreground hover:text-foreground"
 														onClick={() => {
 															setEditingId(team.id)
 															setEditName(team.name)
 														}}
-														aria-label="Ganti nama tim"
+														aria-label='Ganti nama tim'
 													>
 														<Pencil size={13} />
 													</button>
@@ -369,7 +369,7 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 										>
 											<span>Ambang opportunity</span>
 											<input
-												type="number"
+												type='number'
 												min={0}
 												max={100}
 												defaultValue={team.deal_threshold ?? 50}
@@ -382,20 +382,20 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 											<span>%</span>
 										</label>
 										<button
-											type="button"
+											type='button'
 											onClick={() => void handleToggleAuto(team)}
 											disabled={busy}
 											className={`ocm-tag ${team.allow_auto_assign ? 'ocm-tag-success' : ''}`}
-											title="Klik untuk mengubah"
+											title='Klik untuk mengubah'
 										>
 											{team.allow_auto_assign ? '● Auto-assign aktif' : '○ Auto-assign mati'}
 										</button>
 										<button
-											type="button"
+											type='button'
 											className="text-muted-foreground hover:text-red-500"
 											onClick={() => void handleDelete(team)}
 											disabled={busy}
-											aria-label="Hapus tim"
+											aria-label='Hapus tim'
 										>
 											<Trash2 size={15} />
 										</button>
@@ -424,9 +424,17 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 															imageUrl={member.users?.avatar_url}
 															size={22}
 														/>
-														<span className="text-sm">{label}</span>
+										{/* The profile lives behind the member, not in a second list of
+										    the same people. */}
+										<Link
+											to="/kelola-tim/$userId"
+											params={{ userId: member.user_id }}
+											className="text-sm hover:underline"
+										>
+											{label}
+										</Link>
 														<button
-															type="button"
+															type='button'
 															className="text-muted-foreground hover:text-red-500"
 															onClick={() =>
 																void handleRemoveMember(team.id, member.user_id)
@@ -446,15 +454,15 @@ function TeamsTab({ accounts }: { accounts: Account[] }) {
 										<div className="flex items-center gap-2">
 											<UserPlus size={15} className="shrink-0 text-muted-foreground" />
 											<NativeSelect
-												value=""
+												value=''
 												disabled={busy}
 												onChange={(e) => {
 													void handleAddMember(team.id, e.target.value)
 													e.target.value = ''
 												}}
-												className="max-w-xs"
+												className='max-w-xs'
 											>
-												<NativeSelectOption value="">
+												<NativeSelectOption value=''>
 													+ Tambah anggota…
 												</NativeSelectOption>
 												{addable.map((account) => (
@@ -541,8 +549,8 @@ function AccountsTab({
 					</p>
 					<code className="mt-1 block text-lg">{generatedPassword}</code>
 					<Button
-						variant="ghost"
-						size="sm"
+						variant='ghost'
+						size='sm'
 						onClick={() => setGeneratedPassword(null)}
 					>
 						Tutup
@@ -558,7 +566,7 @@ function AccountsTab({
 					required
 				/>
 				<Input
-					type="email"
+					type='email'
 					placeholder="Email"
 					value={email}
 					onChange={(e) => setEmail(e.target.value)}

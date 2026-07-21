@@ -21,7 +21,6 @@ import {
 	Upload,
 	UserCog,
 	Users,
-	UsersRound,
 	WandSparkles,
 } from 'lucide-react'
 
@@ -108,15 +107,6 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/kelola-tim',
 		group: 'operasional',
 		icon: UserCog,
-	},
-	{
-		// Visible only to ceo/leader (see role-access.ts LEADER_PATHS). Manages
-		// sales routing profiles used by lead auto-assign.
-		id: 'sales-profiles',
-		label: 'Profil Sales',
-		path: '/sales-profiles',
-		group: 'operasional',
-		icon: UsersRound,
 	},
 	{
 		id: 'broadcast',
@@ -223,6 +213,9 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 // reached from "Lihat semua notifikasi" in the bell dropdown (TopBar.tsx).
 const CRM_EXTRA_ALLOWED_PATHS = [
 	'/channels/whatsapp',
+	// No longer in the sidebar; kept reachable so the redirect into Kelola Tim
+	// works for anyone following an old link.
+	'/sales-profiles',
 	'/prospek',
 	'/opportunity',
 	'/pipeline',
