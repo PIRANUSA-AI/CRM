@@ -42,7 +42,6 @@ export const TaskModel = {
 		priority: taskPriority,
 		status: taskStatus,
 		dueAt: t.Nullable(t.Date()),
-		snoozedUntil: t.Nullable(t.Date()),
 		completedAt: t.Nullable(t.Date()),
 		source: t.String(),
 		aiSnapshot: t.Any(),
@@ -89,10 +88,6 @@ export const TaskRequestModel = {
 		description: t.Optional(t.Nullable(t.String({ maxLength: 4000 }))),
 		priority: t.Optional(taskPriority),
 		dueAt: t.Optional(t.Nullable(t.String({ maxLength: 40 }))),
-	}),
-	snooze: t.Object({
-		snoozedUntil: t.String({ minLength: 1, maxLength: 40 }),
-		reason: t.Optional(t.String({ maxLength: 500 })),
 	}),
 	cancel: t.Object({
 		reason: t.Optional(t.String({ maxLength: 500 })),

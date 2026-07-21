@@ -1091,6 +1091,8 @@ export abstract class CustomerService {
 			started: { title: 'Tugas dimulai', tone: 'info' },
 			completed: { title: 'Tugas selesai', tone: 'success' },
 			cancelled: { title: 'Tugas dibatalkan', tone: 'warning' },
+			// Kept for history only — snoozing a task is no longer possible, but
+			// the events from when it was still read on the timeline.
 			snoozed: { title: 'Tugas ditunda', tone: 'warning' },
 			reassigned: { title: 'Tugas dialihkan', tone: 'warning' },
 			updated: { title: 'Tugas diperbarui', tone: 'default' },

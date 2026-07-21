@@ -3088,7 +3088,6 @@ export interface Task {
 	priority: TaskPriority
 	status: TaskStatus
 	dueAt: string | null
-	snoozedUntil: string | null
 	completedAt: string | null
 	source: string
 	aiSnapshot: unknown
@@ -3145,11 +3144,6 @@ export const tasks = {
 			method: 'POST',
 		}),
 
-	snooze: (id: string, snoozedUntil: string, reason?: string) =>
-		apiRequest<{ data: Task }>(`/tasks/${encodeURIComponent(id)}/snooze`, {
-			method: 'POST',
-			body: JSON.stringify({ snoozedUntil, reason }),
-		}),
 
 	replyWhatsapp: (id: string, text: string) =>
 		apiRequest<{ data: Task }>(

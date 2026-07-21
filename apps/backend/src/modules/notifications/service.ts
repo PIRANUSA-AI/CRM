@@ -165,7 +165,7 @@ export abstract class NotificationService {
 	 * Runs on the maintenance queue. Fires once per task as it crosses `due_at`
 	 * (windowed to the run interval so it is not re-sent every tick), deduped by
 	 * `task-due:<id>` so an accidental repeat refreshes rather than stacks.
-	 * Snoozed tasks are skipped until their snooze passes. Fail-open — a reminder
+	 * Fail-open — a reminder
 	 * failure must never break the maintenance cycle.
 	 */
 	static async remindDueTasks(windowMs = 5 * 60 * 1000) {
@@ -177,7 +177,6 @@ export abstract class NotificationService {
 					status: { in: ['open', 'in_progress'] },
 					assignee_id: { not: null },
 					due_at: { lte: now, gt: windowStart },
-					OR: [{ snoozed_until: null }, { snoozed_until: { lte: now } }],
 				},
 				select: {
 					id: true,

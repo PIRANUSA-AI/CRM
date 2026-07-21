@@ -9,7 +9,6 @@ import {
 	RefreshCw,
 	SendHorizontal,
 	Sparkles,
-	TimerReset,
 	TriangleAlert,
 	UserRound,
 } from 'lucide-react'
@@ -52,6 +51,8 @@ const EVENT_LABEL: Record<string, string> = {
 	started: 'Mulai dikerjakan',
 	completed: 'Diselesaikan',
 	cancelled: 'Dibatalkan',
+	// Snoozing was removed, but tasks that were snoozed before that still carry
+	// the event. Dropping the label would leave those entries unnamed.
 	snoozed: 'Ditunda',
 	updated: 'Diperbarui',
 	replied_whatsapp: 'Dibalas via WhatsApp',
@@ -136,19 +137,6 @@ function waLink(phone?: string | null, text?: string | null) {
 	return `https://wa.me/${digits}${q}`
 }
 
-function snoozePresets(): Array<{ label: string; iso: string }> {
-	const now = new Date()
-	const inHours = (h: number) => new Date(now.getTime() + h * 3600_000).toISOString()
-	const tomorrow9 = new Date(now)
-	tomorrow9.setDate(tomorrow9.getDate() + 1)
-	tomorrow9.setHours(9, 0, 0, 0)
-	return [
-		{ label: '+1 jam', iso: inHours(1) },
-		{ label: '+3 jam', iso: inHours(3) },
-		{ label: 'Besok 09:00', iso: tomorrow9.toISOString() },
-	]
-}
-
 function TaskDetailPage() {
 	const { taskId } = Route.useParams()
 	const navigate = useNavigate()
@@ -156,7 +144,7 @@ function TaskDetailPage() {
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
 	const [replyDraft, setReplyDraft] = useState('')
-	const [busy, setBusy] = useState<null | 'reply' | 'complete' | 'snooze' | 'openChat'>(null)
+	const [busy, setBusy] = useState<null | 'reply' | 'complete' | 'openChat'>(null)
 	const [actionError, setActionError] = useState<string | null>(null)
 	const [draftDirty, setDraftDirty] = useState(false)
 	const [autoStarted, setAutoStarted] = useState(false)
@@ -183,7 +171,7 @@ function TaskDetailPage() {
 	}, [taskId])
 
 	const runAction = useCallback(
-		async (kind: 'reply' | 'complete' | 'snooze', arg?: string) => {
+		async (kind: 'reply' | 'complete') => {
 			if (!detail) return
 			setBusy(kind)
 			setActionError(null)
@@ -193,8 +181,6 @@ function TaskDetailPage() {
 					await tasks.replyWhatsapp(detail.task.id, replyDraft.trim())
 				} else if (kind === 'complete') {
 					await tasks.complete(detail.task.id)
-				} else if (kind === 'snooze') {
-					await tasks.snooze(detail.task.id, arg as string)
 				}
 				setDraftDirty(false)
 				await load()
@@ -582,24 +568,6 @@ function TaskDetailPage() {
 								<CheckCircle2 size={15} />
 								{busy === 'complete' ? 'Menyimpan...' : 'Tandai Selesai'}
 							</button>
-						) : null}
-						{isActive ? (
-							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-									<TimerReset size={14} /> Ingatkan lagi:
-								</span>
-								{snoozePresets().map((preset) => (
-									<button
-										key={preset.label}
-										type="button"
-										disabled={busy !== null}
-										onClick={() => void runAction('snooze', preset.iso)}
-										className="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
-									>
-										{preset.label}
-									</button>
-								))}
-							</div>
 						) : null}
 					</section>
 

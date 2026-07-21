@@ -54,13 +54,6 @@ export async function assertAssignableTask(
 	if (!membership) throw new TaskAccessError('Task berada di luar scope team Anda')
 }
 
-export function parseFutureDate(value: string) {
-	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) throw new Error('Format waktu tidak valid')
-	if (date <= new Date()) throw new Error('Waktu tunda harus berada di masa depan')
-	return date
-}
-
 export function dueAtFromRecommendation(
 	action: string,
 	dueInMinutes: number | null,

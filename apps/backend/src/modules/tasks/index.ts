@@ -2,7 +2,7 @@ import { Elysia, t } from 'elysia'
 import { requireRole, type CanonicalRole } from '../../lib/require-role'
 import { appContext } from '../../plugins'
 import { TaskRequestModel } from './model'
-import { TaskAccessError, parseFutureDate, type TaskActor } from './policy'
+import { TaskAccessError, type TaskActor } from './policy'
 import { TaskConflictError, TaskNotFoundError, TaskService } from './service'
 
 const ALLOWED_ROLES: CanonicalRole[] = ['sales', 'leader', 'administrator', 'ceo', 'superadmin']
@@ -157,22 +157,6 @@ export const tasks = new Elysia({ prefix: '/tasks', tags: ['Tasks'] })
 			return toErrorResponse(error, set)
 		}
 	}, { params: t.Object({ id: t.String() }) })
-	.post('/:id/snooze', async ({ resolvedAppId, userId, params, body, set }) => {
-		const actor = await resolveActor(resolvedAppId, userId, set)
-		if (!actor) return { error: 'Sesi CRM tidak valid' }
-		try {
-			return {
-				data: await TaskService.snooze(
-					actor,
-					params.id,
-					parseFutureDate(body.snoozedUntil),
-					body.reason,
-				),
-			}
-		} catch (error) {
-			return toErrorResponse(error, set)
-		}
-	}, { params: t.Object({ id: t.String() }), body: TaskRequestModel.snooze })
 	.post('/:id/cancel', async ({ resolvedAppId, userId, params, body, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
 		if (!actor) return { error: 'Sesi CRM tidak valid' }

@@ -39,7 +39,6 @@ type TaskRecord = {
 	priority: string
 	status: string
 	due_at: Date | null
-	snoozed_until: Date | null
 	completed_at: Date | null
 	source: string
 	ai_snapshot: unknown
@@ -60,11 +59,10 @@ function dayBounds(now = new Date()) {
 	return { start, end }
 }
 
-function activeAndVisibleAt(now: Date) {
-	return {
-		status: { in: ACTIVE_STATUSES },
-		OR: [{ snoozed_until: null }, { snoozed_until: { lte: now } }],
-	}
+// Was "active and not snoozed". Snoozing is gone, so a task is either active
+// or it is not — nothing hides a task from the list any more.
+function activeAndVisibleAt(_now: Date) {
+	return { status: { in: ACTIVE_STATUSES } }
 }
 
 function emitTask(event: 'task:created' | 'task:updated', task: TaskRecord) {
@@ -187,8 +185,7 @@ async function enrichTasks(rows: TaskRecord[]) {
 			priority: row.priority,
 			status: row.status,
 			dueAt: row.due_at,
-			snoozedUntil: row.snoozed_until,
-			completedAt: row.completed_at,
+				completedAt: row.completed_at,
 			source: row.source,
 			aiSnapshot: row.ai_snapshot,
 			analysisVersion: row.analysis_version,
@@ -824,7 +821,7 @@ export abstract class TaskService {
 		await prisma.$transaction(async (tx) => {
 			await tx.tasks.updateMany({
 				where: { id: { in: ids }, status: 'open' },
-				data: { status: 'in_progress', snoozed_until: null },
+				data: { status: 'in_progress' },
 			})
 			await tx.task_events.createMany({
 				data: ids.map((id) => ({
@@ -840,24 +837,6 @@ export abstract class TaskService {
 		return ids.length
 	}
 
-	static async snooze(actor: TaskActor, taskId: string, snoozedUntil: Date, reason?: string) {
-		const scope = await taskVisibilityScope(actor)
-		const task = await prisma.$transaction(async (tx) => {
-			const updated = await tx.tasks.updateMany({
-				where: { id: taskId, app_id: actor.appId, ...scope, status: { in: ACTIVE_STATUSES } } as any,
-				data: { snoozed_until: snoozedUntil },
-			})
-			if (!updated.count) throw new TaskNotFoundError('Task tidak ditemukan atau sudah selesai')
-			await tx.task_events.create({
-				data: { task_id: taskId, event_type: 'snoozed', actor_id: actor.userId, reason, metadata: { snoozedUntil } },
-			})
-			const row = await tx.tasks.findUnique({ where: { id: taskId } })
-			if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
-			return asTask(row)
-		})
-		emitTask('task:updated', task)
-		return (await enrichTasks([task]))[0]
-	}
 
 	static async replyWhatsapp(actor: TaskActor, taskId: string, text: string) {
 		const trimmed = text.trim()
@@ -958,7 +937,7 @@ export abstract class TaskService {
 			// keeps the conversation going and completes the task manually later.
 			await tx.tasks.updateMany({
 				where: { id: taskId, app_id: actor.appId, status: 'open' },
-				data: { status: 'in_progress', snoozed_until: null },
+				data: { status: 'in_progress' },
 			})
 			await tx.task_events.create({
 				data: {
@@ -1088,8 +1067,7 @@ export abstract class TaskService {
 				where: { id: taskId, app_id: actor.appId, ...scope, status: { in: from } } as any,
 				data: {
 					status: to,
-					...(to === 'done' ? { completed_at: now, snoozed_until: null } : {}),
-					...(to === 'in_progress' ? { snoozed_until: null } : {}),
+					...(to === 'done' ? { completed_at: now } : {}),
 				},
 			})
 			if (!updated.count) throw new TaskConflictError('Task tidak dapat diproses pada status saat ini')
