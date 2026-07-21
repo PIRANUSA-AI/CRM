@@ -202,3 +202,29 @@ export const company = new Elysia({ prefix: '/companies', tags: ['Company'] })
 			}),
 		},
 	)
+	.get(
+		'/:id/timeline',
+		async ({ params, resolvedAppId, userId, set }) => {
+			if (!resolvedAppId) {
+				set.status = 400
+				return { error: 'App ID required' }
+			}
+			const viewer = await resolveViewer(userId)
+			if (viewer.blocked) {
+				set.status = 403
+				return { error: 'Not authorized' }
+			}
+			const timeline = await CompanyService.getCompanyTimeline(params.id, {
+				appId: resolvedAppId,
+				viewerRole: viewer.viewerRole,
+				viewerUserId: viewer.viewerUserId,
+				viewerTeamIds: viewer.viewerTeamIds,
+			})
+			if (!timeline) {
+				set.status = 404
+				return { error: 'Company not found' }
+			}
+			return { success: true, payload: timeline }
+		},
+		{ params: t.Object({ id: t.String() }) },
+	)

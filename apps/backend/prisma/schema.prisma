@@ -1121,6 +1121,28 @@ model conversation_activity_log {
   @@index([created_at], map: "idx_conv_activity_created")
 }
 
+/// Edits to a company, which nothing else records.
+///
+/// The contact timeline is derived from existing tables because every event it
+/// shows already leaves a row somewhere. A company edit does not: updated_at
+/// says when something changed and never what, so renaming a firm or moving a
+/// PIC would be invisible the moment it happened.
+///
+/// Shape mirrors conversation_activity_log on purpose. The two should really be
+/// one table keyed by entity type; kept separate for now rather than migrating
+/// a table the conversation code writes to on every message.
+model company_activity_log {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  company_id String    @db.Uuid
+  action     String    @db.VarChar(50)
+  actor_id   String?   @db.Uuid
+  target_id  String?   @db.Uuid
+  metadata   Json?     @default("{}")
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "idx_company_activity_company")
+}
+
 model conversation_agents {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   conversation_id String    @db.Uuid

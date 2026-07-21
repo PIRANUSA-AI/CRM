@@ -77,6 +77,30 @@ function contactScope(params: {
 	return Prisma.empty
 }
 
+
+const IDR = new Intl.NumberFormat('id-ID', {
+	style: 'currency',
+	currency: 'IDR',
+	maximumFractionDigits: 0,
+})
+
+const FIELD_LABELS: Record<string, string> = {
+	name: 'Nama',
+	city: 'Kota',
+	website: 'Website',
+	notes: 'Catatan',
+	type: 'Tipe',
+	industry: 'Industri',
+}
+
+/** Render a logged value for the feed. Long notes are cut: the timeline says
+ *  what changed, and the field itself holds the text. */
+function describe(value: unknown): string {
+	if (value === null || value === undefined || value === '') return '(kosong)'
+	const text = String(value)
+	return text.length > 40 ? `${text.slice(0, 40)}…` : text
+}
+
 export const CompanyService = {
 	async listCompanies(params: ListParams) {
 		const page = Math.max(1, params.page || 1)
@@ -348,7 +372,12 @@ export const CompanyService = {
 	 */
 	async updateCompany(
 		id: string,
-		params: { appId: string; viewerRole?: string; viewerUserId?: string; viewerTeamIds?: string[] },
+		params: {
+			appId: string
+			viewerRole?: string
+			viewerUserId?: string
+			viewerTeamIds?: string[]
+		},
 		input: {
 			name?: string
 			city?: string | null
@@ -388,7 +417,30 @@ export const CompanyService = {
 		}
 
 		if (Object.keys(data).length === 0) return existing
+
+		// What actually changed, recorded before the write so the "from" value is
+		// still the old one. norm_name is skipped: it is derived from the name and
+		// logging both would report one rename twice.
+		const changes: Array<{ field: string; from: unknown; to: unknown }> = []
+		for (const [field, to] of Object.entries(data)) {
+			if (field === 'norm_name') continue
+			const from = (existing as Record<string, unknown>)[field] ?? null
+			if (from !== to) changes.push({ field, from, to })
+		}
+
 		await prisma.companies.update({ where: { id }, data })
+
+		if (changes.length) {
+			await prisma.company_activity_log.create({
+				data: {
+					company_id: id,
+					action: 'company_updated',
+					actor_id: params.viewerUserId ?? null,
+					metadata: { changes } as never,
+				},
+			})
+		}
+
 		return CompanyService.getCompanyById(id, params)
 	},
 
@@ -416,6 +468,11 @@ export const CompanyService = {
 		`
 		if (!allowed.length) return null
 
+		const contact = await prisma.contacts.findUnique({
+			where: { id: input.contactId },
+			select: { name: true },
+		})
+
 		await prisma.contacts.update({
 			where: { id: input.contactId },
 			data: input.attach
@@ -426,6 +483,201 @@ export const CompanyService = {
 					{ company_id: null, company: null },
 		})
 
+		await prisma.company_activity_log.create({
+			data: {
+				company_id: companyId,
+				action: input.attach ? 'contact_attached' : 'contact_detached',
+				actor_id: params.viewerUserId ?? null,
+				target_id: input.contactId,
+				// The name is copied rather than joined at read time so the entry
+				// still reads correctly after the contact is renamed or deleted.
+				metadata: { contact_name: contact?.name ?? null } as never,
+			},
+		})
+
 		return CompanyService.getCompanyById(companyId, params)
+	},
+	/**
+	 * Activity for one firm, newest first.
+	 *
+	 * Two sources merged into one feed. Edits come from company_activity_log,
+	 * because nothing else records them. Everything else is derived from rows
+	 * that already exist — the firm's own creation, contacts joining, deals
+	 * opening and closing — which follows how the contact timeline is built and
+	 * means no event has to be written twice to be shown.
+	 *
+	 * Scoped through getCompanyById, so a company the viewer cannot read has no
+	 * readable history either.
+	 */
+	async getCompanyTimeline(
+		id: string,
+		params: { appId: string; viewerRole?: string; viewerUserId?: string; viewerTeamIds?: string[] },
+	) {
+		const company = await CompanyService.getCompanyById(id, params)
+		if (!company) return null
+
+		const scope = contactScope(params)
+
+		const [logs, contacts, deals] = await Promise.all([
+			prisma.company_activity_log.findMany({
+				where: { company_id: id },
+				orderBy: { created_at: 'desc' },
+				take: 100,
+			}),
+			prisma.$queryRaw<Array<{ id: string; name: string | null; created_at: Date | null }>>`
+				SELECT c.id, c.name, c.created_at FROM contacts c
+				WHERE c.company_id = ${id}::uuid AND c.deleted_at IS NULL ${scope}
+			`,
+			prisma.$queryRaw<
+				Array<{
+					id: string
+					name: string
+					stage: string | null
+					status: string
+					value: Prisma.Decimal | null
+					created_at: Date | null
+					stage_changed_at: Date | null
+					closed_at: Date | null
+					contact_name: string | null
+				}>
+			>`
+				SELECT o.id, o.name, o.stage, o.status, o.value, o.created_at,
+					o.stage_changed_at, o.closed_at, c.name AS contact_name
+				FROM opportunities o
+				JOIN contacts c ON c.id = o.contact_id
+				WHERE c.company_id = ${id}::uuid AND c.deleted_at IS NULL ${scope}
+			`,
+		])
+
+		const actorIds = [...new Set(logs.map((row) => row.actor_id).filter(Boolean))] as string[]
+		const actors = actorIds.length
+			? await prisma.users.findMany({
+					where: { id: { in: actorIds } },
+					select: { id: true, name: true, email: true },
+				})
+			: []
+		const actorById = new Map(actors.map((actor) => [actor.id, actor]))
+
+		type Event = {
+			id: string
+			type: string
+			title: string
+			description: string | null
+			tone: 'default' | 'info' | 'success' | 'warning'
+			actorName: string | null
+			at: Date
+		}
+		const events: Event[] = []
+
+		for (const log of logs) {
+			const actor = log.actor_id ? actorById.get(log.actor_id) : null
+			const actorName = actor?.name || actor?.email?.split('@')[0] || null
+			const meta = (log.metadata ?? {}) as Record<string, unknown>
+			const at = log.created_at ?? new Date()
+
+			if (log.action === 'company_updated') {
+				const changes = Array.isArray(meta.changes)
+					? (meta.changes as Array<{ field: string; from: unknown; to: unknown }>)
+					: []
+				events.push({
+					id: log.id,
+					type: 'company_updated',
+					title: 'Data perusahaan diubah',
+					description:
+						changes
+							.map((change) => `${FIELD_LABELS[change.field] || change.field}: ${describe(change.from)} → ${describe(change.to)}`)
+							.join(', ') || null,
+					tone: 'info',
+					actorName,
+					at,
+				})
+			} else if (log.action === 'contact_attached' || log.action === 'contact_detached') {
+				const attached = log.action === 'contact_attached'
+				events.push({
+					id: log.id,
+					type: log.action,
+					title: attached ? 'Kontak ditautkan' : 'Kontak dilepas',
+					description: (meta.contact_name as string) || 'Tanpa nama',
+					tone: attached ? 'success' : 'warning',
+					actorName,
+					at,
+				})
+			}
+		}
+
+		for (const contact of contacts) {
+			if (!contact.created_at) continue
+			events.push({
+				id: `contact-${contact.id}`,
+				type: 'contact_created',
+				title: 'Kontak masuk',
+				description: contact.name || 'Tanpa nama',
+				tone: 'default',
+				actorName: null,
+				at: contact.created_at,
+			})
+		}
+
+		for (const deal of deals) {
+			const amount = Number(deal.value || 0)
+			const suffix = amount ? ` · ${IDR.format(amount)}` : ''
+			if (deal.created_at) {
+				events.push({
+					id: `deal-${deal.id}`,
+					type: 'deal_created',
+					title: 'Deal dibuka',
+					description: `${deal.name}${suffix}`,
+					tone: 'info',
+					actorName: null,
+					at: deal.created_at,
+				})
+			}
+			// Only when it differs from creation: a deal that never moved would
+			// otherwise report being "moved" to the stage it started in.
+			if (
+				deal.stage_changed_at &&
+				deal.created_at &&
+				deal.stage_changed_at.getTime() - deal.created_at.getTime() > 1000 &&
+				deal.status === 'open'
+			) {
+				events.push({
+					id: `deal-stage-${deal.id}`,
+					type: 'deal_stage',
+					title: `Deal pindah ke ${resolveStage(deal.stage).label}`,
+					description: deal.name,
+					tone: 'info',
+					actorName: null,
+					at: deal.stage_changed_at,
+				})
+			}
+			if (deal.closed_at && (deal.status === 'won' || deal.status === 'lost')) {
+				events.push({
+					id: `deal-closed-${deal.id}`,
+					type: deal.status === 'won' ? 'deal_won' : 'deal_lost',
+					title: deal.status === 'won' ? 'Deal menang' : 'Deal kalah',
+					description: `${deal.name}${suffix}`,
+					tone: deal.status === 'won' ? 'success' : 'warning',
+					actorName: null,
+					at: deal.closed_at,
+				})
+			}
+		}
+
+		if (company.created_at) {
+			events.push({
+				id: `company-${company.id}`,
+				type: 'company_created',
+				title: 'Perusahaan terdaftar',
+				description: company.name,
+				tone: 'default',
+				actorName: null,
+				at: company.created_at,
+			})
+		}
+
+		return events
+			.sort((a, b) => b.at.getTime() - a.at.getTime())
+			.slice(0, 100)
+			.map((event) => ({ ...event, at: event.at.toISOString() }))
 	},
 }

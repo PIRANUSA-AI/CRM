@@ -7,7 +7,28 @@ import {
 	customers as customersApi,
 	type CompanyDetail,
 	type Industry,
+	type TimelineEvent,
+	type TimelineTone,
 } from '@/lib/api'
+
+const TONE_DOT: Record<TimelineTone, string> = {
+	default: 'bg-muted-foreground/40',
+	info: 'bg-sky-500',
+	success: 'bg-emerald-500',
+	warning: 'bg-amber-500',
+}
+
+function formatMoment(value: string): string {
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '-'
+	return date.toLocaleString('id-ID', {
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	})
+}
 
 /** The fields the contact picker needs; the customers list carries more. */
 type ContactOption = {
@@ -57,6 +78,7 @@ function CompanyDetailPage() {
 	const [error, setError] = useState<string | null>(null)
 	const [saving, setSaving] = useState(false)
 	const [busyContactId, setBusyContactId] = useState<string | null>(null)
+	const [timeline, setTimeline] = useState<TimelineEvent[]>([])
 
 	// The About panel edits in place: the fields are always inputs, and Simpan
 	// only appears once something differs. A separate edit mode would be a extra
@@ -74,8 +96,18 @@ function CompanyDetailPage() {
 	const [contactQuery, setContactQuery] = useState('')
 	const [contactResults, setContactResults] = useState<ContactOption[]>([])
 
+	const loadTimeline = useCallback((id: string) => {
+		void companiesApi
+			.timeline(id)
+			.then((response) => setTimeline(response.payload || []))
+			.catch(() => undefined)
+	}, [])
+
 	const applyCompany = useCallback((next: CompanyDetail) => {
 		setCompany(next)
+		// Refetched rather than appended to: an edit can produce one entry, none
+		// (when nothing actually differed) or several, and only the server knows.
+		loadTimeline(next.id)
 		setDraft({
 			name: next.name,
 			website: next.website || '',
@@ -84,7 +116,7 @@ function CompanyDetailPage() {
 			industry: next.industry || '',
 			notes: next.notes || '',
 		})
-	}, [])
+	}, [loadTimeline])
 
 	useEffect(() => {
 		let cancelled = false
@@ -566,14 +598,55 @@ function CompanyDetailPage() {
 				)}
 			</section>
 
-			{company.notes ? (
-				<section className="ocm-card overflow-hidden">
-					<div className="ocm-card-header">
-						<span className="ocm-card-title">Catatan</span>
+			<section className="ocm-card overflow-hidden">
+				<div className="ocm-card-header">
+					<span className="ocm-card-title">Aktivitas</span>
+					<div className="text-xs text-muted-foreground">
+						{timeline.length} kejadian terakhir
 					</div>
-					<p className="whitespace-pre-wrap p-4 text-sm text-muted-foreground">{company.notes}</p>
-				</section>
-			) : null}
+				</div>
+				{timeline.length === 0 ? (
+					<div className="p-3">
+						<CrmEmptyState
+							title="Belum ada aktivitas"
+							description="Perubahan data, kontak yang ditautkan, dan pergerakan deal akan muncul di sini."
+						/>
+					</div>
+				) : (
+					<ol className="p-4">
+						{timeline.map((event, index) => (
+							<li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
+								{/* The rail stops at the last item so the feed does not look
+								    like it continues past what was loaded. */}
+								{index < timeline.length - 1 ? (
+									<span className="absolute left-[5px] top-4 h-full w-px bg-border" />
+								) : null}
+								<span
+									className={`relative mt-1.5 size-2.5 shrink-0 rounded-full ${TONE_DOT[event.tone]}`}
+								/>
+								<div className="min-w-0 flex-1">
+									<div className="flex flex-wrap items-baseline justify-between gap-x-3">
+										<p className="text-sm font-semibold">{event.title}</p>
+										<time className="shrink-0 text-[11px] text-muted-foreground">
+											{formatMoment(event.at)}
+										</time>
+									</div>
+									{event.description ? (
+										<p className="mt-0.5 break-words text-xs text-muted-foreground">
+											{event.description}
+										</p>
+									) : null}
+									{event.actorName ? (
+										<p className="mt-0.5 text-[11px] text-muted-foreground">
+											oleh {event.actorName}
+										</p>
+									) : null}
+								</div>
+							</li>
+						))}
+					</ol>
+				)}
+			</section>
 		</main>
 	)
 }

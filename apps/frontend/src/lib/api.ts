@@ -1601,6 +1601,9 @@ export const companies = {
 	industries: (): Promise<{ success: boolean; payload: Industry[] }> =>
 		apiRequest('/companies/meta/industries'),
 
+	timeline: (id: string): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
+		apiRequest(`/companies/${id}/timeline`),
+
 	update: (
 		id: string,
 		data: {
