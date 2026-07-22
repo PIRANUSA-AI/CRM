@@ -4,6 +4,31 @@ import { bearer } from 'better-auth/plugins'
 import { Elysia } from 'elysia'
 import prisma from './lib/prisma'
 
+const WIB_TIME_ZONE = 'Asia/Jakarta'
+
+function formatPrismaDebugValue(value: unknown) {
+	return JSON.stringify(value, (key, candidate) => {
+		if (
+			typeof candidate === 'string' &&
+			(key.endsWith('At') || key.endsWith('_at')) &&
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(candidate)
+		) {
+			const date = new Date(candidate)
+			return `${new Intl.DateTimeFormat('id-ID', {
+				timeZone: WIB_TIME_ZONE,
+				day: '2-digit',
+				month: '2-digit',
+				year: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				hour12: false,
+			}).format(date)} WIB`
+		}
+		return candidate
+	})
+}
+
 const debugPrisma = new Proxy(prisma, {
 	get(target, prop) {
 		const val = (target as any)[prop]
@@ -15,7 +40,7 @@ const debugPrisma = new Proxy(prisma, {
 						return async (...args: any[]) => {
 							console.log(
 								`[PRISMA] ${String(prop)}.${String(p)}`,
-								JSON.stringify(
+								formatPrismaDebugValue(
 									args[0]?.data || args[0]?.where || args[0],
 								)?.substring(0, 500),
 							)

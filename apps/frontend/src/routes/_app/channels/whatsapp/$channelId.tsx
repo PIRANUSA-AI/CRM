@@ -24,6 +24,8 @@ import {
 	normalizeWhatsappProviderLabel,
 } from '@/components/whatsapp/WhatsAppProviderBadge'
 
+const WIB_TIME_ZONE = 'Asia/Jakarta'
+
 type BaileysSessionState = {
 	channelId: string
 	providerChannelKey: string
@@ -121,7 +123,16 @@ function formatOptionalDateTime(value: string | null | undefined) {
 	if (!value) return '-'
 	const parsed = new Date(value)
 	if (Number.isNaN(parsed.getTime())) return value
-	return parsed.toLocaleString()
+	return `${parsed.toLocaleString('id-ID', {
+		timeZone: WIB_TIME_ZONE,
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: false,
+	})} WIB`
 }
 
 export const Route = createFileRoute('/_app/channels/whatsapp/$channelId')({

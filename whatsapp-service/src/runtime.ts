@@ -123,6 +123,7 @@ type RuntimeEntry = {
 	desiredRunning: boolean
 	pairingCodeRequested: boolean
 	restartTimer: ReturnType<typeof setTimeout> | null
+	connectionUpdatePromise: Promise<void>
 	lastHistoryProgress: number
 	restartAttempts: number
 }
@@ -411,6 +412,7 @@ function createEntry(params: {
 		desiredRunning: true,
 		pairingCodeRequested: false,
 		restartTimer: null,
+		connectionUpdatePromise: Promise.resolve(),
 		lastHistoryProgress: -1,
 		restartAttempts: 0,
 	}
@@ -1217,12 +1219,21 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		socket.ev.on('connection.update', (update) => {
-			void this.handleConnectionUpdate({
-				channel,
-				entry,
-				socket,
-				update,
-			})
+			entry.connectionUpdatePromise = entry.connectionUpdatePromise
+				.catch((error) => {
+					console.error('[BaileysService] Connection update queue failed', error)
+				})
+				.then(() =>
+					this.handleConnectionUpdate({
+						channel,
+						entry,
+						socket,
+						update,
+					}),
+				)
+				.catch((error) => {
+					console.error('[BaileysService] Connection update failed', error)
+				})
 		})
 
 		socket.ev.on('messages.upsert', ({ messages, type }) => {
@@ -1301,6 +1312,7 @@ export abstract class BaileysServiceRuntime {
 		const { channel, entry, socket, update } = params
 		const sessionRow = await getSessionByChannelId(channel.id)
 		if (!sessionRow?.id) return
+		if (entry.socket !== socket) return
 
 		if (update.isNewLogin) {
 			console.info('[BaileysService] Pairing accepted', {
@@ -1317,6 +1329,7 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (update.qr) {
+			if (entry.socket !== socket || !entry.desiredRunning) return
 			await updateSessionById(sessionRow.id, {
 				status: 'qr_ready',
 				qr_code: update.qr,
