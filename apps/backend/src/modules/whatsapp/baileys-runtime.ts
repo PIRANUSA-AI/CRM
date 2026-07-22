@@ -775,7 +775,6 @@ export abstract class BaileysRuntimeService {
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			getMessage: async () => undefined,
-			shouldSyncHistoryMessage: () => false,
 		})
 
 		entry.socket = socket

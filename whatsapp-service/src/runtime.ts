@@ -1292,7 +1292,6 @@ export abstract class BaileysServiceRuntime {
 			markOnlineOnConnect: false,
 			agent,
 			getMessage: async () => undefined,
-			shouldSyncHistoryMessage: () => false,
 		})
 		if (entry.socketGeneration !== socketGeneration || !entry.desiredRunning) {
 			socket.end(undefined)
