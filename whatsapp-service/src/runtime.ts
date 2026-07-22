@@ -1251,6 +1251,26 @@ export abstract class BaileysServiceRuntime {
 		})
 	}
 
+	// Beritahu CRM bahwa status sesi berubah (logged_out / connected) supaya CRM
+	// bisa mem-fire notifikasi wa_disconnected ke owner, atau menyelesaikannya saat
+	// reconnect. Fire-and-forget — kegagalan webhook tidak boleh membatalkan flow.
+	private static postSessionStatus(
+		entry: RuntimeEntry,
+		status: string,
+		extra: { reason?: string; lastError?: string | null } = {},
+	) {
+		void postWebhookToCrm(entry, {
+			event: 'session.status',
+			channelKey: entry.providerChannelKey,
+			status,
+			...(extra.reason ? { reason: extra.reason } : {}),
+			...(extra.lastError ? { lastError: extra.lastError } : {}),
+			timestamp: Date.now(),
+		}).catch((error) => {
+			console.warn('[BaileysService] Failed to post session status', error)
+		})
+	}
+
 	private static async handleConnectionUpdate(params: {
 		channel: BaileysChannelRecord
 		entry: RuntimeEntry
@@ -1298,6 +1318,7 @@ export abstract class BaileysServiceRuntime {
 					[channel.id, connectedPhoneNumber],
 				)
 			}
+			this.postSessionStatus(entry, 'connected')
 			return
 		}
 
@@ -1342,38 +1363,36 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
-		if (disconnectCode === DisconnectReason.loggedOut) {
-			// Rate-limited / blocked by WhatsApp — stop auto-retry
+		if (
+			disconnectCode === DisconnectReason.loggedOut ||
+			disconnectCode === DisconnectReason.badSession
+		) {
+			// Perangkat dilepas dari HP (loggedOut / 401) atau auth_state tersimpan
+			// sudah tidak valid (badSession / 415). Dalam kedua kasus auth_state
+			// sudah mati, jadi bersihkan agar connect berikutnya membuat QR baru.
+			// Tulis status 'logged_out' — frontend & CRM mengenali status ini untuk
+			// menampilkan kondisi putus + tombol "Hubungkan ulang". Hentikan
+			// auto-retry supaya WhatsApp tidak banned.
+			const isLoggedOut = disconnectCode === DisconnectReason.loggedOut
+			const loggedOutError = isLoggedOut
+				? 'Perangkat WhatsApp dilepas (logout). Sambungkan ulang dengan scan QR.'
+				: 'Sesi WhatsApp tidak valid. Sambungkan ulang dengan scan QR.'
 			await updateSessionById(sessionRow.id, {
-				status: 'rate_limited',
+				status: 'logged_out',
 				auth_state: null,
 				first_connected_at: null,
-				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: 'WhatsApp menolak koneksi, coba lagi nanti atau pakai proxy',
-				updated_at: new Date(),
-			})
-			entry.desiredRunning = false
-			entry.socket = null
-			return
-		}
-
-		if (disconnectCode === DisconnectReason.badSession) {
-			// Bad session means stored auth_state is stale/invalid (e.g. phone
-			// number changed, WhatsApp Web session expired, creds corrupted).
-			// Clear auth_state so buildAuthState() generates fresh credentials
-			// on next start, which will show a QR code for re-pairing.
-			await updateSessionById(sessionRow.id, {
-				status: 'not_paired',
-				auth_state: null,
-				pairing_code: null,
-				qr_code: null,
-				last_error: null,
+				last_error: loggedOutError,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
 			entry.desiredRunning = false
+			entry.socket = null
+			this.postSessionStatus(entry, 'logged_out', {
+				reason: isLoggedOut ? 'logged_out' : 'bad_session',
+				lastError: loggedOutError,
+			})
 			return
 		}
 
@@ -1387,6 +1406,13 @@ export abstract class BaileysServiceRuntime {
 			last_seen_at: new Date(),
 			updated_at: new Date(),
 		})
+
+		if (!shouldReconnect) {
+			this.postSessionStatus(entry, 'disconnected', {
+				reason: 'unrecoverable',
+				lastError: formattedDisconnectMessage,
+			})
+		}
 
 		if (shouldReconnect) {
 			this.scheduleRestart(entry.channelId)

@@ -515,6 +515,7 @@ function PersonalWhatsappInbox() {
 		socket.on('message:revoked', refresh)
 		socket.on('personal-lead:updated', refresh)
 		socket.on('personal-takeover:updated', loadConversations)
+		socket.on('whatsapp:session_status', loadConversations)
 		return () => {
 			socket.off('message:created', handleMessageCreated)
 			socket.off('message:deleted', refresh)
@@ -525,6 +526,7 @@ function PersonalWhatsappInbox() {
 			socket.off('message:revoked', refresh)
 			socket.off('personal-lead:updated', refresh)
 			socket.off('personal-takeover:updated', loadConversations)
+			socket.off('whatsapp:session_status', loadConversations)
 		}
 	}, [loadConversations, loadLeadLists, loadMessages, markRead, selectedId, selectedPhone])
 

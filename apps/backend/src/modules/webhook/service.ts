@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma'
 import { webhookQueue } from '../../lib/queue'
 import { getRealtimeIO } from '../../lib/realtime'
+import { emitRealtimeToRoom } from '../../lib/realtime-emitter'
 import redis from '../../lib/redis'
 import { ChatbotService } from '../chatbot/service'
 import { ChatbotFollowupService } from '../chatbot/followup-service'
@@ -2134,6 +2135,65 @@ export abstract class WebhookService {
 					stats.errors += 1
 					errors.push(
 						error?.message || 'Failed to process Baileys status update',
+					)
+				}
+			} else if (event === 'session.status') {
+				// Microservice Baileys melaporkan perubahan status koneksi (logged_out,
+				// disconnected, connected, ...). Sinkronkan ke CRM: fire/resolve notifikasi
+				// wa_disconnected ke owner sesi, dan emit realtime agar frontend me-refresh
+				// status koneksi WhatsApp tanpa menunggu polling.
+				try {
+					const status = String(asString(payload?.status) || '').toLowerCase()
+					const lastError =
+						asString(payload?.lastError) ||
+						asString(payload?.last_error) ||
+						null
+					const session = await prisma.baileys_sessions.findUnique({
+						where: { channel_id: resolvedChannel.id },
+						select: { id: true, owner_user_id: true, channel_id: true },
+					})
+					const ownerUserId = session?.owner_user_id || null
+					const dedupKey = `wa_disconnected:${session?.channel_id || resolvedChannel.id}`
+					const isTerminal = [
+						'logged_out',
+						'disconnected',
+						'error',
+						'rate_limited',
+					].includes(status)
+
+					if (status === 'connected') {
+						if (ownerUserId) {
+							await NotificationService.resolve(
+								resolvedChannel.app_id,
+								ownerUserId,
+								dedupKey,
+							)
+						}
+					} else if (isTerminal && ownerUserId) {
+						await NotificationService.notify({
+							appId: resolvedChannel.app_id,
+							userId: ownerUserId,
+							type: 'wa_disconnected',
+							title: 'WhatsApp terputus',
+							body:
+								lastError ||
+								'Nomor WhatsApp kamu terputus. Sambungkan ulang agar AI dan balasan tetap berjalan.',
+							dedupKey,
+						})
+					}
+
+					// Emit realtime baik saat putus maupun tersambung, supaya halaman
+					// chat/connect/channels bisa me-refresh status koneksi seketika.
+					emitRealtimeToRoom(`app:${resolvedChannel.app_id}`, 'whatsapp:session_status', {
+						channelId: resolvedChannel.id,
+						status,
+						ownerUserId,
+					})
+					stats.statusesUpdated += 1
+				} catch (error: any) {
+					stats.errors += 1
+					errors.push(
+						error?.message || 'Failed to process Baileys session status',
 					)
 				}
 			}

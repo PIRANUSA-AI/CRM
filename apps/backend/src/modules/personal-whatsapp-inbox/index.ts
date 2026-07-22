@@ -143,6 +143,12 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			if (messages.length) getRealtimeIO()?.to(`app:${channel.app_id}`).emit('message:revoked', { messageIds: messages.map((message) => message.id) })
 			return { success: true, updated: messages.length }
 		}
+		if (String(payload?.event || '') === 'session.status') {
+			// Microservice Baileys melaporkan perubahan status koneksi (logout/
+			// reconnect). Delegasikan ke processWhatsAppPayload yang mem-fire
+			// notifikasi wa_disconnected ke owner + emit realtime + mencatat audit.
+			return WebhookService.processWhatsAppPayload(payload)
+		}
 		const result = await WebhookService.handleWhatsAppInbound(payload)
 		if (!result.success) { set.status = 422; return result }
 		const inboundPhone = String(payload?.contact?.waId || payload?.contact?.wa_id || payload?.message?.from || '').replace(/\D/g, '')
