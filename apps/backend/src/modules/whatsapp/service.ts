@@ -24,8 +24,6 @@ type BaileysSessionSummaryRecord = {
 	last_error: string | null
 	last_connected_at: Date | null
 	last_seen_at: Date | null
-	pairing_code: string | null
-	qr_code: string | null
 }
 
 function getExtensionFromMimeType(mimeType: string): string {
@@ -156,8 +154,6 @@ function generateBaileysSessionId() {
 	return crypto.randomUUID()
 }
 
-const BAILEYS_QR_TTL_MS = 60_000
-
 function normalizeChannelRecord<T extends Record<string, unknown>>(channel: T) {
 	const provider = normalizeWhatsappProvider(channel.provider)
 	const metadata = asRecord(channel.extended_metadata)
@@ -189,8 +185,13 @@ function buildBaileysSessionSummary(
 		}
 	}
 
+	const persistedStatus = session?.status || 'pending'
 	const fallbackStatus =
-		channelIsActive === false ? 'disabled' : session?.status || 'pending'
+		channelIsActive === false
+			? 'disabled'
+			: ['qr_ready', 'pairing_code_ready'].includes(persistedStatus)
+				? 'not_paired'
+				: persistedStatus
 
 	return {
 		baileys_session_status: fallbackStatus,
@@ -199,10 +200,8 @@ function buildBaileysSessionSummary(
 		baileys_last_connected_at:
 			session?.last_connected_at?.toISOString() || null,
 		baileys_last_seen_at: session?.last_seen_at?.toISOString() || null,
-		baileys_pairing_code_ready:
-			Boolean(session?.pairing_code) || fallbackStatus === 'pairing_code_ready',
-		baileys_qr_ready:
-			Boolean(session?.qr_code) || fallbackStatus === 'qr_ready',
+		baileys_pairing_code_ready: false,
+		baileys_qr_ready: false,
 	}
 }
 
@@ -237,8 +236,6 @@ async function attachBaileysSessionSummaries<T extends Record<string, unknown>>(
 			last_error: true,
 			last_connected_at: true,
 			last_seen_at: true,
-			pairing_code: true,
-			qr_code: true,
 		},
 	})
 
@@ -677,28 +674,20 @@ export abstract class WhatsAppService {
 			where: { channel_id: channelId },
 		})
 		if (!session) return null
-		const qrAgeMs = session.last_seen_at
-			? Date.now() - new Date(session.last_seen_at).getTime()
-			: 0
-		const qrExpired =
-			session.status === 'qr_ready' &&
-			Boolean(session.qr_code) &&
-			Number.isFinite(qrAgeMs) &&
-			qrAgeMs > BAILEYS_QR_TTL_MS
 
 		return {
 			channelId,
 			providerChannelKey: session.provider_channel_key,
 			phoneNumber: session.phone_number || null,
-			status: qrExpired ? 'not_paired' : session.status || 'pending',
-			pairingCode: session.pairing_code || null,
-			qrCode: qrExpired ? null : session.qr_code || null,
-			lastError: qrExpired
+			status: session.status === 'qr_ready' ? 'not_paired' : session.status || 'pending',
+			pairingCode: null,
+			qrCode: null,
+			lastError: session.status === 'qr_ready'
 				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
 				: session.last_error || null,
 			lastConnectedAt: session.last_connected_at?.toISOString() || null,
 			lastSeenAt: session.last_seen_at?.toISOString() || null,
-			isConnected: !qrExpired && session.status === 'connected',
+			isConnected: session.status === 'connected',
 			hasConnectedBefore: Boolean(session.first_connected_at || session.last_connected_at),
 		}
 	}
@@ -716,25 +705,17 @@ export abstract class WhatsAppService {
 		)
 		const session = rows[0]
 		if (!session) return null
-		const qrAgeMs = session.last_seen_at
-			? Date.now() - new Date(session.last_seen_at).getTime()
-			: 0
-		const qrExpired =
-			session.status === 'qr_ready' &&
-			Boolean(session.qr_code) &&
-			Number.isFinite(qrAgeMs) &&
-			qrAgeMs > BAILEYS_QR_TTL_MS
 		return {
 			channelId: session.channel_id,
 			phoneNumber: session.phone_number || null,
-			status: qrExpired ? 'not_paired' : session.status || 'pending',
-			pairingCode: session.pairing_code || null,
-			qrCode: qrExpired ? null : session.qr_code || null,
-			lastError: qrExpired
+			status: session.status === 'qr_ready' ? 'not_paired' : session.status || 'pending',
+			pairingCode: null,
+			qrCode: null,
+			lastError: session.status === 'qr_ready'
 				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
 				: session.last_error || null,
 			lastConnectedAt: session.last_connected_at?.toISOString?.() || session.last_connected_at || null,
-			isConnected: !qrExpired && session.status === 'connected',
+			isConnected: session.status === 'connected',
 			requiresPairing: session.status !== 'connected',
 			hasConnectedBefore: Boolean(session.first_connected_at || session.last_connected_at),
 		}

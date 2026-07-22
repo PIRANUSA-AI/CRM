@@ -122,6 +122,7 @@ type RuntimeEntry = {
 	starting: boolean
 	desiredRunning: boolean
 	pairingCodeRequested: boolean
+	qrCode: string | null
 	restartTimer: ReturnType<typeof setTimeout> | null
 	connectionUpdatePromise: Promise<void>
 	lastHistoryProgress: number
@@ -412,6 +413,7 @@ function createEntry(params: {
 		starting: false,
 		desiredRunning: true,
 		pairingCodeRequested: false,
+		qrCode: null,
 		restartTimer: null,
 		connectionUpdatePromise: Promise.resolve(),
 		lastHistoryProgress: -1,
@@ -840,6 +842,7 @@ export abstract class BaileysServiceRuntime {
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
+			entry.qrCode = null
 			entry.restartAttempts = 0
 			if (currentSocket) currentSocket.end(undefined)
 		}
@@ -871,6 +874,7 @@ export abstract class BaileysServiceRuntime {
 
 		entry.desiredRunning = false
 		entry.pairingCodeRequested = false
+		entry.qrCode = null
 		entry.restartAttempts = 0
 		this.clearRestartTimer(entry)
 
@@ -896,15 +900,17 @@ export abstract class BaileysServiceRuntime {
 		if (!session) {
 			throw new Error('Baileys session not found')
 		}
+		const entry = runtimeEntries.get(channelId)
+		const qrCode = entry?.qrCode || null
 		const qrAgeMs = session.last_seen_at
 			? Date.now() - new Date(session.last_seen_at).getTime()
 			: 0
 		const qrExpired =
-			session.status === 'qr_ready' &&
-			Boolean(session.qr_code) &&
+			Boolean(qrCode) &&
 			Number.isFinite(qrAgeMs) &&
 			qrAgeMs > QR_CODE_TTL_MS
-		if (qrExpired) {
+		if (qrExpired && entry) {
+			entry.qrCode = null
 			void updateSessionById(session.id, {
 				status: 'not_paired',
 				pairing_code: null,
@@ -915,20 +921,25 @@ export abstract class BaileysServiceRuntime {
 				console.warn('[BaileysService] Failed clearing expired QR code', error)
 			})
 		}
+		const hasQrCode = Boolean(qrCode) && !qrExpired
+		const status =
+			session.status === 'qr_ready' && !hasQrCode
+				? 'not_paired'
+				: session.status || 'pending'
 
 		return {
 			channelId,
 			providerChannelKey: session.provider_channel_key,
 			phoneNumber: session.phone_number || null,
-			status: qrExpired ? 'not_paired' : session.status || 'pending',
-			pairingCode: session.pairing_code || null,
-			qrCode: qrExpired ? null : session.qr_code || null,
-			lastError: qrExpired
+			status,
+			pairingCode: null,
+			qrCode: hasQrCode ? qrCode : null,
+			lastError: !hasQrCode && session.status === 'qr_ready'
 				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
 				: session.last_error || null,
 			lastConnectedAt: toIsoString(session.last_connected_at),
 			lastSeenAt: toIsoString(session.last_seen_at),
-			isConnected: !qrExpired && session.status === 'connected',
+			isConnected: session.status === 'connected',
 		}
 	}
 
@@ -1207,6 +1218,7 @@ export abstract class BaileysServiceRuntime {
 			last_error: null,
 			updated_at: new Date(),
 		})
+		entry.qrCode = null
 
 		const agent = BAILEYS_SOCKS_PROXY ? new SocksProxyAgent(BAILEYS_SOCKS_PROXY) : undefined
 		console.info('[BaileysService] Opening socket', {
@@ -1337,6 +1349,7 @@ export abstract class BaileysServiceRuntime {
 		if (entry.socket !== socket) return
 
 		if (update.isNewLogin) {
+			entry.qrCode = null
 			console.info('[BaileysService] Pairing accepted', {
 				channelId: channel.id,
 			})
@@ -1353,9 +1366,10 @@ export abstract class BaileysServiceRuntime {
 		if (update.qr) {
 			if (update.isNewLogin) return
 			if (entry.socket !== socket || !entry.desiredRunning) return
+			entry.qrCode = update.qr
 			await updateSessionById(sessionRow.id, {
 				status: 'qr_ready',
-				qr_code: update.qr,
+				qr_code: null,
 				last_error: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
@@ -1364,6 +1378,7 @@ export abstract class BaileysServiceRuntime {
 
 		if (update.connection === 'open') {
 			entry.pairingCodeRequested = false
+			entry.qrCode = null
 			entry.restartAttempts = 0
 			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
@@ -1407,6 +1422,7 @@ export abstract class BaileysServiceRuntime {
 
 		entry.socket = null
 		entry.pairingCodeRequested = false
+		entry.qrCode = null
 
 		if (!entry.desiredRunning) {
 			await updateSessionById(sessionRow.id, {

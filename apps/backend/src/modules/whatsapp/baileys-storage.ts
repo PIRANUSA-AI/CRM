@@ -107,6 +107,16 @@ export async function ensureBaileysSessionStorage() {
 				}
 
 				await repairBaileysSessionsTableDefaults()
+				await prisma.$executeRawUnsafe(`
+					UPDATE "baileys_sessions"
+					SET "qr_code" = NULL,
+						"pairing_code" = NULL,
+						"status" = CASE WHEN "status" = 'qr_ready' THEN 'not_paired' ELSE "status" END,
+						"updated_at" = NOW()
+					WHERE "qr_code" IS NOT NULL
+						OR "pairing_code" IS NOT NULL
+						OR "status" = 'qr_ready'
+				`)
 				storageReady = true
 			} catch (error) {
 				console.error(

@@ -76,6 +76,16 @@ export async function ensureBaileysSessionStorage() {
 			CREATE INDEX IF NOT EXISTS idx_baileys_sessions_status
 			ON public.baileys_sessions(status)
 		`)
+		await execute(`
+			UPDATE public.baileys_sessions
+			SET qr_code = NULL,
+				pairing_code = NULL,
+				status = CASE WHEN status = 'qr_ready' THEN 'not_paired' ELSE status END,
+				updated_at = now()
+			WHERE qr_code IS NOT NULL
+				OR pairing_code IS NOT NULL
+				OR status = 'qr_ready'
+		`)
 	})().catch((error) => {
 		ensureStoragePromise = null
 		throw error
