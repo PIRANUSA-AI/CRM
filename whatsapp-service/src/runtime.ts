@@ -151,6 +151,7 @@ const HISTORY_PROGRESS_STEP = Math.max(
 const BASE_RESTART_DELAY_MS = 30_000
 const MAX_RESTART_DELAY_MS = 60_000
 const MAX_RESTART_ATTEMPTS = 10
+const QR_CODE_TTL_MS = 60_000
 
 function reportHistoryProgress(
 	entry: RuntimeEntry,
@@ -895,18 +896,39 @@ export abstract class BaileysServiceRuntime {
 		if (!session) {
 			throw new Error('Baileys session not found')
 		}
+		const qrAgeMs = session.last_seen_at
+			? Date.now() - new Date(session.last_seen_at).getTime()
+			: 0
+		const qrExpired =
+			session.status === 'qr_ready' &&
+			Boolean(session.qr_code) &&
+			Number.isFinite(qrAgeMs) &&
+			qrAgeMs > QR_CODE_TTL_MS
+		if (qrExpired) {
+			void updateSessionById(session.id, {
+				status: 'not_paired',
+				pairing_code: null,
+				qr_code: null,
+				last_error: 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru',
+				updated_at: new Date(),
+			}).catch((error) => {
+				console.warn('[BaileysService] Failed clearing expired QR code', error)
+			})
+		}
 
 		return {
 			channelId,
 			providerChannelKey: session.provider_channel_key,
 			phoneNumber: session.phone_number || null,
-			status: session.status || 'pending',
+			status: qrExpired ? 'not_paired' : session.status || 'pending',
 			pairingCode: session.pairing_code || null,
-			qrCode: session.qr_code || null,
-			lastError: session.last_error || null,
+			qrCode: qrExpired ? null : session.qr_code || null,
+			lastError: qrExpired
+				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
+				: session.last_error || null,
 			lastConnectedAt: toIsoString(session.last_connected_at),
 			lastSeenAt: toIsoString(session.last_seen_at),
-			isConnected: session.status === 'connected',
+			isConnected: !qrExpired && session.status === 'connected',
 		}
 	}
 
@@ -1329,6 +1351,7 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (update.qr) {
+			if (update.isNewLogin) return
 			if (entry.socket !== socket || !entry.desiredRunning) return
 			await updateSessionById(sessionRow.id, {
 				status: 'qr_ready',
