@@ -748,21 +748,11 @@ export abstract class WhatsAppService {
 
 		let existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
 
-		// Update phone number & pairing mode kalo user punya nomor valid
+		// Update phone number kalo user punya nomor valid
 		if (phoneNumber && existing?.channelId) {
-			const channelRow = await prisma.whatsapp_channels.findUnique({
-				where: { id: existing.channelId },
-				select: { extended_metadata: true },
-			})
 			await prisma.whatsapp_channels.update({
 				where: { id: existing.channelId },
-				data: {
-					phone_number: phoneNumber,
-					extended_metadata: {
-						...((channelRow?.extended_metadata || {}) as Record<string, unknown>),
-						baileys_link_mode: 'pairing_code',
-					},
-				},
+				data: { phone_number: phoneNumber },
 			})
 			await prisma.baileys_sessions.update({
 				where: { channel_id: existing.channelId },
@@ -792,13 +782,7 @@ export abstract class WhatsAppService {
 		if (phoneNumber) {
 			await prisma.whatsapp_channels.update({
 				where: { id: created.channel.id },
-				data: {
-					phone_number: phoneNumber,
-					extended_metadata: {
-						...(created.channel as any).extended_metadata || {},
-						baileys_link_mode: 'pairing_code',
-					},
-				},
+				data: { phone_number: phoneNumber },
 			})
 		}
 		return this.getPersonalBaileysConnection(params.appId, params.userId)

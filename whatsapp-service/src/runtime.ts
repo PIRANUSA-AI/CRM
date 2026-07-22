@@ -1,10 +1,10 @@
 import { PutObjectCommand } from '@aws-sdk/client-s3'
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import makeWASocket, {
 	BufferJSON,
 	Browsers,
 	DisconnectReason,
 	downloadMediaMessage,
+	fetchLatestBaileysVersion,
 	getContentType,
 	initAuthCreds,
 	isJidGroup,
@@ -18,14 +18,8 @@ import makeWASocket, {
 	type WASocket,
 } from '@whiskeysockets/baileys'
 
-
 import { SocksProxyAgent } from 'socks-proxy-agent'
-import {
-	BAILEYS_CHANNEL_SYNC_INTERVAL_MS,
-	BAILEYS_LINK_MODE,
-	BAILEYS_SOCKS_PROXY,
-	CRM_BAILEYS_WEBHOOK_URL,
-} from './config'
+import { BAILEYS_SOCKS_PROXY, CRM_BAILEYS_WEBHOOK_URL } from './config'
 import {
 	createUuid,
 	ensureBaileysSessionStorage,
@@ -79,40 +73,6 @@ type PersistedAuthEnvelope = {
 	keys?: Record<string, Record<string, unknown | null>>
 }
 
-type EncryptedAuthEnvelope = { encrypted: true; iv: string; tag: string; data: string }
-
-function authEncryptionKey() {
-	const secret = String(process.env.BAILEYS_AUTH_ENCRYPTION_KEY || '').trim()
-	if (!secret) {
-		if (process.env.NODE_ENV === 'production') {
-			throw new Error('BAILEYS_AUTH_ENCRYPTION_KEY is required in production')
-		}
-		return null
-	}
-	return createHash('sha256').update(secret).digest()
-}
-
-function encryptAuthState(value: unknown): unknown {
-	const key = authEncryptionKey()
-	if (!key) return serializeBufferJson(value)
-	const iv = randomBytes(12)
-	const cipher = createCipheriv('aes-256-gcm', key, iv)
-	const plaintext = Buffer.from(JSON.stringify(value, BufferJSON.replacer), 'utf8')
-	const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
-	return { encrypted: true, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') } satisfies EncryptedAuthEnvelope
-}
-
-function decryptAuthState<T>(value: unknown): T {
-	const record = asRecord(value)
-	if (record.encrypted !== true) return deserializeBufferJson<T>(value)
-	const key = authEncryptionKey()
-	if (!key) throw new Error('Encrypted Baileys session cannot be read without BAILEYS_AUTH_ENCRYPTION_KEY')
-	const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(String(record.iv), 'base64'))
-	decipher.setAuthTag(Buffer.from(String(record.tag), 'base64'))
-	const plaintext = Buffer.concat([decipher.update(Buffer.from(String(record.data), 'base64')), decipher.final()]).toString('utf8')
-	return JSON.parse(plaintext, BufferJSON.reviver) as T
-}
-
 type RuntimeEntry = {
 	channelId: string
 	providerChannelKey: string
@@ -121,7 +81,6 @@ type RuntimeEntry = {
 	socket: WASocket | null
 	starting: boolean
 	desiredRunning: boolean
-	pairingCodeRequested: boolean
 	qrCode: string | null
 	socketGeneration: number
 	restartTimer: ReturnType<typeof setTimeout> | null
@@ -129,8 +88,6 @@ type RuntimeEntry = {
 	pendingSaveCreds: Promise<void>
 	lastHistoryProgress: number
 	restartAttempts: number
-	pairingAcceptedAt: number | null
-	pairingRestartAttempts: number
 }
 
 export type BaileysSessionSnapshot = {
@@ -153,10 +110,8 @@ const HISTORY_PROGRESS_STEP = Math.max(
 	1,
 	Math.min(100, Number(process.env.WHATSAPP_SYNC_PROGRESS_STEP || 10)),
 )
-const BASE_RESTART_DELAY_MS = 30_000
-const MAX_RESTART_DELAY_MS = 60_000
 const MAX_RESTART_ATTEMPTS = 10
-const QR_CODE_TTL_MS = 60_000
+const RESTART_DELAY_MS = 5_000
 
 function reportHistoryProgress(
 	entry: RuntimeEntry,
@@ -180,7 +135,7 @@ function reportHistoryProgress(
 
 	entry.lastHistoryProgress = bucket
 	console.log(
-		`[WhatsApp Sync] ${bucket}%${messageCount > 0 ? ` · ${messageCount} pesan pada batch ini` : ''}${isLatest ? ' · selesai' : ''}`,
+		`[WhatsApp Sync] ${bucket}%${messageCount > 0 ? ` - ${messageCount} pesan pada batch ini` : ''}${isLatest ? ' - selesai' : ''}`,
 	)
 }
 
@@ -195,21 +150,27 @@ function rememberMessage(message: WAMessage) {
 }
 
 const baileysLogger = {
-	level: 'warn',
+	level: 'info',
 	child() {
 		return baileysLogger
 	},
-	trace() {},
-	debug() {},
-	info() {},
+	trace(...args: unknown[]) {
+		console.debug('[Baileys]', ...args)
+	},
+	debug(...args: unknown[]) {
+		console.debug('[Baileys]', ...args)
+	},
+	info(...args: unknown[]) {
+		console.info('[Baileys]', ...args)
+	},
 	warn(...args: unknown[]) {
-		console.warn('[BaileysService]', ...args)
+		console.warn('[Baileys]', ...args)
 	},
 	error(...args: unknown[]) {
-		console.error('[BaileysService]', ...args)
+		console.error('[Baileys]', ...args)
 	},
 	fatal(...args: unknown[]) {
-		console.error('[BaileysService]', ...args)
+		console.error('[Baileys]', ...args)
 	},
 } as const
 
@@ -239,18 +200,6 @@ function normalizeProviderChannelKey(metadata: unknown): string | null {
 		asString(record.providerChannelKey) ||
 		null
 	)
-}
-
-function shouldUsePairingCode(channel: BaileysChannelRecord) {
-	const metadata = asRecord(channel.extended_metadata)
-	const configuredMode =
-		asString(metadata.baileys_link_mode) ||
-		asString(metadata.link_mode) ||
-		BAILEYS_LINK_MODE
-
-	return String(configuredMode || '')
-		.trim()
-		.toLowerCase() === 'pairing_code'
 }
 
 function serializeBufferJson(value: unknown) {
@@ -416,7 +365,6 @@ function createEntry(params: {
 		socket: null,
 		starting: false,
 		desiredRunning: true,
-		pairingCodeRequested: false,
 		qrCode: null,
 		socketGeneration: 0,
 		restartTimer: null,
@@ -424,8 +372,6 @@ function createEntry(params: {
 		pendingSaveCreds: Promise.resolve(),
 		lastHistoryProgress: -1,
 		restartAttempts: 0,
-		pairingAcceptedAt: null,
-		pairingRestartAttempts: 0,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -613,7 +559,7 @@ async function upsertSessionRecord(channel: BaileysChannelRecord) {
 }
 
 function buildAuthState(sessionRow: BaileysSessionRow) {
-	const restored = decryptAuthState<PersistedAuthEnvelope>(
+	const restored = deserializeBufferJson<PersistedAuthEnvelope>(
 		sessionRow.auth_state,
 	)
 	const persisted: PersistedAuthEnvelope = {
@@ -629,13 +575,13 @@ function buildAuthState(sessionRow: BaileysSessionRow) {
 
 	const persist = async () => {
 		await updateSessionById(sessionRow.id, {
-			auth_state: encryptAuthState(persisted),
+			auth_state: serializeBufferJson(persisted),
 			updated_at: new Date(),
 			last_seen_at: new Date(),
 		})
 	}
 
-		const state: AuthenticationState = {
+	const state: AuthenticationState = {
 		creds: persisted.creds as AuthenticationState['creds'],
 		keys: {
 			get: async (type, ids) => {
@@ -735,29 +681,11 @@ async function postWebhookToCrm(entry: RuntimeEntry, payload: unknown) {
 }
 
 export abstract class BaileysServiceRuntime {
-	private static bootstrapPromise: Promise<void> | null = null
 	private static syncTimer: ReturnType<typeof setInterval> | null = null
 
 	static async bootstrap() {
-		if (this.bootstrapPromise) return this.bootstrapPromise
-
-		this.bootstrapPromise = (async () => {
-			await ensureBaileysSessionStorage()
-			await this.syncActiveChannels()
-
-			if (!this.syncTimer) {
-				this.syncTimer = setInterval(() => {
-					void this.syncActiveChannels().catch((error) => {
-						console.error('[BaileysService] Channel sync failed', error)
-					})
-				}, BAILEYS_CHANNEL_SYNC_INTERVAL_MS)
-			}
-		})().catch((error) => {
-			this.bootstrapPromise = null
-			throw error
-		})
-
-		return this.bootstrapPromise
+		await ensureBaileysSessionStorage()
+		await this.syncActiveChannels()
 	}
 
 	static async syncActiveChannels() {
@@ -769,18 +697,13 @@ export abstract class BaileysServiceRuntime {
 			activeIds.add(channel.id)
 		}
 
-		// Keep a session that was explicitly started by a user alive while it is
-		// waiting for pairing. It is intentionally excluded from the bootstrap
-		// query above so an unpaired channel never starts by itself after restart.
 		for (const [channelId, entry] of runtimeEntries) {
 			if (entry.desiredRunning) activeIds.add(channelId)
 		}
 
 		await Promise.allSettled(
 			channels.map((channel: BaileysChannelRecord) =>
-				this.ensureLoadedChannel(channel, {
-					waitForReadyMs: 0,
-				}),
+				this.ensureLoadedChannel(channel, { waitForReadyMs: 0 }),
 			),
 		)
 
@@ -797,7 +720,6 @@ export abstract class BaileysServiceRuntime {
 			forceRestart?: boolean
 			waitForReadyMs?: number
 			allowUnpaired?: boolean
-			resetPairingAttempt?: boolean
 		},
 	) {
 		await ensureBaileysSessionStorage()
@@ -814,7 +736,6 @@ export abstract class BaileysServiceRuntime {
 			forceRestart?: boolean
 			waitForReadyMs?: number
 			allowUnpaired?: boolean
-			resetPairingAttempt?: boolean
 		},
 	) {
 		const providerChannelKey = normalizeProviderChannelKey(channel.extended_metadata)
@@ -851,21 +772,24 @@ export abstract class BaileysServiceRuntime {
 			entry.socketGeneration += 1
 			const currentSocket = entry.socket
 			entry.socket = null
-			entry.pairingCodeRequested = false
 			entry.qrCode = null
-			entry.restartAttempts = 0
-			if (options.resetPairingAttempt !== false) {
-				entry.pairingAcceptedAt = null
-				entry.pairingRestartAttempts = 0
-			}
 			if (currentSocket) currentSocket.end(undefined)
 		}
+
+		if (!options?.forceRestart && entry.restartTimer) {
+			return this.getSessionSnapshot(channel.id)
+		}
+
+		await entry.pendingSaveCreds
 
 		if (!entry.socket && !entry.starting) {
 			const socketGeneration = ++entry.socketGeneration
 			entry.starting = true
-			void this.startSocket(channel, entry, socketGeneration).finally(() => {
+			const minStartGuard = setTimeout(() => {
 				entry.starting = false
+			}, 5_000)
+			void this.startSocket(channel, entry, socketGeneration).finally(() => {
+				clearTimeout(minStartGuard)
 			})
 		}
 
@@ -888,11 +812,8 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		entry.desiredRunning = false
-		entry.pairingCodeRequested = false
 		entry.qrCode = null
 		entry.restartAttempts = 0
-		entry.pairingAcceptedAt = null
-		entry.pairingRestartAttempts = 0
 		this.clearRestartTimer(entry)
 
 		const currentSocket = entry.socket
@@ -918,11 +839,8 @@ export abstract class BaileysServiceRuntime {
 		if (entry) {
 			entry.socketGeneration += 1
 			entry.desiredRunning = false
-			entry.pairingCodeRequested = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
-			entry.pairingAcceptedAt = null
-			entry.pairingRestartAttempts = 0
 			this.clearRestartTimer(entry)
 			const currentSocket = entry.socket
 			entry.socket = null
@@ -955,41 +873,15 @@ export abstract class BaileysServiceRuntime {
 		}
 		const entry = runtimeEntries.get(channelId)
 		const qrCode = entry?.qrCode || null
-		const qrAgeMs = session.last_seen_at
-			? Date.now() - new Date(session.last_seen_at).getTime()
-			: 0
-		const qrExpired =
-			Boolean(qrCode) &&
-			Number.isFinite(qrAgeMs) &&
-			qrAgeMs > QR_CODE_TTL_MS
-		if (qrExpired && entry) {
-			entry.qrCode = null
-			void updateSessionById(session.id, {
-				status: 'not_paired',
-				pairing_code: null,
-				qr_code: null,
-				last_error: 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru',
-				updated_at: new Date(),
-			}).catch((error) => {
-				console.warn('[BaileysService] Failed clearing expired QR code', error)
-			})
-		}
-		const hasQrCode = Boolean(qrCode) && !qrExpired
-		const status =
-			session.status === 'qr_ready' && !hasQrCode
-				? 'not_paired'
-				: session.status || 'pending'
 
 		return {
 			channelId,
 			providerChannelKey: session.provider_channel_key,
 			phoneNumber: session.phone_number || null,
-			status,
+			status: session.status || 'pending',
 			pairingCode: null,
-			qrCode: hasQrCode ? qrCode : null,
-			lastError: !hasQrCode && session.status === 'qr_ready'
-				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
-				: session.last_error || null,
+			qrCode,
+			lastError: session.last_error || null,
 			lastConnectedAt: toIsoString(session.last_connected_at),
 			lastSeenAt: toIsoString(session.last_seen_at),
 			isConnected: session.status === 'connected',
@@ -1267,18 +1159,18 @@ export abstract class BaileysServiceRuntime {
 
 		await updateSessionById(sessionRow.id, {
 			status: 'connecting',
-			pairing_code: null,
 			qr_code: null,
 			last_error: null,
 			updated_at: new Date(),
 		})
 		entry.qrCode = null
 
-		const agent = BAILEYS_SOCKS_PROXY ? new SocksProxyAgent(BAILEYS_SOCKS_PROXY) : undefined
+		const agent = BAILEYS_SOCKS_PROXY
+			? new SocksProxyAgent(BAILEYS_SOCKS_PROXY)
+			: undefined
 		console.info('[BaileysService] Opening socket', {
 			channelId: channel.id,
-			transport: agent ? 'socks5' : 'direct',
-			runtime: `${process.release?.name || 'node'} ${process.version}`,
+			transport: BAILEYS_SOCKS_PROXY ? 'socks5' : 'direct',
 		})
 		const socket = makeWASocket({
 			auth: {
@@ -1286,10 +1178,9 @@ export abstract class BaileysServiceRuntime {
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.appropriate('Chrome'),
-			version: [2, 3000, 101345],
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
+			browser: Browsers.macOS('Chrome'),
 			agent,
 			getMessage: async () => undefined,
 		})
@@ -1300,14 +1191,16 @@ export abstract class BaileysServiceRuntime {
 
 		entry.socket = socket
 		entry.desiredRunning = true
-		entry.pairingCodeRequested = false
 
 		const saveCreds = () => auth.saveCreds()
-		void saveCreds().catch((error) => {
-			console.error('[BaileysService] Failed to persist initial auth creds', error)
-		})
+		entry.pendingSaveCreds = entry.pendingSaveCreds
+			.then(() => saveCreds())
+			.catch((error) => {
+				console.error('[BaileysService] Failed to persist initial auth creds', error)
+			})
 
-		socket.ev.on('creds.update', () => {
+		socket.ev.on('creds.update', (updatedCreds) => {
+			if (updatedCreds) Object.assign(auth.state.creds, updatedCreds)
 			entry.pendingSaveCreds = entry.pendingSaveCreds
 				.then(() => saveCreds())
 				.catch((error) => {
@@ -1415,17 +1308,9 @@ export abstract class BaileysServiceRuntime {
 		if (entry.socket !== socket) return
 
 		if (update.isNewLogin) {
-			const firstPairingAccepted = entry.pairingAcceptedAt === null
 			entry.qrCode = null
-			if (firstPairingAccepted) {
-				entry.pairingAcceptedAt = Date.now()
-				entry.pairingRestartAttempts = 0
-			}
 			console.info('[BaileysService] Pairing accepted', {
 				channelId: channel.id,
-				stage: 'post_pairing_restart',
-				firstPairingAccepted,
-				pairingRestartAttempts: entry.pairingRestartAttempts,
 			})
 			await updateSessionById(sessionRow.id, {
 				status: 'restarting',
@@ -1451,14 +1336,10 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (update.connection === 'open') {
-			entry.pairingCodeRequested = false
+			entry.starting = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
-			if (entry.pairingAcceptedAt === null) {
-				entry.pairingRestartAttempts = 0
-			}
-			entry.pairingAcceptedAt = null
-			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
+			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]?.split(':')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
 				pairing_code: null,
@@ -1483,6 +1364,7 @@ export abstract class BaileysServiceRuntime {
 
 		if (update.connection !== 'close') return
 		if (entry.socket && entry.socket !== socket) return
+		if (!entry.socket && entry.restartTimer) return
 
 		const disconnectCode = extractDisconnectCode(update.lastDisconnect?.error)
 		const disconnectMessage = buildDisconnectMessage(update.lastDisconnect?.error)
@@ -1496,12 +1378,10 @@ export abstract class BaileysServiceRuntime {
 			providerChannelKey: entry.providerChannelKey,
 			disconnectCode,
 			disconnectMessage,
-			stage: entry.pairingAcceptedAt ? 'post_pairing_restart' : 'connection',
-			pairingRestartAttempts: entry.pairingRestartAttempts,
 		})
 
 		entry.socket = null
-		entry.pairingCodeRequested = false
+		entry.starting = false
 		entry.qrCode = null
 
 		if (!entry.desiredRunning) {
@@ -1514,55 +1394,12 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
-		if (disconnectCode === DisconnectReason.restartRequired) {
-			if (entry.pairingAcceptedAt !== null) {
-				if (entry.pairingRestartAttempts < 1) {
-					entry.pairingRestartAttempts += 1
-					await updateSessionById(sessionRow.id, {
-						status: 'restarting',
-						last_error: 'WhatsApp sudah menerima scan, sedang mencoba menyelesaikan koneksi sekali lagi',
-						last_seen_at: new Date(),
-						updated_at: new Date(),
-					})
-					this.scheduleRestart(entry.channelId, 1_000, false)
-					return
-				}
-
-				entry.desiredRunning = false
-				entry.pairingAcceptedAt = null
-				await updateSessionById(sessionRow.id, {
-					status: 'error',
-					last_error: 'WhatsApp menerima scan QR, tetapi koneksi gagal diselesaikan. Minta QR baru lalu coba lagi.',
-					pairing_code: null,
-					qr_code: null,
-					last_seen_at: new Date(),
-					updated_at: new Date(),
-				})
-				console.error('[BaileysService] Pairing failed after restart retry', {
-					channelId: channel.id,
-					code: disconnectCode,
-				})
-				return
-			}
-
-			await updateSessionById(sessionRow.id, {
-				status: 'restarting',
-				last_error: null,
-				last_seen_at: new Date(),
-				updated_at: new Date(),
-			})
-			this.scheduleRestart(entry.channelId, 1_000)
-			return
-		}
-
 		if (disconnectCode === DisconnectReason.loggedOut) {
-			// Rate-limited / blocked by WhatsApp — stop auto-retry
 			await updateSessionById(sessionRow.id, {
 				status: 'rate_limited',
 				auth_state: null,
 				first_connected_at: null,
 				phone_number: null,
-				pairing_code: null,
 				qr_code: null,
 				last_error: 'WhatsApp menolak koneksi, coba lagi nanti atau pakai proxy',
 				updated_at: new Date(),
@@ -1573,14 +1410,9 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.badSession) {
-			// Bad session means stored auth_state is stale/invalid (e.g. phone
-			// number changed, WhatsApp Web session expired, creds corrupted).
-			// Clear auth_state so buildAuthState() generates fresh credentials
-			// on next start, which will show a QR code for re-pairing.
 			await updateSessionById(sessionRow.id, {
 				status: 'not_paired',
 				auth_state: null,
-				pairing_code: null,
 				qr_code: null,
 				last_error: null,
 				last_seen_at: new Date(),
@@ -1590,14 +1422,10 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
-		// A never-paired channel must wait for an explicit start request. In
-		// particular, do not restart it after the QR window expires (408), or the
-		// service will keep generating QR codes for users who never need WhatsApp.
 		if (disconnectCode === 408 && !sessionRow.first_connected_at) {
 			await updateSessionById(sessionRow.id, {
 				status: 'not_paired',
-				last_error: formattedDisconnectMessage,
-				pairing_code: null,
+				last_error: 'QR code sudah kedaluwarsa, minta QR baru',
 				qr_code: null,
 				last_seen_at: new Date(),
 				updated_at: new Date(),
@@ -1610,15 +1438,16 @@ export abstract class BaileysServiceRuntime {
 		const shouldReconnect =
 			disconnectCode !== DisconnectReason.connectionReplaced &&
 			disconnectCode !== DisconnectReason.forbidden
+				&& disconnectCode !== DisconnectReason.restartRequired
 
 		await updateSessionById(sessionRow.id, {
-			status: shouldReconnect ? 'reconnecting' : 'disconnected',
-			last_error: formattedDisconnectMessage,
+			status: shouldReconnect ? 'reconnecting' : 'restarting',
+			last_error: shouldReconnect ? formattedDisconnectMessage : null,
 			last_seen_at: new Date(),
 			updated_at: new Date(),
 		})
 
-		if (shouldReconnect) {
+		if (shouldReconnect || disconnectCode === DisconnectReason.restartRequired) {
 			this.scheduleRestart(entry.channelId)
 		}
 	}
@@ -1904,11 +1733,7 @@ export abstract class BaileysServiceRuntime {
 		return this.getSessionSnapshot(channelId)
 	}
 
-	private static scheduleRestart(
-		channelId: string,
-		fallbackDelayMs?: number,
-		resetPairingAttempt = true,
-	) {
+	private static scheduleRestart(channelId: string) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
 		this.clearRestartTimer(entry)
@@ -1932,18 +1757,10 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
-		const baseDelayMs = fallbackDelayMs && fallbackDelayMs > 0
-			? fallbackDelayMs
-			: BASE_RESTART_DELAY_MS
-		const delayMs = Math.min(
-			baseDelayMs * Math.pow(2, entry.restartAttempts - 1),
-			MAX_RESTART_DELAY_MS,
-		)
-
 		console.warn('[BaileysService] Scheduling restart', {
 			channelId,
 			attempt: entry.restartAttempts,
-			delayMs,
+			delayMs: RESTART_DELAY_MS,
 		})
 
 		entry.restartTimer = setTimeout(() => {
@@ -1952,12 +1769,11 @@ export abstract class BaileysServiceRuntime {
 				await entry.pendingSaveCreds
 				await this.ensureChannel(channelId, {
 					forceRestart: true,
-					resetPairingAttempt,
 				})
 			})().catch((error) => {
 				console.error('[BaileysService] Failed to restart channel', error)
 			})
-		}, delayMs)
+		}, RESTART_DELAY_MS)
 	}
 
 	private static clearRestartTimer(entry: RuntimeEntry) {
@@ -1967,11 +1783,6 @@ export abstract class BaileysServiceRuntime {
 	}
 
 	static async shutdown() {
-		if (this.syncTimer) {
-			clearInterval(this.syncTimer)
-			this.syncTimer = null
-		}
-
 		await Promise.allSettled(
 			Array.from(runtimeEntries.values()).map(async (entry) => {
 				entry.desiredRunning = false

@@ -116,7 +116,7 @@
 				"BACKEND_PORT": "3010",
 				"SOCKET_PORT": "3011",
 				"BAILEYS_AUTH_ENCRYPTION_KEY": "crm-dev-key-change-in-production",
-			"BAILEYS_SOCKS_PROXY": "socks5://127.0.0.1:40000"
+					"BAILEYS_SOCKS_PROXY_LIST": ""
 			}
 		}
 	]
