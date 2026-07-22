@@ -94,6 +94,7 @@ const service = new Elysia()
 						{
 							forceRestart: true,
 							waitForReadyMs: 8_000,
+							allowUnpaired: true,
 						},
 					)
 					return { success: true, data }

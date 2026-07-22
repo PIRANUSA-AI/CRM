@@ -482,6 +482,15 @@ async function listActiveChannels(): Promise<BaileysChannelRecord[]> {
 				AND deleted_at IS NULL
 				AND COALESCE(is_active, true) = true
 				AND app_id IS NOT NULL
+				AND EXISTS (
+					SELECT 1
+					FROM public.baileys_sessions session
+					WHERE session.channel_id = whatsapp_channels.id
+						AND (
+							session.first_connected_at IS NOT NULL
+							OR session.status = 'connected'
+						)
+				)
 		`,
 		[BAILEYS_PROVIDER],
 	)
@@ -748,6 +757,13 @@ export abstract class BaileysServiceRuntime {
 			activeIds.add(channel.id)
 		}
 
+		// Keep a session that was explicitly started by a user alive while it is
+		// waiting for pairing. It is intentionally excluded from the bootstrap
+		// query above so an unpaired channel never starts by itself after restart.
+		for (const [channelId, entry] of runtimeEntries) {
+			if (entry.desiredRunning) activeIds.add(channelId)
+		}
+
 		await Promise.allSettled(
 			channels.map((channel: BaileysChannelRecord) =>
 				this.ensureLoadedChannel(channel, {
@@ -765,7 +781,11 @@ export abstract class BaileysServiceRuntime {
 
 	static async ensureChannel(
 		channelId: string,
-		options?: { forceRestart?: boolean; waitForReadyMs?: number },
+		options?: {
+			forceRestart?: boolean
+			waitForReadyMs?: number
+			allowUnpaired?: boolean
+		},
 	) {
 		await ensureBaileysSessionStorage()
 
@@ -777,7 +797,11 @@ export abstract class BaileysServiceRuntime {
 
 	private static async ensureLoadedChannel(
 		channel: BaileysChannelRecord,
-		options?: { forceRestart?: boolean; waitForReadyMs?: number },
+		options?: {
+			forceRestart?: boolean
+			waitForReadyMs?: number
+			allowUnpaired?: boolean
+		},
 	) {
 		const providerChannelKey = normalizeProviderChannelKey(channel.extended_metadata)
 		if (!providerChannelKey) {
@@ -790,6 +814,14 @@ export abstract class BaileysServiceRuntime {
 			phoneNumber: channel.phone_number,
 			apiKey: channel.api_key,
 		})
+		const session = await getSessionByChannelId(channel.id)
+		const hasConnectedBefore = Boolean(
+			session?.first_connected_at || session?.status === 'connected',
+		)
+
+		if (!hasConnectedBefore && !options?.allowUnpaired) {
+			return this.getSessionSnapshot(channel.id)
+		}
 
 		if (!entry.desiredRunning && !options?.forceRestart) {
 			return this.getSessionSnapshot(channel.id)
@@ -1374,6 +1406,23 @@ export abstract class BaileysServiceRuntime {
 				updated_at: new Date(),
 			})
 			entry.desiredRunning = false
+			return
+		}
+
+		// A never-paired channel must wait for an explicit start request. In
+		// particular, do not restart it after the QR window expires (408), or the
+		// service will keep generating QR codes for users who never need WhatsApp.
+		if (disconnectCode === 408 && !sessionRow.first_connected_at) {
+			await updateSessionById(sessionRow.id, {
+				status: 'not_paired',
+				last_error: formattedDisconnectMessage,
+				pairing_code: null,
+				qr_code: null,
+				last_seen_at: new Date(),
+				updated_at: new Date(),
+			})
+			entry.desiredRunning = false
+			entry.restartAttempts = 0
 			return
 		}
 
