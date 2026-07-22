@@ -1343,20 +1343,15 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.loggedOut) {
-			// The device was unlinked from the phone (WhatsApp -> Linked devices ->
-			// log out) or the session was otherwise invalidated. This is NOT a rate
-			// limit. Clear the stored credentials so the next start (triggered by the
-			// connect page) generates a fresh QR to re-pair, and mark the session as
-			// logged out so the UI knows to show the QR flow again.
+			// Rate-limited / blocked by WhatsApp — stop auto-retry
 			await updateSessionById(sessionRow.id, {
-				status: 'logged_out',
+				status: 'rate_limited',
 				auth_state: null,
 				first_connected_at: null,
 				phone_number: null,
 				pairing_code: null,
 				qr_code: null,
-				last_error: null,
-				last_seen_at: new Date(),
+				last_error: 'WhatsApp menolak koneksi, coba lagi nanti atau pakai proxy',
 				updated_at: new Date(),
 			})
 			entry.desiredRunning = false

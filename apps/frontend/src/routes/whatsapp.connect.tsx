@@ -20,19 +20,6 @@ function storedFirstName() {
 	} catch { return '' }
 }
 
-// When should we (re)trigger a session start to (re)generate a QR? After the
-// device is unlinked from the phone the channel still exists (channelId is set),
-// so "no channel" is not enough, we also start when the session is not
-// connected and has no QR yet, except while a start/restart is already in
-// flight or the session is genuinely blocked (avoid hammering).
-function needsFreshQr(connection: PersonalWhatsAppConnection | null): boolean {
-	if (!connection) return true
-	if (connection.isConnected || connection.qrCode) return false
-	if (!connection.channelId) return true
-	const inFlightOrBlocked = ['connecting', 'qr_ready', 'restarting', 'reconnecting', 'rate_limited', 'error']
-	return !inFlightOrBlocked.includes(connection.status)
-}
-
 function isMobile() {
 	if (typeof window === 'undefined' || !navigator) return false
 	try {
@@ -50,31 +37,13 @@ function WhatsAppConnectPage() {
 			const raw = localStorage.getItem('crm_user')
 			if (!raw) return
 			const role = extractNormalizedRole(JSON.parse(raw))
-			if (!['sales', 'leader'].includes(role)) {
+			if (!['sales', 'agent'].includes(role)) {
 				const allowedPaths = getAllowedPrimaryPathsForRole(role)
 				void navigate({ to: allowedPaths?.[0] || '/dashboard', replace: true })
 			}
 		} catch {}
 	}, [navigate])
 	const [qrImage, setQrImage] = useState<string | null>(null)
-	const qrImageRef = useRef<string | null>(null)
-
-	// The QR is re-rendered on every poll, so each render leaks an object URL
-	// unless the previous one is released. Revoke only once the replacement is
-	// in hand, dropping it any earlier would blank the <img> still using it.
-	const swapQrImage = useCallback((next: string | null) => {
-		const previous = qrImageRef.current
-		if (previous && previous !== next) URL.revokeObjectURL(previous)
-		qrImageRef.current = next
-		setQrImage(next)
-	}, [])
-
-	useEffect(
-		() => () => {
-			if (qrImageRef.current) URL.revokeObjectURL(qrImageRef.current)
-		},
-		[],
-	)
 	const [error, setError] = useState('')
 	const [countdown, setCountdown] = useState(10)
 	const previouslyConnected = useRef<boolean | null>(null)
@@ -103,13 +72,13 @@ function WhatsAppConnectPage() {
 		}
 	}, [])
 
-	useEffect(() => { void refresh().then((value) => { if (needsFreshQr(value)) void refresh(true) }) }, [refresh])
+	useEffect(() => { void refresh().then((value) => { if (!value?.channelId) void refresh(true) }) }, [refresh])
 
 	useEffect(() => {
 		if (!connection || connection.isConnected) return
 		const timer = window.setInterval(() => {
 			void refresh().then((value) => {
-				if (needsFreshQr(value)) {
+				if (!value?.channelId) {
 					void refresh(true)
 				}
 			})
@@ -118,7 +87,7 @@ function WhatsAppConnectPage() {
 	}, [connection?.isConnected, connection?.status, refresh])
 
 	useEffect(() => {
-		if (!connection?.qrCode) { swapQrImage(null); return }
+		if (!connection?.qrCode) { setQrImage(null); return }
 		let active = true
 		const qr = new QRCodeStyling({
 			width: 340,
@@ -143,14 +112,13 @@ function WhatsAppConnectPage() {
 				color: 'transparent',
 			},
 		})
-		// getRawData resolves to a Buffer under Node and a Blob in the browser;
-		// this effect only ever runs client-side, so narrow to the Blob case.
-		void qr.getRawData('png').then((raw) => {
-			if (!active || !(raw instanceof Blob)) return
-			swapQrImage(URL.createObjectURL(raw))
+		void qr.getRawData('png').then((blob) => {
+			if (!active || !blob) return
+			const url = URL.createObjectURL(blob)
+			setQrImage(url)
 		})
 		return () => { active = false }
-	}, [connection?.qrCode, swapQrImage])
+	}, [connection?.qrCode])
 
 
 
@@ -190,10 +158,7 @@ function WhatsAppConnectPage() {
 					<>
 						<h1 className="text-balance px-2 font-[family-name:var(--font-display)] text-[28px] font-medium leading-tight tracking-[-0.02em] text-[#102a4c] md:px-0 md:text-[40px] md:tracking-[-0.03em]">Hubungkan WhatsApp kamu</h1>
 						<p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#5b6b7d] md:mt-3 md:max-w-sm md:text-[15px]">
-							{connection?.status === 'logged_out' ||
-							(connection?.hasConnectedBefore && !connection?.isConnected)
-								? 'Perangkat kamu keluar dari WhatsApp. Scan QR ini untuk masuk lagi.'
-								: 'Scan QR ini dengan WhatsApp kamu.'}
+							Scan QR ini dengan WhatsApp kamu.
 						</p>
 
 						<div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-white px-5 py-8 shadow-[0_4px_16px_rgba(16,42,76,0.08)] md:mt-8 md:min-h-[320px] md:px-6 md:py-10">
@@ -218,15 +183,6 @@ function WhatsAppConnectPage() {
 
 						{!mobile || forceQr ? (
 							<p className="mt-4 text-xs text-[#52657b] md:mt-5 md:text-sm">WhatsApp - Perangkat tertaut - Tautkan perangkat</p>
-						) : null}
-						{!mobile || forceQr ? (
-							<button
-								type="button"
-								onClick={() => void refresh(true)}
-								className="mx-auto mt-3 block rounded-lg px-3 py-1.5 text-xs font-medium text-[#315d91] transition-colors hover:bg-white md:text-sm"
-							>
-								QR tidak muncul? Hubungkan ulang
-							</button>
 						) : null}
 						{error ? <p className="mx-auto mt-4 max-w-xs rounded-xl bg-red-50 px-4 py-3 text-xs text-red-700 md:max-w-sm md:text-sm">{error}</p> : null}
 						<p className="mt-6 inline-flex items-center gap-1.5 text-xs text-[#657487] md:mt-8"><ShieldCheck className="h-3.5 w-3.5" /> Hanya untuk akun CRM kamu</p>
