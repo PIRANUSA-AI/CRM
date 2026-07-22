@@ -1407,12 +1407,17 @@ export abstract class BaileysServiceRuntime {
 		if (entry.socket !== socket) return
 
 		if (update.isNewLogin) {
+			const firstPairingAccepted = entry.pairingAcceptedAt === null
 			entry.qrCode = null
-			entry.pairingAcceptedAt = Date.now()
-			entry.pairingRestartAttempts = 0
+			if (firstPairingAccepted) {
+				entry.pairingAcceptedAt = Date.now()
+				entry.pairingRestartAttempts = 0
+			}
 			console.info('[BaileysService] Pairing accepted', {
 				channelId: channel.id,
 				stage: 'post_pairing_restart',
+				firstPairingAccepted,
+				pairingRestartAttempts: entry.pairingRestartAttempts,
 			})
 			await updateSessionById(sessionRow.id, {
 				status: 'restarting',
