@@ -123,6 +123,7 @@ type RuntimeEntry = {
 	desiredRunning: boolean
 	pairingCodeRequested: boolean
 	qrCode: string | null
+	socketGeneration: number
 	restartTimer: ReturnType<typeof setTimeout> | null
 	connectionUpdatePromise: Promise<void>
 	lastHistoryProgress: number
@@ -414,6 +415,7 @@ function createEntry(params: {
 		desiredRunning: true,
 		pairingCodeRequested: false,
 		qrCode: null,
+		socketGeneration: 0,
 		restartTimer: null,
 		connectionUpdatePromise: Promise.resolve(),
 		lastHistoryProgress: -1,
@@ -839,6 +841,7 @@ export abstract class BaileysServiceRuntime {
 
 		if (options?.forceRestart) {
 			this.clearRestartTimer(entry)
+			entry.socketGeneration += 1
 			const currentSocket = entry.socket
 			entry.socket = null
 			entry.pairingCodeRequested = false
@@ -848,8 +851,9 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (!entry.socket && !entry.starting) {
+			const socketGeneration = ++entry.socketGeneration
 			entry.starting = true
-			void this.startSocket(channel, entry).finally(() => {
+			void this.startSocket(channel, entry, socketGeneration).finally(() => {
 				entry.starting = false
 			})
 		}
@@ -889,6 +893,40 @@ export abstract class BaileysServiceRuntime {
 			qr_code: null,
 			updated_at: new Date(),
 		})
+	}
+
+	static async resetChannel(channelId: string) {
+		await ensureBaileysSessionStorage()
+
+		const session = await getSessionByChannelId(channelId)
+		if (!session?.id) throw new Error('Baileys session not found')
+
+		const entry = runtimeEntries.get(channelId)
+		if (entry) {
+			entry.socketGeneration += 1
+			entry.desiredRunning = false
+			entry.pairingCodeRequested = false
+			entry.qrCode = null
+			entry.restartAttempts = 0
+			this.clearRestartTimer(entry)
+			const currentSocket = entry.socket
+			entry.socket = null
+			if (currentSocket) currentSocket.end(undefined)
+		}
+
+		await updateSessionById(session.id, {
+			status: 'not_paired',
+			auth_state: null,
+			phone_number: null,
+			first_connected_at: null,
+			last_connected_at: null,
+			pairing_code: null,
+			qr_code: null,
+			last_error: null,
+			updated_at: new Date(),
+		})
+
+		return this.getSessionSnapshot(channelId)
 	}
 
 	static async getSessionSnapshot(
@@ -1207,6 +1245,7 @@ export abstract class BaileysServiceRuntime {
 	private static async startSocket(
 		channel: BaileysChannelRecord,
 		entry: RuntimeEntry,
+		socketGeneration: number,
 	) {
 		const sessionRow = await upsertSessionRecord(channel)
 		const auth = buildAuthState(sessionRow)
@@ -1237,6 +1276,10 @@ export abstract class BaileysServiceRuntime {
 			agent,
 			getMessage: async () => undefined,
 		})
+		if (entry.socketGeneration !== socketGeneration || !entry.desiredRunning) {
+			socket.end(undefined)
+			return
+		}
 
 		entry.socket = socket
 		entry.desiredRunning = true

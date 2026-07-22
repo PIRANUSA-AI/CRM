@@ -35,31 +35,31 @@ function getConnectionIssue(connection: PersonalWhatsAppConnection | null) {
 	if (connection.status === 'rate_limited') {
 		return {
 			title: 'WhatsApp perlu dihubungkan ulang',
-			description: 'Perangkat CRM ini sudah dihapus dari WhatsApp. Hubungkan ulang untuk mendapatkan QR baru.',
+			description: 'Perangkat CRM ini sudah dihapus dari WhatsApp. Minta QR baru untuk mereset semua sesi yang masih menggantung.',
 			action: true,
 		}
 	}
 
-	if (connection.status === 'not_paired' && connection.lastError) {
+	if (connection.status === 'not_paired') {
 		return {
 			title: 'QR sebelumnya sudah kedaluwarsa',
-			description: 'Minta QR baru, lalu tautkan perangkat CRM dari menu Perangkat tertaut di WhatsApp.',
+			description: 'Minta QR baru untuk membersihkan semua sesi yang macet, lalu tautkan perangkat CRM dari menu Perangkat tertaut di WhatsApp.',
 			action: true,
 		}
 	}
 
 	if (connection.status === 'reconnecting' || connection.status === 'restarting') {
 		return {
-			title: 'Koneksi sedang dipulihkan',
-			description: 'WhatsApp sedang mencoba menyambungkan kembali perangkat ini. Biasanya hanya perlu beberapa saat.',
-			action: false,
+			title: 'Koneksi terlalu lama dipulihkan',
+			description: 'Kalau proses ini terus berulang, minta QR baru untuk mereset semua sesi yang masih menggantung.',
+			action: true,
 		}
 	}
 
 	if (connection.status === 'disconnected' || connection.status === 'error') {
 		return {
 			title: 'WhatsApp terputus',
-			description: 'Hubungkan ulang perangkat WhatsApp kamu untuk melanjutkan.',
+			description: 'Minta QR baru untuk membersihkan sesi yang gagal dan menghubungkan ulang perangkat WhatsApp kamu.',
 			action: true,
 		}
 	}
@@ -87,7 +87,7 @@ function WhatsAppConnectPage() {
 	const previouslyConnected = useRef<boolean | null>(null)
 	const firstName = useMemo(storedFirstName, [])
 	const [mobile, setMobile] = useState(false)
-	const [starting, setStarting] = useState(false)
+	const [requestingQr, setRequestingQr] = useState(false)
 	useEffect(() => {
 		const check = () => { try { setMobile(isMobile()) } catch {} }
 		check()
@@ -178,12 +178,15 @@ function WhatsAppConnectPage() {
 
 	const connectionIssue = getConnectionIssue(connection)
 
-	const confirmPresence = async () => {
-		setStarting(true)
+	const requestNewQr = async () => {
+		setRequestingQr(true)
 		try {
-			await refresh(true)
+			const response = await whatsappChannels.requestNewMyQr()
+			setConnection(response.data)
+		} catch (error) {
+			setError(error instanceof Error ? error.message : 'QR baru belum bisa diminta. Coba lagi sebentar, ya.')
 		} finally {
-			setStarting(false)
+			setRequestingQr(false)
 		}
 	}
 
@@ -218,9 +221,9 @@ function WhatsAppConnectPage() {
 									<p className="mt-4 text-sm font-semibold text-[#102a4c] md:text-base">{connectionIssue.title}</p>
 									<p className="mt-2 max-w-[270px] text-xs leading-5 text-[#657487] md:text-sm">{connectionIssue.description}</p>
 									{connectionIssue.action ? (
-										<Button onClick={() => void confirmPresence()} disabled={starting} className="mt-5 h-10 rounded-xl bg-[#17365f] px-5 hover:bg-[#102a4c]">
-											{starting ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-											{starting ? 'Menyiapkan QR...' : 'Hubungkan ulang'}
+										<Button onClick={() => void requestNewQr()} disabled={requestingQr} className="mt-5 h-10 rounded-xl bg-[#17365f] px-5 hover:bg-[#102a4c]">
+											{requestingQr ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+											{requestingQr ? 'Meminta QR baru...' : 'Request QR Baru'}
 										</Button>
 									) : null}
 								</div>

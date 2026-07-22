@@ -104,6 +104,21 @@ const service = new Elysia()
 				},
 			)
 			.post(
+				'/sessions/:channelId/reset',
+				async ({ params, headers, set }) => {
+					if (!isAuthorizedInternalRequest(headers as Record<string, unknown>)) {
+						set.status = 403
+						return { error: 'Invalid internal token' }
+					}
+
+					const data = await BaileysServiceRuntime.resetChannel(params.channelId)
+					return { success: true, data }
+				},
+				{
+					params: t.Object({ channelId: t.String() }),
+				},
+			)
+			.post(
 				'/send',
 				async ({ body, headers, set }) => {
 					const channelKey = resolveBaileysChannelKey(body)
