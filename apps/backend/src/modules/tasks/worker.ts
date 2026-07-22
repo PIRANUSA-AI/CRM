@@ -149,7 +149,9 @@ function withHumanReview(
 
 export async function enqueueTaskAnalysis(data: TaskAnalysisJobData) {
 	if (!isUuid(data.appId) || !isUuid(data.messageId)) return null
-	const jobId = `task-analysis:${data.messageId}`
+	// BullMQ custom IDs cannot contain ':'. Keep this deterministic so the
+	// webhook and lead-confirmation paths remain idempotent.
+	const jobId = `task-analysis-${data.messageId}`
 	try {
 		return await aiProcessingQueue.add('task-analysis', data, {
 			jobId,
