@@ -171,6 +171,16 @@ function AppLayout() {
 					return
 				}
 
+				if (context.user) {
+					setAgent({
+						id: String(context.user.id || ''),
+						email: String(context.user.email || ''),
+						name: String(context.user.name || context.user.email?.split('@')[0] || 'User'),
+						role: context.user.role || 'agent',
+						avatar_url: context.user.avatar_url || null,
+					})
+				}
+
 				if (context.onboardingRequired) {
 					navigate({ to: '/onboarding', replace: true })
 				}
