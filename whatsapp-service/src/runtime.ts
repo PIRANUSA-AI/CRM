@@ -128,6 +128,8 @@ type RuntimeEntry = {
 	connectionUpdatePromise: Promise<void>
 	lastHistoryProgress: number
 	restartAttempts: number
+	pairingAcceptedAt: number | null
+	pairingRestartAttempts: number
 }
 
 export type BaileysSessionSnapshot = {
@@ -420,6 +422,8 @@ function createEntry(params: {
 		connectionUpdatePromise: Promise.resolve(),
 		lastHistoryProgress: -1,
 		restartAttempts: 0,
+		pairingAcceptedAt: null,
+		pairingRestartAttempts: 0,
 	}
 	runtimeEntries.set(params.channelId, entry)
 	return entry
@@ -792,6 +796,7 @@ export abstract class BaileysServiceRuntime {
 			forceRestart?: boolean
 			waitForReadyMs?: number
 			allowUnpaired?: boolean
+			resetPairingAttempt?: boolean
 		},
 	) {
 		await ensureBaileysSessionStorage()
@@ -808,6 +813,7 @@ export abstract class BaileysServiceRuntime {
 			forceRestart?: boolean
 			waitForReadyMs?: number
 			allowUnpaired?: boolean
+			resetPairingAttempt?: boolean
 		},
 	) {
 		const providerChannelKey = normalizeProviderChannelKey(channel.extended_metadata)
@@ -847,6 +853,10 @@ export abstract class BaileysServiceRuntime {
 			entry.pairingCodeRequested = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
+			if (options.resetPairingAttempt !== false) {
+				entry.pairingAcceptedAt = null
+				entry.pairingRestartAttempts = 0
+			}
 			if (currentSocket) currentSocket.end(undefined)
 		}
 
@@ -880,6 +890,8 @@ export abstract class BaileysServiceRuntime {
 		entry.pairingCodeRequested = false
 		entry.qrCode = null
 		entry.restartAttempts = 0
+		entry.pairingAcceptedAt = null
+		entry.pairingRestartAttempts = 0
 		this.clearRestartTimer(entry)
 
 		const currentSocket = entry.socket
@@ -908,6 +920,8 @@ export abstract class BaileysServiceRuntime {
 			entry.pairingCodeRequested = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
+			entry.pairingAcceptedAt = null
+			entry.pairingRestartAttempts = 0
 			this.clearRestartTimer(entry)
 			const currentSocket = entry.socket
 			entry.socket = null
@@ -1263,6 +1277,7 @@ export abstract class BaileysServiceRuntime {
 		console.info('[BaileysService] Opening socket', {
 			channelId: channel.id,
 			transport: agent ? 'socks5' : 'direct',
+			runtime: `${process.release?.name || 'node'} ${process.version}`,
 		})
 		const socket = makeWASocket({
 			auth: {
@@ -1393,8 +1408,11 @@ export abstract class BaileysServiceRuntime {
 
 		if (update.isNewLogin) {
 			entry.qrCode = null
+			entry.pairingAcceptedAt = Date.now()
+			entry.pairingRestartAttempts = 0
 			console.info('[BaileysService] Pairing accepted', {
 				channelId: channel.id,
+				stage: 'post_pairing_restart',
 			})
 			await updateSessionById(sessionRow.id, {
 				status: 'restarting',
@@ -1423,6 +1441,8 @@ export abstract class BaileysServiceRuntime {
 			entry.pairingCodeRequested = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
+			entry.pairingAcceptedAt = null
+			entry.pairingRestartAttempts = 0
 			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
@@ -1461,6 +1481,8 @@ export abstract class BaileysServiceRuntime {
 			providerChannelKey: entry.providerChannelKey,
 			disconnectCode,
 			disconnectMessage,
+			stage: entry.pairingAcceptedAt ? 'post_pairing_restart' : 'connection',
+			pairingRestartAttempts: entry.pairingRestartAttempts,
 		})
 
 		entry.socket = null
@@ -1478,6 +1500,36 @@ export abstract class BaileysServiceRuntime {
 		}
 
 		if (disconnectCode === DisconnectReason.restartRequired) {
+			if (entry.pairingAcceptedAt !== null) {
+				if (entry.pairingRestartAttempts < 1) {
+					entry.pairingRestartAttempts += 1
+					await updateSessionById(sessionRow.id, {
+						status: 'restarting',
+						last_error: 'WhatsApp sudah menerima scan, sedang mencoba menyelesaikan koneksi sekali lagi',
+						last_seen_at: new Date(),
+						updated_at: new Date(),
+					})
+					this.scheduleRestart(entry.channelId, 1_000, false)
+					return
+				}
+
+				entry.desiredRunning = false
+				entry.pairingAcceptedAt = null
+				await updateSessionById(sessionRow.id, {
+					status: 'error',
+					last_error: 'WhatsApp menerima scan QR, tetapi koneksi gagal diselesaikan. Minta QR baru lalu coba lagi.',
+					pairing_code: null,
+					qr_code: null,
+					last_seen_at: new Date(),
+					updated_at: new Date(),
+				})
+				console.error('[BaileysService] Pairing failed after restart retry', {
+					channelId: channel.id,
+					code: disconnectCode,
+				})
+				return
+			}
+
 			await updateSessionById(sessionRow.id, {
 				status: 'restarting',
 				last_error: null,
@@ -1837,7 +1889,11 @@ export abstract class BaileysServiceRuntime {
 		return this.getSessionSnapshot(channelId)
 	}
 
-	private static scheduleRestart(channelId: string, fallbackDelayMs?: number) {
+	private static scheduleRestart(
+		channelId: string,
+		fallbackDelayMs?: number,
+		resetPairingAttempt = true,
+	) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
 		this.clearRestartTimer(entry)
@@ -1877,7 +1933,10 @@ export abstract class BaileysServiceRuntime {
 
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
-			void this.ensureChannel(channelId, { forceRestart: true }).catch((error) => {
+			void this.ensureChannel(channelId, {
+				forceRestart: true,
+				resetPairingAttempt,
+			}).catch((error) => {
 				console.error('[BaileysService] Failed to restart channel', error)
 			})
 		}, delayMs)

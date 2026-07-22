@@ -58,8 +58,8 @@ function getConnectionIssue(connection: PersonalWhatsAppConnection | null) {
 
 	if (connection.status === 'disconnected' || connection.status === 'error') {
 		return {
-			title: 'WhatsApp terputus',
-			description: 'Minta QR baru untuk membersihkan sesi yang gagal dan menghubungkan ulang perangkat WhatsApp kamu.',
+			title: connection.status === 'error' ? 'WhatsApp gagal dihubungkan' : 'WhatsApp terputus',
+			description: connection.lastError || 'Minta QR baru untuk membersihkan sesi yang gagal dan menghubungkan ulang perangkat WhatsApp kamu.',
 			action: true,
 		}
 	}
