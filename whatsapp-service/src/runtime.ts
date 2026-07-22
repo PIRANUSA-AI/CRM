@@ -635,7 +635,7 @@ function buildAuthState(sessionRow: BaileysSessionRow) {
 		})
 	}
 
-	const state: AuthenticationState = {
+		const state: AuthenticationState = {
 		creds: persisted.creds as AuthenticationState['creds'],
 		keys: {
 			get: async (type, ids) => {
@@ -669,7 +669,6 @@ function buildAuthState(sessionRow: BaileysSessionRow) {
 					}
 					;(persisted.keys ||= {})[category] = bucket
 				}
-				await persist()
 			},
 		},
 	}
@@ -1288,6 +1287,7 @@ export abstract class BaileysServiceRuntime {
 			},
 			logger: baileysLogger as any,
 			browser: Browsers.appropriate('Chrome'),
+			version: [2, 3000, 101345],
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			agent,
@@ -1454,8 +1454,10 @@ export abstract class BaileysServiceRuntime {
 			entry.pairingCodeRequested = false
 			entry.qrCode = null
 			entry.restartAttempts = 0
+			if (entry.pairingAcceptedAt === null) {
+				entry.pairingRestartAttempts = 0
+			}
 			entry.pairingAcceptedAt = null
-			entry.pairingRestartAttempts = 0
 			const connectedPhoneNumber = normalizeDigits(socket.user?.id?.split('@')[0]) || null
 			await updateSessionById(sessionRow.id, {
 				status: 'connected',
