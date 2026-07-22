@@ -41,7 +41,9 @@
 		"db:generate": "bun run --filter backend db:generate",
 		"db:push": "bun run --filter backend db:push",
 		"db:pull": "bun run --filter backend db:pull",
-		"db:studio": "bun run --filter backend db:studio"
+		"db:studio": "bun run --filter backend db:studio",
+		"snapshot:dump": "bash scripts/snapshot/dump.sh",
+		"snapshot:restore": "bash scripts/snapshot/restore.sh"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.4.2",

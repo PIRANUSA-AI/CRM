@@ -14,6 +14,7 @@ dist
 .idea
 backups/
 local-scripts/
+/snapshot/
 apps/backend/src/generated/
 .collaborator
 *.tsbuildinfo
