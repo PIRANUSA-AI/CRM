@@ -1185,6 +1185,10 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		const agent = BAILEYS_SOCKS_PROXY ? new SocksProxyAgent(BAILEYS_SOCKS_PROXY) : undefined
+		console.info('[BaileysService] Opening socket', {
+			channelId: channel.id,
+			transport: agent ? 'socks5' : 'direct',
+		})
 		const socket = makeWASocket({
 			auth: {
 				creds: auth.state.creds,
@@ -1291,11 +1295,26 @@ export abstract class BaileysServiceRuntime {
 			connection: string
 			lastDisconnect: { error?: unknown }
 			qr: string
+			isNewLogin: boolean
 		}>
 	}) {
 		const { channel, entry, socket, update } = params
 		const sessionRow = await getSessionByChannelId(channel.id)
 		if (!sessionRow?.id) return
+
+		if (update.isNewLogin) {
+			console.info('[BaileysService] Pairing accepted', {
+				channelId: channel.id,
+			})
+			await updateSessionById(sessionRow.id, {
+				status: 'restarting',
+				pairing_code: null,
+				qr_code: null,
+				last_error: null,
+				last_seen_at: new Date(),
+				updated_at: new Date(),
+			})
+		}
 
 		if (update.qr) {
 			await updateSessionById(sessionRow.id, {
@@ -1370,7 +1389,7 @@ export abstract class BaileysServiceRuntime {
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
-			this.scheduleRestart(entry.channelId)
+			this.scheduleRestart(entry.channelId, 1_000)
 			return
 		}
 
@@ -1723,7 +1742,7 @@ export abstract class BaileysServiceRuntime {
 		return this.getSessionSnapshot(channelId)
 	}
 
-	private static scheduleRestart(channelId: string, _fallbackDelayMs?: number) {
+	private static scheduleRestart(channelId: string, fallbackDelayMs?: number) {
 		const entry = runtimeEntries.get(channelId)
 		if (!entry) return
 		this.clearRestartTimer(entry)
@@ -1747,8 +1766,11 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
+		const baseDelayMs = fallbackDelayMs && fallbackDelayMs > 0
+			? fallbackDelayMs
+			: BASE_RESTART_DELAY_MS
 		const delayMs = Math.min(
-			BASE_RESTART_DELAY_MS * Math.pow(2, entry.restartAttempts - 1),
+			baseDelayMs * Math.pow(2, entry.restartAttempts - 1),
 			MAX_RESTART_DELAY_MS,
 		)
 
