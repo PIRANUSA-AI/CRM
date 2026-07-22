@@ -452,13 +452,15 @@ function AppLayout() {
 
 				<div className="flex min-w-0 flex-1 flex-col bg-background lg:pt-3">
 					<TopBar />
-					<div className={cn('relative flex min-h-0 flex-1 flex-col lg:pb-0', isChatWorkspace ? 'overflow-hidden pb-20' : 'overflow-y-auto pb-16')}>
+					<div className={cn('relative flex min-h-0 flex-1 lg:pb-0', isChatWorkspace ? 'pb-0' : 'pb-16')}>
 						<Outlet />
 					</div>
-					<BottomNav
-						onMenuClick={() => setIsMobileSidebarOpen((open) => !open)}
-						isMenuOpen={isMobileSidebarOpen}
-					/>
+					{!isChatWorkspace && (
+						<BottomNav
+							onMenuClick={() => setIsMobileSidebarOpen((open) => !open)}
+							isMenuOpen={isMobileSidebarOpen}
+						/>
+					)}
 				</div>
 			</div>
 		</AppContext.Provider>

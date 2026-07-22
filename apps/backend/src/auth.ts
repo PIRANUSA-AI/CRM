@@ -42,7 +42,7 @@ const debugPrisma = new Proxy(prisma, {
 })
 
 export const auth = betterAuth({
-	baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3010',
+	baseURL: process.env.BETTER_AUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3010',
 	basePath: '/auth',
 	database: prismaAdapter(debugPrisma, {
 		provider: 'postgresql',
