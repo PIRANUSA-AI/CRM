@@ -126,6 +126,7 @@ type RuntimeEntry = {
 	socketGeneration: number
 	restartTimer: ReturnType<typeof setTimeout> | null
 	connectionUpdatePromise: Promise<void>
+	pendingSaveCreds: Promise<void>
 	lastHistoryProgress: number
 	restartAttempts: number
 	pairingAcceptedAt: number | null
@@ -420,6 +421,7 @@ function createEntry(params: {
 		socketGeneration: 0,
 		restartTimer: null,
 		connectionUpdatePromise: Promise.resolve(),
+		pendingSaveCreds: Promise.resolve(),
 		lastHistoryProgress: -1,
 		restartAttempts: 0,
 		pairingAcceptedAt: null,
@@ -1285,11 +1287,12 @@ export abstract class BaileysServiceRuntime {
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.windows('Chrome'),
+			browser: Browsers.appropriate('Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			agent,
 			getMessage: async () => undefined,
+			shouldSyncHistoryMessage: () => false,
 		})
 		if (entry.socketGeneration !== socketGeneration || !entry.desiredRunning) {
 			socket.end(undefined)
@@ -1300,14 +1303,17 @@ export abstract class BaileysServiceRuntime {
 		entry.desiredRunning = true
 		entry.pairingCodeRequested = false
 
-		void auth.saveCreds().catch((error) => {
+		const saveCreds = () => auth.saveCreds()
+		void saveCreds().catch((error) => {
 			console.error('[BaileysService] Failed to persist initial auth creds', error)
 		})
 
 		socket.ev.on('creds.update', () => {
-			void auth.saveCreds().catch((error) => {
-				console.error('[BaileysService] Failed to persist auth creds', error)
-			})
+			entry.pendingSaveCreds = entry.pendingSaveCreds
+				.then(() => saveCreds())
+				.catch((error) => {
+					console.error('[BaileysService] Failed to persist auth creds', error)
+				})
 		})
 
 		socket.ev.on('connection.update', (update) => {
@@ -1315,14 +1321,17 @@ export abstract class BaileysServiceRuntime {
 				.catch((error) => {
 					console.error('[BaileysService] Connection update queue failed', error)
 				})
-				.then(() =>
-					this.handleConnectionUpdate({
+				.then(async () => {
+					if (update.isNewLogin) {
+						await entry.pendingSaveCreds
+					}
+					await this.handleConnectionUpdate({
 						channel,
 						entry,
 						socket,
 						update,
-					}),
-				)
+					})
+				})
 				.catch((error) => {
 					console.error('[BaileysService] Connection update failed', error)
 				})
@@ -1938,10 +1947,13 @@ export abstract class BaileysServiceRuntime {
 
 		entry.restartTimer = setTimeout(() => {
 			entry.restartTimer = null
-			void this.ensureChannel(channelId, {
-				forceRestart: true,
-				resetPairingAttempt,
-			}).catch((error) => {
+			void (async () => {
+				await entry.pendingSaveCreds
+				await this.ensureChannel(channelId, {
+					forceRestart: true,
+					resetPairingAttempt,
+				})
+			})().catch((error) => {
 				console.error('[BaileysService] Failed to restart channel', error)
 			})
 		}, delayMs)

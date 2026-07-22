@@ -771,10 +771,11 @@ export abstract class BaileysRuntimeService {
 				),
 			},
 			logger: baileysLogger as any,
-			browser: Browsers.macOS('Google Chrome'),
+			browser: Browsers.appropriate('Chrome'),
 			printQRInTerminal: false,
 			markOnlineOnConnect: false,
 			getMessage: async () => undefined,
+			shouldSyncHistoryMessage: () => false,
 		})
 
 		entry.socket = socket
