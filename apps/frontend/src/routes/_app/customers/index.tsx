@@ -653,15 +653,14 @@ function CustomersPage() {
 				) : (
 					<div className="overflow-x-auto">
 						<div className="min-w-[1180px]">
-							<div className="grid grid-cols-[30px_1.8fr_170px_80px_140px_110px_140px_170px_34px] items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+							<div className="grid grid-cols-[30px_1.6fr_1.3fr_150px_130px_150px_130px_34px] items-center border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
 								<div></div>
 								<div>Nama</div>
-								<div>Nomor WA</div>
-								<div>Orders</div>
-								<div>LTV</div>
-								<div>Kota</div>
+								<div>Kontak</div>
+								<div>Perusahaan</div>
 								<div>Stage</div>
-								<div>Tags</div>
+								<div>Aktivitas</div>
+								<div>Pemilik</div>
 								<div></div>
 							</div>
 							{filteredRows.map((row) => (
