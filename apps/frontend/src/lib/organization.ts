@@ -66,6 +66,13 @@ type AuthContextResponse = {
 		appId?: string
 		appPublicId?: string
 	} | null
+	user?: {
+		id: string
+		name: string | null
+		email: string
+		role: string | null
+		avatar_url: string | null
+	} | null
 	error?: string
 }
 
@@ -122,6 +129,7 @@ export async function syncOrganizationContextFromSession(): Promise<{
 	authenticated: boolean
 	onboardingRequired: boolean
 	organization: Pick<Organization, 'id' | 'slug' | 'name' | 'appId'> | null
+	user: AuthContextResponse['user']
 }> {
 	const response = await fetch(`${API_BASE}/auth/context`, {
 		credentials: 'include',
@@ -129,10 +137,10 @@ export async function syncOrganizationContextFromSession(): Promise<{
 
 	const payload = (await response.json().catch(() => null)) as AuthContextResponse | null
 	if (response.status === 401) {
-		return { authenticated: false, onboardingRequired: false, organization: null }
+		return { authenticated: false, onboardingRequired: false, organization: null, user: null }
 	}
 	if (!response.ok) {
-		return { authenticated: false, onboardingRequired: false, organization: null }
+		return { authenticated: false, onboardingRequired: false, organization: null, user: null }
 	}
 
 	const rawOrganization = payload?.organization
@@ -155,13 +163,21 @@ export async function syncOrganizationContextFromSession(): Promise<{
 			authenticated: true,
 			onboardingRequired: false,
 			organization,
+			user: payload?.user || null,
 		}
+	}
+
+	const user = payload?.user || null
+
+	if (!user && !payload?.onboardingRequired) {
+		return { authenticated: false, onboardingRequired: false, organization: null, user: null }
 	}
 
 	return {
 		authenticated: true,
 		onboardingRequired: Boolean(payload?.onboardingRequired),
 		organization: null,
+		user,
 	}
 }
 

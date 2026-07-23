@@ -40,7 +40,13 @@ export const metrics = new Elysia({ prefix: '/metrics', tags: ['Advanced'] })
 				set.status = 400
 				return { error: 'App ID required' }
 			}
-			return MetricsService.getDashboard(resolvedAppId, query.period)
+			try {
+				return await MetricsService.getDashboard(resolvedAppId, query.period)
+			} catch (error) {
+				console.error('[Metrics] dashboard request failed', error)
+				set.status = 500
+				return { error: 'Failed to load dashboard metrics' }
+			}
 		},
 		{
 			query: t.Object({
