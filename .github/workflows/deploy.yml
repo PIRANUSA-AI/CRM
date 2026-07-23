@@ -13,6 +13,7 @@ jobs:
         run: |
           cd /var/www/crm
           git reset --hard origin/main
+          git clean -fd
           git pull origin main
           bun install
           export DATABASE_URL=$(grep ^DATABASE_URL .env | head -1 | cut -d= -f2-)
