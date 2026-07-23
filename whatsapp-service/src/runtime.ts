@@ -1438,8 +1438,7 @@ export abstract class BaileysServiceRuntime {
 		const shouldReconnect =
 			disconnectCode !== DisconnectReason.connectionReplaced &&
 			disconnectCode !== DisconnectReason.forbidden
-				&& disconnectCode !== DisconnectReason.restartRequired
-
+		
 		await updateSessionById(sessionRow.id, {
 			status: shouldReconnect ? 'reconnecting' : 'restarting',
 			last_error: shouldReconnect ? formattedDisconnectMessage : null,
@@ -1447,7 +1446,7 @@ export abstract class BaileysServiceRuntime {
 			updated_at: new Date(),
 		})
 
-		if (shouldReconnect || disconnectCode === DisconnectReason.restartRequired) {
+		if (shouldReconnect) {
 			this.scheduleRestart(entry.channelId)
 		}
 	}
