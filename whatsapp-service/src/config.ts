@@ -42,3 +42,21 @@ export const BAILEYS_SOCKS_PROXIES = (String(process.env.BAILEYS_SOCKS_PROXY_LIS
 	.split(',')
 	.map((s) => s.trim())
 	.filter(Boolean)
+
+export const BAILEYS_BOOTSTRAP_BATCH_SIZE = Math.max(
+	1,
+	Number(process.env.BAILEYS_BOOTSTRAP_BATCH_SIZE || 5),
+)
+export const BAILEYS_BOOTSTRAP_BATCH_DELAY_MS = Math.max(
+	0,
+	Number(process.env.BAILEYS_BOOTSTRAP_BATCH_DELAY_MS || 1_000),
+)
+
+export const INBOUND_MEDIA_MAX_BYTES = Math.max(
+	1024 * 1024,
+	Number(process.env.INBOUND_MEDIA_MAX_BYTES || 64 * 1024 * 1024),
+)
+export const INBOUND_MEDIA_MAX_CONCURRENCY = Math.max(
+	1,
+	Number(process.env.INBOUND_MEDIA_MAX_CONCURRENCY || 6),
+)

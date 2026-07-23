@@ -19,7 +19,15 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys'
 
 import { SocksProxyAgent } from 'socks-proxy-agent'
-import { BAILEYS_SOCKS_PROXY, CRM_BAILEYS_WEBHOOK_URL } from './config'
+import {
+	BAILEYS_BOOTSTRAP_BATCH_DELAY_MS,
+	BAILEYS_BOOTSTRAP_BATCH_SIZE,
+	BAILEYS_SOCKS_PROXIES,
+	BAILEYS_SOCKS_PROXY,
+	CRM_BAILEYS_WEBHOOK_URL,
+	INBOUND_MEDIA_MAX_BYTES,
+	INBOUND_MEDIA_MAX_CONCURRENCY,
+} from './config'
 import {
 	createUuid,
 	ensureBaileysSessionStorage,
@@ -112,6 +120,7 @@ const HISTORY_PROGRESS_STEP = Math.max(
 )
 const MAX_RESTART_ATTEMPTS = 10
 const RESTART_DELAY_MS = 5_000
+const RESTART_DELAY_MAX_MS = 60_000
 
 function reportHistoryProgress(
 	entry: RuntimeEntry,
@@ -190,6 +199,46 @@ function asString(value: unknown): string | null {
 
 function sleep(ms: number) {
 	return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function fileLengthToNumber(value: unknown): number {
+	if (typeof value === 'number') return value
+	if (typeof value === 'string') return Number(value) || 0
+	if (value && typeof value === 'object' && typeof (value as any).toNumber === 'function') {
+		try {
+			return (value as any).toNumber()
+		} catch {
+			return 0
+		}
+	}
+	return 0
+}
+
+// Process-wide (not per-session) cap on concurrent inbound-media downloads.
+// Each download buffers the whole file in memory - without this, several
+// sessions receiving large media at once can spike GC/CPU pressure together.
+let activeMediaDownloads = 0
+const mediaDownloadWaiters: Array<() => void> = []
+
+async function acquireMediaDownloadSlot(): Promise<() => void> {
+	if (activeMediaDownloads >= INBOUND_MEDIA_MAX_CONCURRENCY) {
+		await new Promise<void>((resolve) => mediaDownloadWaiters.push(resolve))
+	}
+	activeMediaDownloads += 1
+	return () => {
+		activeMediaDownloads -= 1
+		const next = mediaDownloadWaiters.shift()
+		if (next) next()
+	}
+}
+
+function pickProxyForChannel(channelId: string): string | null {
+	if (BAILEYS_SOCKS_PROXIES.length === 0) return BAILEYS_SOCKS_PROXY
+	let hash = 0
+	for (let i = 0; i < channelId.length; i += 1) {
+		hash = (hash * 31 + channelId.charCodeAt(i)) >>> 0
+	}
+	return BAILEYS_SOCKS_PROXIES[hash % BAILEYS_SOCKS_PROXIES.length]
 }
 
 function normalizeDigits(value: string | null | undefined) {
@@ -704,11 +753,17 @@ export abstract class BaileysServiceRuntime {
 			if (entry.desiredRunning) activeIds.add(channelId)
 		}
 
-		await Promise.allSettled(
-			channels.map((channel: BaileysChannelRecord) =>
-				this.ensureLoadedChannel(channel, { waitForReadyMs: 0 }),
-			),
-		)
+		for (let i = 0; i < channels.length; i += BAILEYS_BOOTSTRAP_BATCH_SIZE) {
+			const batch = channels.slice(i, i + BAILEYS_BOOTSTRAP_BATCH_SIZE)
+			await Promise.allSettled(
+				batch.map((channel: BaileysChannelRecord) =>
+					this.ensureLoadedChannel(channel, { waitForReadyMs: 0 }),
+				),
+			)
+			if (i + BAILEYS_BOOTSTRAP_BATCH_SIZE < channels.length) {
+				await sleep(BAILEYS_BOOTSTRAP_BATCH_DELAY_MS)
+			}
+		}
 
 		await Promise.allSettled(
 			Array.from(runtimeEntries.keys())
@@ -1168,12 +1223,11 @@ export abstract class BaileysServiceRuntime {
 		})
 		entry.qrCode = null
 
-		const agent = BAILEYS_SOCKS_PROXY
-			? new SocksProxyAgent(BAILEYS_SOCKS_PROXY)
-			: undefined
+		const proxyUrl = pickProxyForChannel(channel.id)
+		const agent = proxyUrl ? new SocksProxyAgent(proxyUrl) : undefined
 		console.info('[BaileysService] Opening socket', {
 			channelId: channel.id,
-			transport: BAILEYS_SOCKS_PROXY ? 'socks5' : 'direct',
+			transport: proxyUrl ? 'socks5' : 'direct',
 		})
 		const { version } = await fetchLatestBaileysVersion()
 		const socket = makeWASocket({
@@ -1465,8 +1519,7 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		if (shouldReconnect) {
-			await entry.pendingSaveCreds
-			void this.ensureChannel(entry.channelId, { forceRestart: true })
+			this.scheduleRestart(entry.channelId)
 		}
 	}
 
@@ -1580,6 +1633,7 @@ export abstract class BaileysServiceRuntime {
 				message,
 				mimeType,
 				fileName: null,
+				declaredFileLength: normalizedContent.imageMessage?.fileLength,
 			}) : null
 		} else if (contentType === 'videoMessage') {
 			type = normalizedContent.videoMessage?.gifPlayback === true ? 'gif' : 'video'
@@ -1594,6 +1648,7 @@ export abstract class BaileysServiceRuntime {
 				message,
 				mimeType,
 				fileName: null,
+				declaredFileLength: normalizedContent.videoMessage?.fileLength,
 			}) : null
 		} else if (contentType === 'audioMessage') {
 			type = normalizedContent.audioMessage?.ptt === true ? 'voice' : 'audio'
@@ -1608,6 +1663,7 @@ export abstract class BaileysServiceRuntime {
 				message,
 				mimeType,
 				fileName: null,
+				declaredFileLength: normalizedContent.audioMessage?.fileLength,
 			}) : null
 		} else if (contentType === 'documentMessage') {
 			type = 'document'
@@ -1623,6 +1679,7 @@ export abstract class BaileysServiceRuntime {
 				message,
 				mimeType,
 				fileName,
+				declaredFileLength: normalizedContent.documentMessage?.fileLength,
 			}) : null
 		} else if (contentType === 'stickerMessage') {
 			type = 'sticker'
@@ -1685,7 +1742,20 @@ export abstract class BaileysServiceRuntime {
 		message: WAMessage
 		mimeType: string | null
 		fileName: string | null
+		declaredFileLength?: unknown
 	}) {
+		const declaredBytes = fileLengthToNumber(params.declaredFileLength)
+		if (declaredBytes > INBOUND_MEDIA_MAX_BYTES) {
+			console.warn('[BaileysService] Skipping inbound media, exceeds size cap', {
+				channelId: params.channelId,
+				externalMessageId: params.externalMessageId,
+				declaredBytes,
+				maxBytes: INBOUND_MEDIA_MAX_BYTES,
+			})
+			return null
+		}
+
+		const releaseMediaSlot = await acquireMediaDownloadSlot()
 		try {
 			const buffer = await downloadMediaMessage(
 				params.message,
@@ -1697,6 +1767,16 @@ export abstract class BaileysServiceRuntime {
 				},
 			)
 
+			if (buffer.length > INBOUND_MEDIA_MAX_BYTES) {
+				console.warn('[BaileysService] Discarding inbound media, exceeds size cap', {
+					channelId: params.channelId,
+					externalMessageId: params.externalMessageId,
+					bytes: buffer.length,
+					maxBytes: INBOUND_MEDIA_MAX_BYTES,
+				})
+				return null
+			}
+
 			return uploadInboundMedia({
 				channelId: params.channelId,
 				messageId: params.externalMessageId,
@@ -1707,6 +1787,8 @@ export abstract class BaileysServiceRuntime {
 		} catch (error) {
 			console.error('[BaileysService] Failed to download inbound media', error)
 			return null
+		} finally {
+			releaseMediaSlot()
 		}
 	}
 
@@ -1775,10 +1857,15 @@ export abstract class BaileysServiceRuntime {
 			return
 		}
 
+		const delayMs = Math.min(
+			RESTART_DELAY_MAX_MS,
+			RESTART_DELAY_MS * 2 ** (entry.restartAttempts - 1),
+		)
+
 		console.warn('[BaileysService] Scheduling restart', {
 			channelId,
 			attempt: entry.restartAttempts,
-			delayMs: RESTART_DELAY_MS,
+			delayMs,
 		})
 
 		entry.restartTimer = setTimeout(() => {
@@ -1791,7 +1878,7 @@ export abstract class BaileysServiceRuntime {
 			})().catch((error) => {
 				console.error('[BaileysService] Failed to restart channel', error)
 			})
-		}, RESTART_DELAY_MS)
+		}, delayMs)
 	}
 
 	private static clearRestartTimer(entry: RuntimeEntry) {
