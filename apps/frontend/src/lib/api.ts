@@ -2209,6 +2209,12 @@ export const whatsappChannels = {
 			{ method: 'POST', body: phoneNumber ? JSON.stringify({ phoneNumber }) : undefined },
 		),
 
+	requestNewMyQr: () =>
+		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
+			'/whatsapp-channels/me/connection/request-qr',
+			{ method: 'POST' },
+		),
+
 	stopMyConnection: () =>
 		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection | null }>(
 			'/whatsapp-channels/me/connection/stop',

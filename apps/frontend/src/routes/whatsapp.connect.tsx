@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Check, LoaderCircle, LogOut, ShieldCheck, Smartphone } from 'lucide-react'
+import { AlertTriangle, Check, LoaderCircle, LogOut, RefreshCw, ShieldCheck, Smartphone } from 'lucide-react'
 import QRCodeStyling from 'qr-code-styling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,44 @@ function isMobile() {
 	} catch { return false }
 }
 
+function getConnectionIssue(connection: PersonalWhatsAppConnection | null) {
+	if (!connection || connection.isConnected || connection.qrCode) return null
+
+	if (connection.status === 'rate_limited') {
+		return {
+			title: 'WhatsApp perlu dihubungkan ulang',
+			description: 'Perangkat CRM ini sudah dihapus dari WhatsApp. Minta QR baru untuk mereset semua sesi yang masih menggantung.',
+			action: true,
+		}
+	}
+
+	if (connection.status === 'not_paired') {
+		return {
+			title: 'QR sebelumnya sudah kedaluwarsa',
+			description: 'Minta QR baru untuk membersihkan semua sesi yang macet, lalu tautkan perangkat CRM dari menu Perangkat tertaut di WhatsApp.',
+			action: true,
+		}
+	}
+
+	if (connection.status === 'reconnecting' || connection.status === 'restarting') {
+		return {
+			title: 'Koneksi terlalu lama dipulihkan',
+			description: 'Kalau proses ini terus berulang, minta QR baru untuk mereset semua sesi yang masih menggantung.',
+			action: true,
+		}
+	}
+
+	if (connection.status === 'disconnected' || connection.status === 'error') {
+		return {
+			title: connection.status === 'error' ? 'WhatsApp gagal dihubungkan' : 'WhatsApp terputus',
+			description: connection.lastError || 'Minta QR baru untuk membersihkan sesi yang gagal dan menghubungkan ulang perangkat WhatsApp kamu.',
+			action: true,
+		}
+	}
+
+	return null
+}
+
 function WhatsAppConnectPage() {
 	const navigate = useNavigate()
 	const [connection, setConnection] = useState<PersonalWhatsAppConnection | null>(null)
@@ -49,6 +87,7 @@ function WhatsAppConnectPage() {
 	const previouslyConnected = useRef<boolean | null>(null)
 	const firstName = useMemo(storedFirstName, [])
 	const [mobile, setMobile] = useState(false)
+	const [requestingQr, setRequestingQr] = useState(false)
 	useEffect(() => {
 		const check = () => { try { setMobile(isMobile()) } catch {} }
 		check()
@@ -137,7 +176,19 @@ function WhatsAppConnectPage() {
 		void navigate({ to: '/login', replace: true })
 	}
 
-	const confirmPresence = () => void refresh(true)
+	const connectionIssue = getConnectionIssue(connection)
+
+	const requestNewQr = async () => {
+		setRequestingQr(true)
+		try {
+			const response = await whatsappChannels.requestNewMyQr()
+			setConnection(response.data)
+		} catch (error) {
+			setError(error instanceof Error ? error.message : 'QR baru belum bisa diminta. Coba lagi sebentar, ya.')
+		} finally {
+			setRequestingQr(false)
+		}
+	}
 
 	return (
 		<main className="flex min-h-dvh items-center justify-center bg-[#f7f3e9] px-4 py-8 text-[#142942] md:px-5 md:py-10">
@@ -162,7 +213,21 @@ function WhatsAppConnectPage() {
 						</p>
 
 						<div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-white px-5 py-8 shadow-[0_4px_16px_rgba(16,42,76,0.08)] md:mt-8 md:min-h-[320px] md:px-6 md:py-10">
-							{qrImage ? (
+							{connectionIssue ? (
+								<div className="flex min-h-[240px] flex-col items-center justify-center text-center">
+									<div className="grid h-12 w-12 place-items-center rounded-full bg-amber-50 text-amber-700 md:h-14 md:w-14">
+										<AlertTriangle className="h-6 w-6 md:h-7 md:w-7" />
+									</div>
+									<p className="mt-4 text-sm font-semibold text-[#102a4c] md:text-base">{connectionIssue.title}</p>
+									<p className="mt-2 max-w-[270px] text-xs leading-5 text-[#657487] md:text-sm">{connectionIssue.description}</p>
+									{connectionIssue.action ? (
+										<Button onClick={() => void requestNewQr()} disabled={requestingQr} className="mt-5 h-10 rounded-xl bg-[#17365f] px-5 hover:bg-[#102a4c]">
+											{requestingQr ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+											{requestingQr ? 'Meminta QR baru...' : 'Request QR Baru'}
+										</Button>
+									) : null}
+								</div>
+							) : qrImage ? (
 								<img src={qrImage} alt="QR untuk menghubungkan WhatsApp" className="mx-auto h-auto w-full max-w-[300px] md:max-w-[340px]" />
 							) : mobile && !forceQr ? (
 								<div className="w-full text-center">

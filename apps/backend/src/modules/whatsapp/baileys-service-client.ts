@@ -154,6 +154,14 @@ export abstract class BaileysServiceClient {
 		return unwrapData<BaileysServiceSessionSnapshot>(payload)
 	}
 
+	static async resetSession(channelId: string) {
+		const payload = await requestBaileysService(
+			`/api/v1/sessions/${channelId}/reset`,
+			{ method: 'POST' },
+		)
+		return unwrapData<BaileysServiceSessionSnapshot>(payload)
+	}
+
 	static async sendMessage(
 		body: Record<string, unknown>,
 		headers?: Record<string, string>,

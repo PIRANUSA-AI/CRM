@@ -114,12 +114,14 @@ export function normalizeS3PublicUrl(value: string | null | undefined): string |
 	try {
 		const currentUrl = new URL(current)
 		const baseUrl = new URL(s3PublicBase)
-		if (currentUrl.origin !== baseUrl.origin) return current
 		const basePath = baseUrl.pathname.replace(/^\/+|\/+$/g, '')
 		let key = currentUrl.pathname.replace(/^\/+|\/+$/g, '')
 		if (basePath && key.startsWith(`${basePath}/`)) key = key.slice(basePath.length + 1)
-		if (key === BUCKET_NAME) return current
 		if (key.startsWith(`${BUCKET_NAME}/`)) key = key.slice(BUCKET_NAME.length + 1)
+		if (currentUrl.origin !== baseUrl.origin) {
+			return buildS3PublicUrl(key) || current
+		}
+		if (key === BUCKET_NAME) return current
 		return buildS3PublicUrl(key) || current
 	} catch {
 		return current

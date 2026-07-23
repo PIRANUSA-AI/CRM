@@ -1,6 +1,7 @@
 import './bootstrap-env'
 
 import { Elysia, t } from 'elysia'
+import { node } from '@elysiajs/node'
 import { HOST, PORT } from './config'
 import { closeDb, ensureBaileysSessionStorage } from './db'
 import { BaileysServiceRuntime } from './runtime'
@@ -53,7 +54,7 @@ function isAuthorizedInternalRequest(headers: Record<string, unknown>) {
 	return receivedToken === expectedToken
 }
 
-const service = new Elysia()
+const service = new Elysia({ adapter: node() as any })
 	.get('/health', async () => {
 		await ensureBaileysSessionStorage()
 		return {
@@ -94,8 +95,24 @@ const service = new Elysia()
 						{
 							forceRestart: true,
 							waitForReadyMs: 8_000,
+							allowUnpaired: true,
 						},
 					)
+					return { success: true, data }
+				},
+				{
+					params: t.Object({ channelId: t.String() }),
+				},
+			)
+			.post(
+				'/sessions/:channelId/reset',
+				async ({ params, headers, set }) => {
+					if (!isAuthorizedInternalRequest(headers as Record<string, unknown>)) {
+						set.status = 403
+						return { error: 'Invalid internal token' }
+					}
+
+					const data = await BaileysServiceRuntime.resetChannel(params.channelId)
 					return { success: true, data }
 				},
 				{

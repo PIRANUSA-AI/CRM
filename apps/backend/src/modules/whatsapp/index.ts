@@ -54,6 +54,24 @@ function isBaileysStorageBootstrapError(error: unknown) {
 	)
 }
 
+async function hydratePersonalBaileysConnection<T extends { channelId: string | null; hasConnectedBefore: boolean }>(
+	connection: T,
+) {
+	if (!connection.channelId) return connection
+
+	try {
+		const runtimeSession = await BaileysServiceClient.getSession(connection.channelId)
+		return {
+			...connection,
+			...runtimeSession,
+			requiresPairing: runtimeSession.status !== 'connected',
+			hasConnectedBefore: connection.hasConnectedBefore,
+		}
+	} catch {
+		return connection
+	}
+}
+
 export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 	.use(appContext)
 	.get('/me/connection', async ({ resolvedAppId, userId, set }) => {
@@ -61,7 +79,10 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 			set.status = 401
 			return { error: 'Unauthorized' }
 		}
-		const data = await WhatsAppService.getPersonalBaileysConnection(resolvedAppId, userId)
+		const connection = await WhatsAppService.getPersonalBaileysConnection(resolvedAppId, userId)
+		const data = connection
+			? await hydratePersonalBaileysConnection(connection)
+			: null
 		return {
 			success: true,
 			data: data || {
@@ -104,13 +125,98 @@ export const whatsapp = new Elysia({ tags: ['WhatsApp'] })
 				providerWebhookUrl: getBaileysProviderWebhookUrl(request, headers as Record<string, unknown>) || getBaileysWhatsappWebhookCallbackUrl(request, headers as Record<string, unknown>),
 			})
 			if (!connection?.channelId) throw new Error('Personal WhatsApp connection could not be created')
-			void BaileysServiceClient.startSession(connection.channelId).catch((error) => {
-				console.error('[WhatsApp] Personal session warm-up continues asynchronously:', error)
-			})
-			return { success: true, data: connection }
+			let runtimeSession = null
+			try {
+				runtimeSession = await BaileysServiceClient.startSession(connection.channelId)
+			} catch (error) {
+				console.error('[WhatsApp] Personal session warm-up failed:', error)
+			}
+			return {
+				success: true,
+				data: runtimeSession
+					? { ...connection, ...runtimeSession, requiresPairing: runtimeSession.status !== 'connected', hasConnectedBefore: connection.hasConnectedBefore }
+					: connection,
+			}
 		} catch (error: any) {
 			set.status = 400
 			return { error: error?.message || 'Tidak dapat memulai koneksi WhatsApp' }
+		}
+	})
+	.post('/me/connection/request-qr', async ({ resolvedAppId, userId, request, headers, set }) => {
+		if (!resolvedAppId || !userId) {
+			set.status = 401
+			return { error: 'Unauthorized' }
+		}
+
+		try {
+			const prisma = (await import('../../lib/prisma')).default
+			const current = await WhatsAppService.getPersonalBaileysConnection(resolvedAppId, userId)
+			if (current?.isConnected) {
+				return { success: true, data: await hydratePersonalBaileysConnection(current) }
+			}
+
+			const hangingSessions = await prisma.baileys_sessions.findMany({
+				where: {
+					app_id: resolvedAppId,
+					owner_user_id: userId,
+					status: { not: 'connected' },
+				},
+				select: { id: true, channel_id: true },
+				orderBy: { updated_at: 'desc' },
+			})
+			const channelIds = hangingSessions.map((session) => session.channel_id)
+			await Promise.allSettled(
+				channelIds.map((channelId) => BaileysServiceClient.resetSession(channelId)),
+			)
+
+			if (hangingSessions.length > 0) {
+				const sessionIds = hangingSessions.map((session) => session.id)
+				await prisma.$executeRawUnsafe(
+					'UPDATE "baileys_sessions" SET "auth_state" = NULL WHERE "id" = ANY($1::uuid[])',
+					sessionIds,
+				)
+				await prisma.baileys_sessions.updateMany({
+					where: { id: { in: sessionIds } },
+					data: {
+						status: 'not_paired',
+						phone_number: null,
+						first_connected_at: null,
+						last_connected_at: null,
+						pairing_code: null,
+						qr_code: null,
+						last_error: null,
+						updated_at: new Date(),
+					},
+				})
+			}
+
+			let channelId = hangingSessions[0]?.channel_id || null
+			if (!channelId) {
+				const user = await prisma.users.findUnique({
+					where: { id: userId },
+					select: { name: true, phone_number: true },
+				})
+				const connection = await WhatsAppService.ensurePersonalBaileysConnection({
+					appId: resolvedAppId,
+					userId,
+					userName: user?.name || 'Sales',
+					providerWebhookUrl: getBaileysProviderWebhookUrl(request, headers as Record<string, unknown>) || getBaileysWhatsappWebhookCallbackUrl(request, headers as Record<string, unknown>),
+				})
+				channelId = connection?.channelId || null
+			}
+			if (!channelId) throw new Error('Personal WhatsApp connection could not be reset')
+
+			const runtimeSession = await BaileysServiceClient.startSession(channelId)
+			const connection = await WhatsAppService.getPersonalBaileysConnection(resolvedAppId, userId)
+			return {
+				success: true,
+				data: connection
+					? { ...connection, ...runtimeSession, requiresPairing: runtimeSession.status !== 'connected', hasConnectedBefore: false }
+					: runtimeSession,
+			}
+		} catch (error: any) {
+			set.status = 400
+			return { error: error?.message || 'Tidak dapat meminta QR WhatsApp baru' }
 		}
 	})
 	.get(

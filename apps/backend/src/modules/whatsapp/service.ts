@@ -24,8 +24,6 @@ type BaileysSessionSummaryRecord = {
 	last_error: string | null
 	last_connected_at: Date | null
 	last_seen_at: Date | null
-	pairing_code: string | null
-	qr_code: string | null
 }
 
 function getExtensionFromMimeType(mimeType: string): string {
@@ -187,8 +185,13 @@ function buildBaileysSessionSummary(
 		}
 	}
 
+	const persistedStatus = session?.status || 'pending'
 	const fallbackStatus =
-		channelIsActive === false ? 'disabled' : session?.status || 'pending'
+		channelIsActive === false
+			? 'disabled'
+			: ['qr_ready', 'pairing_code_ready'].includes(persistedStatus)
+				? 'not_paired'
+				: persistedStatus
 
 	return {
 		baileys_session_status: fallbackStatus,
@@ -197,10 +200,8 @@ function buildBaileysSessionSummary(
 		baileys_last_connected_at:
 			session?.last_connected_at?.toISOString() || null,
 		baileys_last_seen_at: session?.last_seen_at?.toISOString() || null,
-		baileys_pairing_code_ready:
-			Boolean(session?.pairing_code) || fallbackStatus === 'pairing_code_ready',
-		baileys_qr_ready:
-			Boolean(session?.qr_code) || fallbackStatus === 'qr_ready',
+		baileys_pairing_code_ready: false,
+		baileys_qr_ready: false,
 	}
 }
 
@@ -235,8 +236,6 @@ async function attachBaileysSessionSummaries<T extends Record<string, unknown>>(
 			last_error: true,
 			last_connected_at: true,
 			last_seen_at: true,
-			pairing_code: true,
-			qr_code: true,
 		},
 	})
 
@@ -680,10 +679,12 @@ export abstract class WhatsAppService {
 			channelId,
 			providerChannelKey: session.provider_channel_key,
 			phoneNumber: session.phone_number || null,
-			status: session.status || 'pending',
-			pairingCode: session.pairing_code || null,
-			qrCode: session.qr_code || null,
-			lastError: session.last_error || null,
+			status: session.status === 'qr_ready' ? 'not_paired' : session.status || 'pending',
+			pairingCode: null,
+			qrCode: null,
+			lastError: session.status === 'qr_ready'
+				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
+				: session.last_error || null,
 			lastConnectedAt: session.last_connected_at?.toISOString() || null,
 			lastSeenAt: session.last_seen_at?.toISOString() || null,
 			isConnected: session.status === 'connected',
@@ -707,10 +708,12 @@ export abstract class WhatsAppService {
 		return {
 			channelId: session.channel_id,
 			phoneNumber: session.phone_number || null,
-			status: session.status || 'pending',
-			pairingCode: session.pairing_code || null,
-			qrCode: session.qr_code || null,
-			lastError: session.last_error || null,
+			status: session.status === 'qr_ready' ? 'not_paired' : session.status || 'pending',
+			pairingCode: null,
+			qrCode: null,
+			lastError: session.status === 'qr_ready'
+				? 'QR code sudah kedaluwarsa, jalankan restart session untuk QR baru'
+				: session.last_error || null,
 			lastConnectedAt: session.last_connected_at?.toISOString?.() || session.last_connected_at || null,
 			isConnected: session.status === 'connected',
 			requiresPairing: session.status !== 'connected',
@@ -745,21 +748,11 @@ export abstract class WhatsAppService {
 
 		let existing = await this.getPersonalBaileysConnection(params.appId, params.userId)
 
-		// Update phone number & pairing mode kalo user punya nomor valid
+		// Update phone number kalo user punya nomor valid
 		if (phoneNumber && existing?.channelId) {
-			const channelRow = await prisma.whatsapp_channels.findUnique({
-				where: { id: existing.channelId },
-				select: { extended_metadata: true },
-			})
 			await prisma.whatsapp_channels.update({
 				where: { id: existing.channelId },
-				data: {
-					phone_number: phoneNumber,
-					extended_metadata: {
-						...((channelRow?.extended_metadata || {}) as Record<string, unknown>),
-						baileys_link_mode: 'pairing_code',
-					},
-				},
+				data: { phone_number: phoneNumber },
 			})
 			await prisma.baileys_sessions.update({
 				where: { channel_id: existing.channelId },
@@ -789,13 +782,7 @@ export abstract class WhatsAppService {
 		if (phoneNumber) {
 			await prisma.whatsapp_channels.update({
 				where: { id: created.channel.id },
-				data: {
-					phone_number: phoneNumber,
-					extended_metadata: {
-						...(created.channel as any).extended_metadata || {},
-						baileys_link_mode: 'pairing_code',
-					},
-				},
+				data: { phone_number: phoneNumber },
 			})
 		}
 		return this.getPersonalBaileysConnection(params.appId, params.userId)
