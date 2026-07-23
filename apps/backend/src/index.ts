@@ -10,6 +10,7 @@ import {
 	agentSettings,
 	ai,
 	apiTools,
+	auditLog,
 	authModule,
 	businessWebhooks,
 	broadcast,
@@ -38,6 +39,7 @@ import {
 	personalWhatsappInbox,
 	sakti,
 	salesProfiles,
+	salesTargets,
 	tasks,
 	teamModule,
 	templateVariables,
@@ -148,6 +150,7 @@ export const app = new Elysia()
 			.use(media)
 			.use(ai)
 			.use(apiTools)
+			.use(auditLog)
 			.use(chatbot)
 			.use(knowledge)
 			.use(flow)
@@ -155,6 +158,7 @@ export const app = new Elysia()
 			.use(personalWhatsappInbox)
 			.use(tasks)
 			.use(salesProfiles)
+			.use(salesTargets)
 			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)
@@ -317,12 +321,14 @@ export const app = new Elysia()
 			.use(media)
 			.use(ai)
 			.use(apiTools)
+			.use(auditLog)
 			.use(chatbot)
 			.use(knowledge)
 			.use(flow)
 			.use(orchestration)
 			.use(tasks)
 			.use(salesProfiles)
+			.use(salesTargets)
 			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)

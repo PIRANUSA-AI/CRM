@@ -293,4 +293,43 @@ export abstract class SalesProfileService {
 			profile: profileShape(row as ProfileRow),
 		}
 	}
+
+	// Win/loss track record for one sales, read from opportunities directly
+	// (no separate ledger). Same team gate as upsertProfile: a leader may only
+	// look at their own team, ceo/administrator/superadmin see everyone.
+	static async performanceSummary(actor: SalesProfileActor, userId: string) {
+		const sales = await resolveTeamSales(actor)
+		if (!sales.get(userId)) {
+			throw new SalesProfileNotFoundError('Sales tidak ditemukan atau di luar tim Anda')
+		}
+
+		const rows = await prisma.opportunities.findMany({
+			where: {
+				app_id: actor.appId,
+				owner_id: userId,
+				status: { in: ['won', 'lost'] },
+			},
+			select: { status: true, value: true },
+		})
+
+		let wonCount = 0
+		let lostCount = 0
+		let totalValue = 0
+		for (const row of rows) {
+			if (row.status === 'won') {
+				wonCount += 1
+				totalValue += row.value != null ? Number(row.value) : 0
+			} else if (row.status === 'lost') {
+				lostCount += 1
+			}
+		}
+		const closedCount = wonCount + lostCount
+
+		return {
+			wonCount,
+			lostCount,
+			winRate: closedCount > 0 ? Math.round((wonCount / closedCount) * 1000) / 10 : 0,
+			totalValue,
+		}
+	}
 }

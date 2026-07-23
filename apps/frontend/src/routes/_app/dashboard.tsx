@@ -2,10 +2,15 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	Activity,
 	ArrowUpRight,
+	CheckSquare,
 	Clock3,
+	Gauge,
 	Inbox,
+	MessageCircle,
 	Sparkles,
+	Target,
 	TrendingUp,
+	Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -13,7 +18,20 @@ import {
 	CrmStatCard,
 	CrmAvatar,
 } from '@/components/crm/shared'
-import { metrics } from '@/lib/api'
+import {
+	metrics,
+	opportunities,
+	personalInbox,
+	salesProfiles,
+	salesTargets,
+	tasks,
+	type OpportunityStats,
+	type PersonalInboxConversation,
+	type SalesProfileRow,
+	type SalesTargetRow,
+	type TaskSummary,
+} from '@/lib/api'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
 import {
 	getAppIdFromCookie,
 	getOrgSlugFromCookie,
@@ -223,11 +241,22 @@ function normalizeDashboard(raw: any): DashboardUiData {
 
 function DashboardPage() {
 	const navigate = useNavigate()
+	const currentUser = useCurrentUser()
 	const [data, setData] = useState<DashboardUiData>(EMPTY_DASHBOARD)
 	const [loading, setLoading] = useState(true)
 	const [contextReady, setContextReady] = useState(false)
 	const [range, setRange] = useState<DashboardRange>('7d')
 	const [error, setError] = useState<string | null>(null)
+	const [targets, setTargets] = useState<SalesTargetRow[]>([])
+	const [taskSummary, setTaskSummary] = useState<TaskSummary | null>(null)
+	const [pipelineStats, setPipelineStats] = useState<OpportunityStats | null>(
+		null,
+	)
+	const [needsReplyCount, setNeedsReplyCount] = useState(0)
+	const [recentConversations, setRecentConversations] = useState<
+		PersonalInboxConversation[]
+	>([])
+	const [salesCapacity, setSalesCapacity] = useState<SalesProfileRow[]>([])
 
 	useEffect(() => {
 		let mounted = true
@@ -241,8 +270,7 @@ function DashboardPage() {
 			const orgName = localStorage.getItem('crm_org_name')
 			const orgSlug =
 				getOrgSlugFromCookie() || localStorage.getItem('crm_org_slug')
-			const appId =
-				getAppIdFromCookie() || localStorage.getItem('crm_app_id')
+			const appId = getAppIdFromCookie() || localStorage.getItem('crm_app_id')
 
 			if (orgName && orgSlug && appId) {
 				if (mounted) setContextReady(true)
@@ -309,12 +337,150 @@ function DashboardPage() {
 		loadDashboard()
 	}, [contextReady, loadDashboard])
 
+	// Independent of `range`: yearly/monthly targets don't follow the
+	// today/7d/30d activity filter above.
+	useEffect(() => {
+		if (!contextReady) return
+		let mounted = true
+		salesTargets
+			.list()
+			.then((result) => {
+				if (mounted) setTargets(result?.data || [])
+			})
+			.catch((currentError) => {
+				console.error('Failed to load sales targets:', currentError)
+			})
+		return () => {
+			mounted = false
+		}
+	}, [contextReady])
+
+	const isSales = currentUser?.role === 'sales'
+
+	// Sales-only widgets (task/pipeline/inbox summaries) - not fetched for
+	// other roles, which keep the operational widgets below instead.
+	useEffect(() => {
+		if (!contextReady || !isSales) return
+		let mounted = true
+		Promise.all([
+			tasks.summary(),
+			opportunities.stats(),
+			personalInbox.needsReplyCount(),
+			personalInbox.recentConversations(),
+		])
+			.then(([taskResult, pipelineResult, replyResult, recentResult]) => {
+				if (!mounted) return
+				setTaskSummary(taskResult?.data || null)
+				setPipelineStats(pipelineResult?.payload || null)
+				setNeedsReplyCount(replyResult?.count || 0)
+				setRecentConversations((recentResult?.data || []).slice(0, 5))
+			})
+			.catch((currentError) => {
+				console.error('Failed to load sales dashboard widgets:', currentError)
+			})
+		return () => {
+			mounted = false
+		}
+	}, [contextReady, isSales])
+
+	const isAdmin = currentUser?.role === 'administrator'
+	const isCeo = currentUser?.role === 'ceo'
+
+	// Administrator + CEO: capacity/team mapping for the team-comparison widget
+	// (both roles) and the sales-capacity widget (administrator only). Reuses
+	// GET /sales-profiles, which already carries activeLoad/maxActive/teamId/
+	// teamName in one row per sales.
+	useEffect(() => {
+		if (!contextReady || !(isAdmin || isCeo)) return
+		let mounted = true
+		salesProfiles
+			.list()
+			.then((result) => {
+				if (mounted) setSalesCapacity(result?.data || [])
+			})
+			.catch((currentError) => {
+				console.error('Failed to load sales capacity:', currentError)
+			})
+		return () => {
+			mounted = false
+		}
+	}, [contextReady, isAdmin, isCeo])
+
 	const maxVolume = useMemo(() => {
 		return Math.max(1, ...data.volume.map((row) => row.total))
 	}, [data.volume])
 	const hasVolume = data.volume.some((row) => row.total > 0)
 	const hasFunnel = data.funnel.some((step) => step.value > 0)
 	const hasAgents = data.agents.length > 0
+	const yearTarget = targets.find(
+		(t) => t.userId === currentUser?.id && t.periodType === 'year',
+	)
+	const monthTarget = targets.find(
+		(t) => t.userId === currentUser?.id && t.periodType === 'month',
+	)
+
+	const isLeader = currentUser?.role === 'leader'
+	// `targets` already holds every visible row (self + team, for a leader) -
+	// no separate fetch needed, just sum what's already been fetched for the
+	// "Target Penjualan" widget above.
+	const teamYearTargets = targets.filter((t) => t.periodType === 'year')
+	const teamMonthTargets = targets.filter((t) => t.periodType === 'month')
+	const teamRollup = (rows: SalesTargetRow[]) =>
+		rows.reduce(
+			(acc, row) => ({
+				revenueTarget: acc.revenueTarget + row.revenueTarget,
+				revenueActual: acc.revenueActual + row.achievement.revenue,
+				dealCountTarget: acc.dealCountTarget + row.dealCountTarget,
+				dealCountActual: acc.dealCountActual + row.achievement.dealCount,
+			}),
+			{
+				revenueTarget: 0,
+				revenueActual: 0,
+				dealCountTarget: 0,
+				dealCountActual: 0,
+			},
+		)
+	const teamYearRollup = teamRollup(teamYearTargets)
+	const teamMonthRollup = teamRollup(teamMonthTargets)
+	const teamMemberRows = [...teamMonthTargets].sort(
+		(a, b) =>
+			a.achievement.revenueProgressPercent -
+			b.achievement.revenueProgressPercent,
+	)
+
+	// Team-name lookup per sales, reused for both the team-comparison rollup
+	// and (implicitly) capacity grouping. A sales in more than one team only
+	// shows up under the first one salesProfiles.list() reports.
+	const teamNameByUserId = new Map(
+		salesCapacity.map((row) => [row.userId, row.teamName || 'Tanpa Tim']),
+	)
+	const teamComparisonRows = (() => {
+		const byTeam = new Map<
+			string,
+			{ teamName: string; revenueTarget: number; revenueActual: number }
+		>()
+		for (const row of teamMonthTargets) {
+			const teamName = teamNameByUserId.get(row.userId) || 'Tanpa Tim'
+			const entry = byTeam.get(teamName) || {
+				teamName,
+				revenueTarget: 0,
+				revenueActual: 0,
+			}
+			entry.revenueTarget += row.revenueTarget
+			entry.revenueActual += row.achievement.revenue
+			byTeam.set(teamName, entry)
+		}
+		return [...byTeam.values()].sort((a, b) => {
+			const pctA = a.revenueTarget > 0 ? a.revenueActual / a.revenueTarget : 0
+			const pctB = b.revenueTarget > 0 ? b.revenueActual / b.revenueTarget : 0
+			return pctB - pctA
+		})
+	})()
+	const capacityRows = [...salesCapacity].sort((a, b) => {
+		const capA = a.profile.maxActive || 20
+		const capB = b.profile.maxActive || 20
+		return b.activeLoad / capB - a.activeLoad / capA
+	})
 
 	if (!contextReady) return null
 
@@ -365,8 +531,7 @@ function DashboardPage() {
 				</div>
 			) : null}
 
-
-			<div className="ocm-grid-4">
+			<div className={isSales ? 'ocm-grid-3' : 'ocm-grid-4'}>
 				<CrmStatCard
 					label="Chat masuk"
 					value={
@@ -378,18 +543,18 @@ function DashboardPage() {
 					deltaTone={positiveTone(data.cards.incomingChats)}
 					icon={<Inbox size={16} className="text-primary" />}
 				/>
-				<CrmStatCard
-					label="AI resolved"
-					value={
-						loading
-							? '...'
-							: `${data.cards.aiResolvedRate.value.toFixed(1)}%`
-					}
-					delta={formatDeltaValue(data.cards.aiResolvedRate, 'pp')}
-					deltaTone={positiveTone(data.cards.aiResolvedRate)}
-					icon={<Sparkles size={16} className="text-primary" />}
-					subtitle="Target 75%"
-				/>
+				{isSales ? null : (
+					<CrmStatCard
+						label="AI resolved"
+						value={
+							loading ? '...' : `${data.cards.aiResolvedRate.value.toFixed(1)}%`
+						}
+						delta={formatDeltaValue(data.cards.aiResolvedRate, 'pp')}
+						deltaTone={positiveTone(data.cards.aiResolvedRate)}
+						icon={<Sparkles size={16} className="text-primary" />}
+						subtitle="Target 75%"
+					/>
+				)}
 				<CrmStatCard
 					label="Avg response"
 					value={
@@ -410,183 +575,656 @@ function DashboardPage() {
 				/>
 			</div>
 
-			<div className="ocm-grid-2">
+			{yearTarget || monthTarget ? (
 				<section className="ocm-card">
 					<div className="ocm-card-header">
-						<h2 className="ocm-card-title">Chat Volume · {RANGE_LABEL[range]}</h2>
-						<div className="flex items-center gap-1 text-[11px]">
-							<span className="ocm-tag">AI</span>
-							<span className="ocm-tag">CS</span>
-							<span className="ocm-tag">Handover</span>
-						</div>
+						<h2 className="ocm-card-title flex items-center gap-2">
+							<Target size={16} className="text-primary" />
+							Target Penjualan
+						</h2>
 					</div>
-					<div className="ocm-card-body space-y-3">
-						{loading ? (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Memuat volume chat...
-							</p>
-						) : hasVolume ? (
-							data.volume.map((row) => {
-								const pct = (row.total / maxVolume) * 100
-								return (
-									<div key={row.date || row.day}>
-										<div className="mb-1 flex items-center justify-between text-xs">
-											<span className="font-semibold">{row.day}</span>
-											<span className="text-muted-foreground">
-												{row.total.toLocaleString('id-ID')}
-											</span>
-										</div>
-										<div className="ocm-progress-track">
-											<div
-												className="ocm-progress-bar"
-												style={{ width: `${pct}%` }}
-											/>
-										</div>
+					<div className="ocm-card-body space-y-4">
+						{[
+							{ label: 'Tahunan', target: yearTarget },
+							{ label: 'Bulanan', target: monthTarget },
+						]
+							.filter((row): row is { label: string; target: SalesTargetRow } =>
+								Boolean(row.target),
+							)
+							.map(({ label, target }) => (
+								<div key={target.periodType}>
+									<div className="mb-1 flex items-center justify-between text-xs">
+										<span className="font-semibold">
+											Target {label} · {target.periodKey}
+										</span>
+										<span className="text-muted-foreground">
+											{formatRupiah(target.achievement.revenue)} /{' '}
+											{formatRupiah(target.revenueTarget)}
+										</span>
 									</div>
-								)
-							})
-						) : (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Belum ada volume chat pada periode ini.
-							</p>
-						)}
-					</div>
-				</section>
-
-				<section className="ocm-card">
-					<div className="ocm-card-header">
-						<h2 className="ocm-card-title">Funnel Penjualan</h2>
-						<span className="ocm-tag">{RANGE_LABEL[range]}</span>
-					</div>
-					<div className="ocm-card-body space-y-2">
-						{loading ? (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Memuat funnel...
-							</p>
-						) : hasFunnel ? (
-							data.funnel.map((step, index) => {
-								const next = data.funnel[index + 1]
-								const drop =
-									next && step.value > 0
-										? Math.max(0, Math.round((1 - next.value / step.value) * 100))
-										: 0
-								return (
-									<div key={step.label}>
-										<div className="mb-1 flex items-center justify-between text-xs">
-											<span>{step.label}</span>
-											<span className="text-muted-foreground">
-												{step.value.toLocaleString('id-ID')} ·{' '}
-												{step.pct.toFixed(1)}%
-											</span>
-										</div>
-										<div className="ocm-progress-track">
-											<div
-												className="ocm-progress-bar"
-												style={{ width: `${Math.min(100, step.pct)}%` }}
-											/>
-										</div>
-										{next ? (
-											<p className="mt-1 text-right text-[11px] text-muted-foreground">
-												Drop {drop}%
-											</p>
-										) : null}
+									<div className="ocm-progress-track">
+										<div
+											className="ocm-progress-bar"
+											style={{
+												width: `${Math.min(100, target.achievement.revenueProgressPercent)}%`,
+											}}
+										/>
 									</div>
-								)
-							})
-						) : (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Belum ada data funnel pada periode ini.
-							</p>
-						)}
-					</div>
-				</section>
-			</div>
-
-			<div className="ocm-grid-2">
-				<section className="ocm-card">
-					<div className="ocm-card-header">
-						<h2 className="ocm-card-title">CS Performance · {RANGE_LABEL[range]}</h2>
-						<button type="button" className="ocm-btn">
-							<ArrowUpRight size={13} />
-							Detail
-						</button>
-					</div>
-					<div className="ocm-card-body overflow-x-auto">
-						<table className="ocm-table">
-							<thead>
-								<tr>
-									<th>Agent</th>
-									<th>Chats</th>
-									<th>CSAT</th>
-									<th>Revenue</th>
-								</tr>
-							</thead>
-							<tbody>
-								{loading ? (
-									<tr>
-										<td colSpan={4} className="py-8 text-center text-muted-foreground">
-											Memuat performa agent...
-										</td>
-									</tr>
-								) : hasAgents ? (
-									data.agents.map((row) => (
-										<tr key={row.id || row.name}>
-											<td>
-												<div className="flex items-center gap-2">
-													<CrmAvatar
-														name={row.name}
-														online={row.online}
-														size={24}
-													/>
-													<span>{row.name}</span>
-												</div>
-											</td>
-											<td>{row.chats.toLocaleString('id-ID')}</td>
-											<td>{row.csat > 0 ? row.csat.toFixed(1) : '-'}</td>
-											<td>{formatRupiah(row.revenue)}</td>
-										</tr>
-									))
-								) : (
-									<tr>
-										<td colSpan={4} className="py-8 text-center text-muted-foreground">
-											Belum ada performa agent pada periode ini.
-										</td>
-									</tr>
-								)}
-							</tbody>
-						</table>
-					</div>
-				</section>
-
-				<section className="ocm-card">
-					<div className="ocm-card-header">
-						<h2 className="ocm-card-title">Operational Alerts</h2>
-					</div>
-					<div className="ocm-card-body space-y-3 text-sm">
-						{loading ? (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Memuat alert operasional...
-							</p>
-						) : data.alerts.length > 0 ? (
-							data.alerts.map((alert) => (
-								<div
-									key={alert.id || alert.title}
-									className={`rounded-lg border p-3 ${alertToneClass(alert.tone)}`}
-								>
-									<p className="font-semibold">{alert.title}</p>
-									<p className="text-xs text-muted-foreground">
-										{alert.description}
+									<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+										<span>
+											{target.achievement.dealCount} / {target.dealCountTarget}{' '}
+											deal
+										</span>
+										<span>
+											{target.achievement.revenueProgressPercent.toFixed(1)}%
+										</span>
 									</p>
 								</div>
-							))
-						) : (
-							<p className="py-8 text-center text-sm text-muted-foreground">
-								Belum ada alert untuk periode ini.
-							</p>
-						)}
+							))}
 					</div>
 				</section>
-			</div>
+			) : null}
+
+			{isLeader &&
+			(teamYearTargets.length > 0 || teamMonthTargets.length > 0) ? (
+				<div className="ocm-grid-2">
+					<section className="ocm-card">
+						<div className="ocm-card-header">
+							<h2 className="ocm-card-title flex items-center gap-2">
+								<Target size={16} className="text-primary" />
+								Target Tim
+							</h2>
+						</div>
+						<div className="ocm-card-body space-y-4">
+							{[
+								{
+									label: 'Tahunan',
+									rollup: teamYearRollup,
+									count: teamYearTargets.length,
+								},
+								{
+									label: 'Bulanan',
+									rollup: teamMonthRollup,
+									count: teamMonthTargets.length,
+								},
+							]
+								.filter((row) => row.count > 0)
+								.map(({ label, rollup }) => {
+									const pct =
+										rollup.revenueTarget > 0
+											? Math.min(
+													100,
+													(rollup.revenueActual / rollup.revenueTarget) * 100,
+												)
+											: 0
+									return (
+										<div key={label}>
+											<div className="mb-1 flex items-center justify-between text-xs">
+												<span className="font-semibold">
+													Target {label} Tim
+												</span>
+												<span className="text-muted-foreground">
+													{formatRupiah(rollup.revenueActual)} /{' '}
+													{formatRupiah(rollup.revenueTarget)}
+												</span>
+											</div>
+											<div className="ocm-progress-track">
+												<div
+													className="ocm-progress-bar"
+													style={{ width: `${pct}%` }}
+												/>
+											</div>
+											<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+												<span>
+													{rollup.dealCountActual} / {rollup.dealCountTarget}{' '}
+													deal
+												</span>
+												<span>{pct.toFixed(1)}%</span>
+											</p>
+										</div>
+									)
+								})}
+						</div>
+					</section>
+
+					<section className="ocm-card">
+						<div className="ocm-card-header">
+							<h2 className="ocm-card-title">Progress Anggota · Bulanan</h2>
+						</div>
+						<div className="ocm-card-body space-y-1">
+							{teamMemberRows.length > 0 ? (
+								teamMemberRows.map((row) => (
+									<div key={row.userId} className="py-1.5">
+										<div className="mb-1 flex items-center justify-between text-xs">
+											<span className="font-semibold">
+												{row.userName || 'Sales'}
+											</span>
+											<span className="text-muted-foreground">
+												{row.achievement.revenueProgressPercent.toFixed(1)}%
+											</span>
+										</div>
+										<div className="ocm-progress-track">
+											<div
+												className="ocm-progress-bar"
+												style={{
+													width: `${Math.min(100, row.achievement.revenueProgressPercent)}%`,
+												}}
+											/>
+										</div>
+									</div>
+								))
+							) : (
+								<p className="py-8 text-center text-sm text-muted-foreground">
+									Belum ada target bulanan yang di-set utk tim ini.
+								</p>
+							)}
+						</div>
+					</section>
+				</div>
+			) : null}
+
+			{(isAdmin || isCeo) &&
+			(teamComparisonRows.length > 0 || capacityRows.length > 0) ? (
+				<div className="ocm-grid-2">
+					<section className="ocm-card">
+						<div className="ocm-card-header">
+							<h2 className="ocm-card-title flex items-center gap-2">
+								<Users size={16} className="text-primary" />
+								Perbandingan Tim · Bulanan
+							</h2>
+						</div>
+						<div className="ocm-card-body space-y-4">
+							{teamComparisonRows.length > 0 ? (
+								teamComparisonRows.map((team) => {
+									const pct =
+										team.revenueTarget > 0
+											? Math.min(
+													100,
+													(team.revenueActual / team.revenueTarget) * 100,
+												)
+											: 0
+									return (
+										<div key={team.teamName}>
+											<div className="mb-1 flex items-center justify-between text-xs">
+												<span className="font-semibold">{team.teamName}</span>
+												<span className="text-muted-foreground">
+													{formatRupiah(team.revenueActual)} /{' '}
+													{formatRupiah(team.revenueTarget)}
+												</span>
+											</div>
+											<div className="ocm-progress-track">
+												<div
+													className="ocm-progress-bar"
+													style={{ width: `${pct}%` }}
+												/>
+											</div>
+											<p className="mt-1 text-right text-[11px] text-muted-foreground">
+												{pct.toFixed(1)}%
+											</p>
+										</div>
+									)
+								})
+							) : (
+								<p className="py-8 text-center text-sm text-muted-foreground">
+									Belum ada target bulanan yang di-set.
+								</p>
+							)}
+						</div>
+					</section>
+
+					{isAdmin ? (
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<Gauge size={16} className="text-primary" />
+									Kapasitas Sales
+								</h2>
+								<a href="/kelola-tim" className="ocm-btn">
+									<ArrowUpRight size={13} />
+									Kelola Tim
+								</a>
+							</div>
+							<div className="ocm-card-body space-y-1">
+								{capacityRows.length > 0 ? (
+									capacityRows.map((row) => {
+										const cap = row.profile.maxActive || 20
+										const overloaded = row.activeLoad >= cap
+										const pct = Math.min(100, (row.activeLoad / cap) * 100)
+										return (
+											<div key={row.userId} className="py-1.5">
+												<div className="mb-1 flex items-center justify-between text-xs">
+													<span className="font-semibold">
+														{row.name || row.email}
+														{row.teamName ? (
+															<span className="ml-1 font-normal text-muted-foreground">
+																· {row.teamName}
+															</span>
+														) : null}
+													</span>
+													<span
+														className={
+															overloaded
+																? 'font-semibold text-red-500'
+																: 'text-muted-foreground'
+														}
+													>
+														{row.activeLoad} / {cap}
+													</span>
+												</div>
+												<div className="ocm-progress-track">
+													<div
+														className="ocm-progress-bar"
+														style={{
+															width: `${pct}%`,
+															...(overloaded ? { background: '#ef4444' } : {}),
+														}}
+													/>
+												</div>
+											</div>
+										)
+									})
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Belum ada data kapasitas sales.
+									</p>
+								)}
+							</div>
+						</section>
+					) : (
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<Target size={16} className="text-primary" />
+									Target Perusahaan
+								</h2>
+							</div>
+							<div className="ocm-card-body space-y-4">
+								{[
+									{
+										label: 'Tahunan',
+										rollup: teamYearRollup,
+										count: teamYearTargets.length,
+									},
+									{
+										label: 'Bulanan',
+										rollup: teamMonthRollup,
+										count: teamMonthTargets.length,
+									},
+								]
+									.filter((row) => row.count > 0)
+									.map(({ label, rollup }) => {
+										const pct =
+											rollup.revenueTarget > 0
+												? Math.min(
+														100,
+														(rollup.revenueActual / rollup.revenueTarget) * 100,
+													)
+												: 0
+										return (
+											<div key={label}>
+												<div className="mb-1 flex items-center justify-between text-xs">
+													<span className="font-semibold">
+														Target {label} Perusahaan
+													</span>
+													<span className="text-muted-foreground">
+														{formatRupiah(rollup.revenueActual)} /{' '}
+														{formatRupiah(rollup.revenueTarget)}
+													</span>
+												</div>
+												<div className="ocm-progress-track">
+													<div
+														className="ocm-progress-bar"
+														style={{ width: `${pct}%` }}
+													/>
+												</div>
+												<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+													<span>
+														{rollup.dealCountActual} / {rollup.dealCountTarget}{' '}
+														deal
+													</span>
+													<span>{pct.toFixed(1)}%</span>
+												</p>
+											</div>
+										)
+									})}
+							</div>
+						</section>
+					)}
+				</div>
+			) : null}
+
+			{isSales ? (
+				<>
+					<div className="ocm-grid-2">
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<CheckSquare size={16} className="text-primary" />
+									Task Hari Ini
+								</h2>
+								<a href="/tasks" className="ocm-btn">
+									<ArrowUpRight size={13} />
+									Daftar Tugas
+								</a>
+							</div>
+							<div className="ocm-card-body">
+								{taskSummary ? (
+									<div className="grid grid-cols-3 gap-3 text-center">
+										<div>
+											<p className="text-2xl font-bold text-red-500">
+												{taskSummary.overdue}
+											</p>
+											<p className="text-xs text-muted-foreground">Overdue</p>
+										</div>
+										<div>
+											<p className="text-2xl font-bold">{taskSummary.today}</p>
+											<p className="text-xs text-muted-foreground">Hari ini</p>
+										</div>
+										<div>
+											<p className="text-2xl font-bold text-emerald-500">
+												{taskSummary.completedToday}
+											</p>
+											<p className="text-xs text-muted-foreground">Selesai</p>
+										</div>
+									</div>
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Memuat ringkasan task...
+									</p>
+								)}
+							</div>
+						</section>
+
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<TrendingUp size={16} className="text-primary" />
+									Pipeline Saya
+								</h2>
+								<a href="/deals" className="ocm-btn">
+									<ArrowUpRight size={13} />
+									Deals
+								</a>
+							</div>
+							<div className="ocm-card-body space-y-2">
+								{pipelineStats ? (
+									(
+										[
+											['prospek', 'Prospek'],
+											['opportunity', 'Opportunity'],
+											['won', 'Won'],
+											['lost', 'Lost'],
+										] as const
+									).map(([key, label]) => (
+										<div
+											key={key}
+											className="flex items-center justify-between text-xs"
+										>
+											<span className="font-semibold">{label}</span>
+											<span className="text-muted-foreground">
+												{pipelineStats[key].count} deal ·{' '}
+												{formatRupiah(pipelineStats[key].value)}
+											</span>
+										</div>
+									))
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Memuat pipeline...
+									</p>
+								)}
+							</div>
+						</section>
+					</div>
+
+					<div className="ocm-grid-2">
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<MessageCircle size={16} className="text-primary" />
+									Chat Butuh Respons
+								</h2>
+								<a href="/chat" className="ocm-btn">
+									<ArrowUpRight size={13} />
+									Kotak Masuk
+								</a>
+							</div>
+							<div className="ocm-card-body flex flex-col items-center justify-center py-6">
+								<p className="text-4xl font-bold text-primary">
+									{needsReplyCount}
+								</p>
+								<p className="mt-1 text-xs text-muted-foreground">
+									percakapan menunggu balasan Anda
+								</p>
+							</div>
+						</section>
+
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title">Aktivitas Terakhir</h2>
+							</div>
+							<div className="ocm-card-body space-y-1">
+								{recentConversations.length > 0 ? (
+									recentConversations.map((item) => (
+										<a
+											key={item.id}
+											href="/chat"
+											className="flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-muted/40"
+										>
+											<CrmAvatar name={item.name} size={24} />
+											<div className="min-w-0 flex-1">
+												<p className="truncate font-semibold">{item.name}</p>
+												<p className="truncate text-xs text-muted-foreground">
+													{item.preview}
+												</p>
+											</div>
+											{item.unread > 0 ? (
+												<span className="ocm-tag">{item.unread}</span>
+											) : null}
+										</a>
+									))
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Belum ada aktivitas percakapan.
+									</p>
+								)}
+							</div>
+						</section>
+					</div>
+				</>
+			) : isCeo ? null : (
+				<>
+					<div className="ocm-grid-2">
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title">
+									Chat Volume · {RANGE_LABEL[range]}
+								</h2>
+								<div className="flex items-center gap-1 text-[11px]">
+									<span className="ocm-tag">AI</span>
+									<span className="ocm-tag">CS</span>
+									<span className="ocm-tag">Handover</span>
+								</div>
+							</div>
+							<div className="ocm-card-body space-y-3">
+								{loading ? (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Memuat volume chat...
+									</p>
+								) : hasVolume ? (
+									data.volume.map((row) => {
+										const pct = (row.total / maxVolume) * 100
+										return (
+											<div key={row.date || row.day}>
+												<div className="mb-1 flex items-center justify-between text-xs">
+													<span className="font-semibold">{row.day}</span>
+													<span className="text-muted-foreground">
+														{row.total.toLocaleString('id-ID')}
+													</span>
+												</div>
+												<div className="ocm-progress-track">
+													<div
+														className="ocm-progress-bar"
+														style={{ width: `${pct}%` }}
+													/>
+												</div>
+											</div>
+										)
+									})
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Belum ada volume chat pada periode ini.
+									</p>
+								)}
+							</div>
+						</section>
+
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title">Funnel Penjualan</h2>
+								<span className="ocm-tag">{RANGE_LABEL[range]}</span>
+							</div>
+							<div className="ocm-card-body space-y-2">
+								{loading ? (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Memuat funnel...
+									</p>
+								) : hasFunnel ? (
+									data.funnel.map((step, index) => {
+										const next = data.funnel[index + 1]
+										const drop =
+											next && step.value > 0
+												? Math.max(
+														0,
+														Math.round((1 - next.value / step.value) * 100),
+													)
+												: 0
+										return (
+											<div key={step.label}>
+												<div className="mb-1 flex items-center justify-between text-xs">
+													<span>{step.label}</span>
+													<span className="text-muted-foreground">
+														{step.value.toLocaleString('id-ID')} ·{' '}
+														{step.pct.toFixed(1)}%
+													</span>
+												</div>
+												<div className="ocm-progress-track">
+													<div
+														className="ocm-progress-bar"
+														style={{ width: `${Math.min(100, step.pct)}%` }}
+													/>
+												</div>
+												{next ? (
+													<p className="mt-1 text-right text-[11px] text-muted-foreground">
+														Drop {drop}%
+													</p>
+												) : null}
+											</div>
+										)
+									})
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Belum ada data funnel pada periode ini.
+									</p>
+								)}
+							</div>
+						</section>
+					</div>
+
+					<div className="ocm-grid-2">
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title">
+									CS Performance · {RANGE_LABEL[range]}
+								</h2>
+								<button type="button" className="ocm-btn">
+									<ArrowUpRight size={13} />
+									Detail
+								</button>
+							</div>
+							<div className="ocm-card-body overflow-x-auto">
+								<table className="ocm-table">
+									<thead>
+										<tr>
+											<th>Agent</th>
+											<th>Chats</th>
+											<th>CSAT</th>
+											<th>Revenue</th>
+										</tr>
+									</thead>
+									<tbody>
+										{loading ? (
+											<tr>
+												<td
+													colSpan={4}
+													className="py-8 text-center text-muted-foreground"
+												>
+													Memuat performa agent...
+												</td>
+											</tr>
+										) : hasAgents ? (
+											data.agents.map((row) => (
+												<tr key={row.id || row.name}>
+													<td>
+														<div className="flex items-center gap-2">
+															<CrmAvatar
+																name={row.name}
+																online={row.online}
+																size={24}
+															/>
+															<span>{row.name}</span>
+														</div>
+													</td>
+													<td>{row.chats.toLocaleString('id-ID')}</td>
+													<td>{row.csat > 0 ? row.csat.toFixed(1) : '-'}</td>
+													<td>{formatRupiah(row.revenue)}</td>
+												</tr>
+											))
+										) : (
+											<tr>
+												<td
+													colSpan={4}
+													className="py-8 text-center text-muted-foreground"
+												>
+													Belum ada performa agent pada periode ini.
+												</td>
+											</tr>
+										)}
+									</tbody>
+								</table>
+							</div>
+						</section>
+
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title">Operational Alerts</h2>
+							</div>
+							<div className="ocm-card-body space-y-3 text-sm">
+								{loading ? (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Memuat alert operasional...
+									</p>
+								) : data.alerts.length > 0 ? (
+									data.alerts.map((alert) => (
+										<div
+											key={alert.id || alert.title}
+											className={`rounded-lg border p-3 ${alertToneClass(alert.tone)}`}
+										>
+											<p className="font-semibold">{alert.title}</p>
+											<p className="text-xs text-muted-foreground">
+												{alert.description}
+											</p>
+										</div>
+									))
+								) : (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										Belum ada alert untuk periode ini.
+									</p>
+								)}
+							</div>
+						</section>
+					</div>
+				</>
+			)}
 		</main>
 	)
 }

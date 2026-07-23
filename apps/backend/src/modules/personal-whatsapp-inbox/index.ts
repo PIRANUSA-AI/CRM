@@ -416,6 +416,48 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		})
 		return { count }
 	})
+	.get('/needs-reply-count', async ({ resolvedAppId, userId, set }) => {
+		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		if (!session || !channel?.inbox_id) return { count: 0 }
+		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
+		if (!confirmedPhones.length) return { count: 0 }
+		const conversations = await prisma.conversations.findMany({
+			where: {
+				app_id: resolvedAppId,
+				inbox_id: channel.inbox_id,
+				deleted_at: null,
+				contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
+			},
+			select: { id: true },
+		})
+		const conversationIds = conversations.map((row) => row.id)
+		if (!conversationIds.length) return { count: 0 }
+		// Same "awaiting response" definition as PersonalTakeoverService.list()
+		// (takeover.ts): the customer's latest incoming message is newer than the
+		// sales' latest outgoing reply. Applied here to every conversation on this
+		// channel, not just ones currently in takeover mode.
+		const [lastInboundRows, lastAgentRows] = await Promise.all([
+			prisma.messages.groupBy({
+				by: ['conversation_id'],
+				where: { conversation_id: { in: conversationIds }, message_type: 'incoming', deleted_at: null },
+				_max: { created_at: true },
+			}),
+			prisma.messages.groupBy({
+				by: ['conversation_id'],
+				where: { conversation_id: { in: conversationIds }, message_type: 'outgoing', sender_type: 'user', deleted_at: null },
+				_max: { created_at: true },
+			}),
+		])
+		const lastInboundAt = new Map(lastInboundRows.map((row) => [row.conversation_id, row._max.created_at?.getTime() || 0]))
+		const lastAgentAt = new Map(lastAgentRows.map((row) => [row.conversation_id, row._max.created_at?.getTime() || 0]))
+		const count = conversationIds.filter((id) => {
+			const customerAt = lastInboundAt.get(id) || 0
+			const agentAt = lastAgentAt.get(id) || 0
+			return customerAt > 0 && customerAt > agentAt
+		}).length
+		return { count }
+	})
 	.get('/conversations', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) {
 			set.status = 401

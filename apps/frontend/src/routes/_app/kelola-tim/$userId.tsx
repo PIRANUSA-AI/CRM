@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Info, Loader2, Save, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { salesProfiles, type SalesProfileRow } from '@/lib/api'
+import { salesProfiles, type SalesPerformanceSummary, type SalesProfileRow } from '@/lib/api'
 
 export const Route = createFileRoute('/_app/kelola-tim/$userId')({
 	component: SalesProfileDetailPage,
@@ -111,6 +111,7 @@ function SalesProfileDetailPage() {
 	const [error, setError] = useState<string | null>(null)
 	const [saved, setSaved] = useState(false)
 	const [products, setProducts] = useState<string[]>([])
+	const [performance, setPerformance] = useState<SalesPerformanceSummary | null>(null)
 
 	// There is no GET for a single profile. The list endpoint returns every
 	// sales the leader manages, which is a team-sized list, so picking the row
@@ -144,6 +145,13 @@ function SalesProfileDetailPage() {
 	useEffect(() => {
 		void load()
 	}, [load])
+
+	useEffect(() => {
+		void salesProfiles
+			.performance(userId)
+			.then((response) => setPerformance(response.data || null))
+			.catch(() => undefined)
+	}, [userId])
 
 	const patch = useCallback((next: Partial<Draft>) => {
 		setDraft((prev) => (prev ? { ...prev, ...next } : prev))
@@ -288,6 +296,34 @@ function SalesProfileDetailPage() {
 			    same two-column shape as the Kontak and Perusahaan detail pages. */}
 			<div className="grid items-start gap-5 lg:grid-cols-2">
 				<div className="space-y-5">
+				{performance ? (
+					<section className="ocm-card space-y-3 p-5">
+						<h2 className="text-sm font-semibold">Performa Penjualan</h2>
+						<div className="grid grid-cols-3 gap-3 text-center">
+							<div>
+								<p className="text-lg font-semibold text-emerald-600 dark:text-emerald-300">
+									{performance.wonCount}
+								</p>
+								<p className="text-xs text-muted-foreground">Won</p>
+							</div>
+							<div>
+								<p className="text-lg font-semibold text-muted-foreground">
+									{performance.lostCount}
+								</p>
+								<p className="text-xs text-muted-foreground">Lost</p>
+							</div>
+							<div>
+								<p className="text-lg font-semibold">{performance.winRate.toFixed(1)}%</p>
+								<p className="text-xs text-muted-foreground">Win rate</p>
+							</div>
+						</div>
+						<p className="text-center text-xs text-muted-foreground">
+							Total nilai deal won: Rp{' '}
+							{Math.round(performance.totalValue).toLocaleString('id-ID')}
+						</p>
+					</section>
+				) : null}
+
 				<section className="ocm-card space-y-4 p-5">
 					<div>
 						<h2 className="text-sm font-semibold">Persona</h2>

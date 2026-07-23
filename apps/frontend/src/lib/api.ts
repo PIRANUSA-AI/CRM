@@ -246,10 +246,7 @@ async function apiRequest<T>(
 						if (typeof localStorage !== 'undefined') {
 							localStorage.setItem('crm_token', data.token)
 							if (data.refreshToken) {
-								localStorage.setItem(
-									'crm_refresh_token',
-									data.refreshToken,
-								)
+								localStorage.setItem('crm_refresh_token', data.refreshToken)
 							}
 						}
 
@@ -328,15 +325,28 @@ export const auth = {
 
 	me: (signal?: AbortSignal) => apiRequest('/auth/me', { signal }),
 
-	getProfile: () => apiRequest<{
-		success: boolean
-		data: { id: string; name: string; email: string; role: string | null; avatar_url: string | null }
-	}>('/auth/profile'),
+	getProfile: () =>
+		apiRequest<{
+			success: boolean
+			data: {
+				id: string
+				name: string
+				email: string
+				role: string | null
+				avatar_url: string | null
+			}
+		}>('/auth/profile'),
 
 	updateProfile: (payload: { name: string; avatarUrl?: string | null }) =>
 		apiRequest<{
 			success: boolean
-			data: { id: string; name: string; email: string; role: string | null; avatar_url: string | null }
+			data: {
+				id: string
+				name: string
+				email: string
+				role: string | null
+				avatar_url: string | null
+			}
 		}>('/auth/profile', { method: 'PATCH', body: JSON.stringify(payload) }),
 
 	changePassword: (payload: { currentPassword: string; newPassword: string }) =>
@@ -457,12 +467,7 @@ export const conversations = {
 		data: {
 			content: any
 			message_type?: 'outgoing' | 'incoming'
-			type?:
-				| 'text'
-				| 'image'
-				| 'document'
-				| 'template'
-				| 'interactive'
+			type?: 'text' | 'image' | 'document' | 'template' | 'interactive'
 			content_type?: string
 			media_url?: string
 			media?: Record<string, unknown>
@@ -1007,7 +1012,9 @@ function toFiniteNumber(value: unknown, fallback = 0) {
 }
 
 function normalizeMetricsDashboardPeriod(period?: string) {
-	const normalized = String(period || '').trim().toLowerCase()
+	const normalized = String(period || '')
+		.trim()
+		.toLowerCase()
 	if (normalized === 'today' || normalized === '24h') return 'today'
 	if (normalized === '30d') return '30d'
 	return '7d'
@@ -1224,7 +1231,9 @@ export const notifications = {
 	},
 	count: () => apiRequest<{ count: number }>('/notifications/count'),
 	markRead: (id: string) =>
-		apiRequest<{ success: boolean }>(`/notifications/${id}/read`, { method: 'POST' }),
+		apiRequest<{ success: boolean }>(`/notifications/${id}/read`, {
+			method: 'POST',
+		}),
 	markAllRead: () =>
 		apiRequest<{ success: boolean; count: number }>('/notifications/read-all', {
 			method: 'POST',
@@ -1244,27 +1253,52 @@ export type PersonalTakeoverHistoryItem = {
 
 export const personalAi = {
 	getSettings: () =>
-		apiRequest<{ data: PersonalAiSettings }>('/personal-whatsapp-inbox/ai/settings'),
-	updateSettings: (input: Partial<Pick<PersonalAiSettings, 'autoReplyEnabled' | 'replyDelaySeconds' | 'minConfidence' | 'personaPrompt'>>) =>
-		apiRequest<{ data: PersonalAiSettings }>('/personal-whatsapp-inbox/ai/settings', {
-			method: 'PATCH',
-			body: JSON.stringify(input),
-		}),
+		apiRequest<{ data: PersonalAiSettings }>(
+			'/personal-whatsapp-inbox/ai/settings',
+		),
+	updateSettings: (
+		input: Partial<
+			Pick<
+				PersonalAiSettings,
+				| 'autoReplyEnabled'
+				| 'replyDelaySeconds'
+				| 'minConfidence'
+				| 'personaPrompt'
+			>
+		>,
+	) =>
+		apiRequest<{ data: PersonalAiSettings }>(
+			'/personal-whatsapp-inbox/ai/settings',
+			{
+				method: 'PATCH',
+				body: JSON.stringify(input),
+			},
+		),
 	listDrafts: () =>
-		apiRequest<{ data: PersonalAiDraft[] }>('/personal-whatsapp-inbox/ai/drafts'),
+		apiRequest<{ data: PersonalAiDraft[] }>(
+			'/personal-whatsapp-inbox/ai/drafts',
+		),
 	sendDraft: (taskId: string, content: string) =>
-		apiRequest<{ success: boolean; data: { messageId: string } }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/send`, {
-			method: 'POST',
-			body: JSON.stringify({ content }),
-		}),
+		apiRequest<{ success: boolean; data: { messageId: string } }>(
+			`/personal-whatsapp-inbox/ai/drafts/${taskId}/send`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ content }),
+			},
+		),
 	dismissDraft: (taskId: string) =>
-		apiRequest<{ success: boolean }>(`/personal-whatsapp-inbox/ai/drafts/${taskId}/dismiss`, { method: 'POST' }),
+		apiRequest<{ success: boolean }>(
+			`/personal-whatsapp-inbox/ai/drafts/${taskId}/dismiss`,
+			{ method: 'POST' },
+		),
 	// Number of the sales' own inbox conversations with unread messages.
 	inboxUnreadCount: () =>
 		apiRequest<{ count: number }>('/personal-whatsapp-inbox/unread-count'),
 	// Per-conversation takeover (AI -> human) for personal WhatsApp leads.
 	listTakeovers: () =>
-		apiRequest<{ data: PersonalTakeoverItem[] }>('/personal-whatsapp-inbox/takeovers'),
+		apiRequest<{ data: PersonalTakeoverItem[] }>(
+			'/personal-whatsapp-inbox/takeovers',
+		),
 	takeoverCount: () =>
 		apiRequest<{ count: number }>('/personal-whatsapp-inbox/takeovers/count'),
 	getTakeover: (conversationId: string) =>
@@ -1276,16 +1310,27 @@ export const personalAi = {
 		apiRequest<{ data: PersonalTakeoverHistoryItem[] }>(
 			`/personal-whatsapp-inbox/${conversationId}/takeover-history`,
 		),
-	takeover: (conversationId: string, options?: { reason?: string; note?: string }) =>
-		apiRequest<{ success: boolean; conversationId: string; aiHandling: boolean }>(
-			`/personal-whatsapp-inbox/${conversationId}/takeover`,
-			{ method: 'POST', body: JSON.stringify(options || {}) },
-		),
+	takeover: (
+		conversationId: string,
+		options?: { reason?: string; note?: string },
+	) =>
+		apiRequest<{
+			success: boolean
+			conversationId: string
+			aiHandling: boolean
+		}>(`/personal-whatsapp-inbox/${conversationId}/takeover`, {
+			method: 'POST',
+			body: JSON.stringify(options || {}),
+		}),
 	release: (conversationId: string, note?: string) =>
-		apiRequest<{ success: boolean; conversationId: string; aiHandling: boolean }>(
-			`/personal-whatsapp-inbox/${conversationId}/release`,
-			{ method: 'POST', body: JSON.stringify(note ? { note } : {}) },
-		),
+		apiRequest<{
+			success: boolean
+			conversationId: string
+			aiHandling: boolean
+		}>(`/personal-whatsapp-inbox/${conversationId}/release`, {
+			method: 'POST',
+			body: JSON.stringify(note ? { note } : {}),
+		}),
 }
 
 // Metrics
@@ -1340,11 +1385,7 @@ export const contacts = {
 
 	get: (id: string) => apiRequest(`/contacts/${id}/detail`),
 
-	create: (data: {
-		name: string
-		phone_number: string
-		email?: string
-	}) =>
+	create: (data: { name: string; phone_number: string; email?: string }) =>
 		apiRequest('/contacts', {
 			method: 'POST',
 			body: JSON.stringify(data),
@@ -1500,7 +1541,12 @@ export const customers = {
 	/** The contact lifecycle stages, in funnel order. */
 	stages: (): Promise<{
 		success: boolean
-		payload: Array<{ id: string; name: string; color: string | null; stage_order: number }>
+		payload: Array<{
+			id: string
+			name: string
+			color: string | null
+			stage_order: number
+		}>
 	}> => apiRequest('/customers/meta/stages'),
 
 	create: (data: {
@@ -1518,7 +1564,9 @@ export const customers = {
 
 	get: (id: string) => apiRequest(`/customers/${id}`),
 
-	timeline: (id: string): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
+	timeline: (
+		id: string,
+	): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
 		apiRequest(`/customers/${id}/timeline`),
 
 	update: (
@@ -1551,7 +1599,6 @@ export const customers = {
 		apiRequest(`/customers/${id}/tags/${tagId}`, {
 			method: 'DELETE',
 		}),
-
 }
 
 // Companies. The firm a contact buys for. Read-only for now: rows are created
@@ -1614,7 +1661,9 @@ export const companies = {
 	industries: (): Promise<{ success: boolean; payload: Industry[] }> =>
 		apiRequest('/companies/meta/industries'),
 
-	timeline: (id: string): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
+	timeline: (
+		id: string,
+	): Promise<{ success: boolean; payload: TimelineEvent[] }> =>
 		apiRequest(`/companies/${id}/timeline`),
 
 	update: (
@@ -1628,7 +1677,10 @@ export const companies = {
 			industry?: string | null
 		},
 	): Promise<{ success: boolean; payload: CompanyDetail }> =>
-		apiRequest(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+		apiRequest(`/companies/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(data),
+		}),
 
 	/** Attach a contact to this firm, or detach it when `attach` is false. */
 	setContact: (
@@ -1674,7 +1726,9 @@ export const companies = {
 	},
 
 	get: (id: string) =>
-		apiRequest<{ success: boolean; payload: CompanyDetail }>(`/companies/${id}`),
+		apiRequest<{ success: boolean; payload: CompanyDetail }>(
+			`/companies/${id}`,
+		),
 }
 
 // Opportunities, qualified deals, distinct from raw leads (customers).
@@ -1750,12 +1804,18 @@ export interface OpportunityInput {
 }
 
 export const opportunities = {
-	stages: (pipeline?: string): Promise<{ success: boolean; payload: DealStage[] }> =>
-		apiRequest(`/opportunities/stages${pipeline ? `?pipeline=${pipeline}` : ''}`),
+	stages: (
+		pipeline?: string,
+	): Promise<{ success: boolean; payload: DealStage[] }> =>
+		apiRequest(
+			`/opportunities/stages${pipeline ? `?pipeline=${pipeline}` : ''}`,
+		),
 
 	/** The boards a deal can sit on. Each has its own columns. */
-	pipelines: (): Promise<{ success: boolean; payload: Array<{ id: string; label: string }> }> =>
-		apiRequest('/opportunities/pipelines'),
+	pipelines: (): Promise<{
+		success: boolean
+		payload: Array<{ id: string; label: string }>
+	}> => apiRequest('/opportunities/pipelines'),
 
 	/** Move a deal to another stage. This is the whole lifecycle. */
 	moveStage: (
@@ -1825,7 +1885,10 @@ export const opportunities = {
 	create: (
 		data: OpportunityInput,
 	): Promise<{ success: boolean; payload: Opportunity }> =>
-		apiRequest('/opportunities', { method: 'POST', body: JSON.stringify(data) }),
+		apiRequest('/opportunities', {
+			method: 'POST',
+			body: JSON.stringify(data),
+		}),
 
 	update: (
 		id: string,
@@ -1956,7 +2019,10 @@ export const sakti = {
 			licenseNo?: string | null
 			notes?: string | null
 		}): Promise<{ success: boolean; payload: SaktiRecord }> =>
-			apiRequest('/sakti/records', { method: 'POST', body: JSON.stringify(data) }),
+			apiRequest('/sakti/records', {
+				method: 'POST',
+				body: JSON.stringify(data),
+			}),
 		remove: (id: string): Promise<{ success: boolean }> =>
 			apiRequest(`/sakti/records/${id}`, { method: 'DELETE' }),
 	},
@@ -1988,7 +2054,9 @@ export const sakti = {
 		list: (params?: {
 			status?: string
 		}): Promise<{ success: boolean; payload: SuratSakti[] }> => {
-			const qs = params?.status ? `?status=${encodeURIComponent(params.status)}` : ''
+			const qs = params?.status
+				? `?status=${encodeURIComponent(params.status)}`
+				: ''
 			return apiRequest(`/sakti/letters${qs}`)
 		},
 		create: (data: {
@@ -2003,7 +2071,10 @@ export const sakti = {
 			template?: string | null
 			templateValues?: Record<string, string> | null
 		}): Promise<{ success: boolean; payload: SuratSakti }> =>
-			apiRequest('/sakti/letters', { method: 'POST', body: JSON.stringify(data) }),
+			apiRequest('/sakti/letters', {
+				method: 'POST',
+				body: JSON.stringify(data),
+			}),
 		update: (
 			id: string,
 			data: {
@@ -2013,7 +2084,10 @@ export const sakti = {
 				notes?: string | null
 			},
 		): Promise<{ success: boolean; payload: SuratSakti }> =>
-			apiRequest(`/sakti/letters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+			apiRequest(`/sakti/letters/${id}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data),
+			}),
 		remove: (id: string): Promise<{ success: boolean }> =>
 			apiRequest(`/sakti/letters/${id}`, { method: 'DELETE' }),
 	},
@@ -2206,7 +2280,10 @@ export const whatsappChannels = {
 	startMyConnection: (phoneNumber?: string) =>
 		apiRequest<{ success: boolean; data: PersonalWhatsAppConnection }>(
 			'/whatsapp-channels/me/connection/start',
-			{ method: 'POST', body: phoneNumber ? JSON.stringify({ phoneNumber }) : undefined },
+			{
+				method: 'POST',
+				body: phoneNumber ? JSON.stringify({ phoneNumber }) : undefined,
+			},
 		),
 
 	requestNewMyQr: () =>
@@ -3073,7 +3150,6 @@ export const tickets = {
 		).then((response) => response.data),
 }
 
-
 export type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TaskActionKind =
@@ -3156,7 +3232,6 @@ export const tasks = {
 			method: 'POST',
 		}),
 
-
 	replyWhatsapp: (id: string, text: string) =>
 		apiRequest<{ data: Task }>(
 			`/tasks/${encodeURIComponent(id)}/reply-whatsapp`,
@@ -3215,9 +3290,13 @@ export interface TaskDetail {
 	events: TaskEventEntry[]
 }
 
-
 // Lead Import (CSV), leader/ceo/superadmin only
-export type ImportRowStatus = 'ok' | 'warning' | 'error' | 'imported' | 'skipped'
+export type ImportRowStatus =
+	| 'ok'
+	| 'warning'
+	| 'error'
+	| 'imported'
+	| 'skipped'
 
 export interface ImportJobRow {
 	id: string
@@ -3268,9 +3347,15 @@ export const leadImport = {
 		}),
 
 	getJob: (jobId: string) =>
-		apiRequest<{ data: ImportJobView }>(`/import/jobs/${encodeURIComponent(jobId)}`),
+		apiRequest<{ data: ImportJobView }>(
+			`/import/jobs/${encodeURIComponent(jobId)}`,
+		),
 
-	updateRowAssignee: (jobId: string, rowId: string, assignedTo: string | null) =>
+	updateRowAssignee: (
+		jobId: string,
+		rowId: string,
+		assignedTo: string | null,
+	) =>
 		apiRequest<{ data: ImportJobView }>(
 			`/import/jobs/${encodeURIComponent(jobId)}/rows/${encodeURIComponent(rowId)}`,
 			{ method: 'PATCH', body: JSON.stringify({ assignedTo }) },
@@ -3282,7 +3367,8 @@ export const leadImport = {
 			{ method: 'POST' },
 		),
 
-	history: () => apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
+	history: () =>
+		apiRequest<{ data: ImportJobView['job'][] }>('/import/history'),
 
 	/** Is this phone/email already someone's? Checked before a prospect is saved. */
 	contactLookup: (params: { phone?: string; email?: string }) => {
@@ -3422,17 +3508,51 @@ export type SalesProfileUpdate = {
 	joinedAt?: string | null
 }
 
+export type SalesPerformanceSummary = {
+	wonCount: number
+	lostCount: number
+	winRate: number
+	totalValue: number
+}
+
 export const salesProfiles = {
 	list: () => apiRequest<{ data: SalesProfileRow[] }>('/sales-profiles'),
 
 	/** The product catalogue the skill picker offers. Free entries still work. */
-	products: () => apiRequest<{ data: string[] }>('/sales-profiles/meta/products'),
+	products: () =>
+		apiRequest<{ data: string[] }>('/sales-profiles/meta/products'),
+
+	/** Win/loss track record for one sales, derived from opportunities. */
+	performance: (userId: string) =>
+		apiRequest<{ data: SalesPerformanceSummary }>(
+			`/sales-profiles/${encodeURIComponent(userId)}/performance`,
+		),
 
 	update: (userId: string, input: SalesProfileUpdate) =>
 		apiRequest<{ data: SalesProfileRow }>(
 			`/sales-profiles/${encodeURIComponent(userId)}`,
 			{ method: 'PUT', body: JSON.stringify(input) },
 		),
+}
+
+export type SalesTargetRow = {
+	userId: string
+	userName: string | null
+	periodType: 'year' | 'month' | 'day'
+	periodKey: string
+	revenueTarget: number
+	dealCountTarget: number
+	achievement: {
+		revenue: number
+		dealCount: number
+		revenueProgressPercent: number
+		dealProgressPercent: number
+	}
+}
+
+export const salesTargets = {
+	/** No filters = the caller's current year/month/day rows (self for sales, self+team for leader). */
+	list: () => apiRequest<{ data: SalesTargetRow[] }>('/sales-targets'),
 }
 
 export type RoutingCandidate = {
@@ -3469,8 +3589,7 @@ export type RoutingAccess = {
 }
 
 export const leadRouting = {
-	access: () =>
-		apiRequest<{ data: RoutingAccess }>('/lead-routing/access'),
+	access: () => apiRequest<{ data: RoutingAccess }>('/lead-routing/access'),
 
 	suggest: (conversationId: string) =>
 		apiRequest<{ data: RoutingSuggestion }>(
@@ -3525,6 +3644,20 @@ export type LeadNeedPatch = Partial<
 	>
 >
 
+export type PersonalInboxConversation = {
+	id: string
+	contactId: string | null
+	workflow: 'ai' | 'handover' | 'human'
+	aiHandling: boolean
+	name: string
+	phone: string
+	avatarUrl: string | null
+	source: string | null
+	preview: string
+	lastMessageAt: string | null
+	unread: number
+}
+
 export const personalInbox = {
 	// Send a text message on a personal WhatsApp conversation (from the owner's
 	// number). Used for the handoff intro message.
@@ -3533,6 +3666,19 @@ export const personalInbox = {
 			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/messages`,
 			{ method: 'POST', body: JSON.stringify({ content }) },
 		),
+
+	// The owner's own WhatsApp conversations, newest activity first. Used by
+	// the dashboard's "recent activity" widget. (chat.tsx has its own inbox
+	// fetch and doesn't go through this client yet.)
+	recentConversations: () =>
+		apiRequest<{ data: PersonalInboxConversation[] }>(
+			'/personal-whatsapp-inbox/conversations',
+		),
+
+	// Conversations on the owner's channel where the customer's last message
+	// is still unanswered (accurate "awaiting reply" count, not unread_count).
+	needsReplyCount: () =>
+		apiRequest<{ count: number }>('/personal-whatsapp-inbox/needs-reply-count'),
 
 	// Read the lead-need profile + "siap di-assign" gate for a conversation.
 	getLeadNeed: (conversationId: string) =>
@@ -3546,4 +3692,34 @@ export const personalInbox = {
 			`/personal-whatsapp-inbox/${encodeURIComponent(conversationId)}/lead-need`,
 			{ method: 'PATCH', body: JSON.stringify(patch) },
 		),
+}
+
+export type AuditLogEntry = {
+	id: string
+	entityType: string
+	entityId: string | null
+	action: string
+	actorId: string | null
+	actorName: string | null
+	metadata: Record<string, unknown>
+	createdAt: string
+}
+
+export type AuditLogQuery = {
+	entityType?: string
+	action?: string
+	limit?: number
+}
+
+export const auditLog = {
+	list: (query?: AuditLogQuery) => {
+		const params = new URLSearchParams()
+		if (query?.entityType) params.set('entityType', query.entityType)
+		if (query?.action) params.set('action', query.action)
+		if (query?.limit) params.set('limit', String(query.limit))
+		const qs = params.toString()
+		return apiRequest<{ data: AuditLogEntry[] }>(
+			`/audit-log${qs ? `?${qs}` : ''}`,
+		)
+	},
 }

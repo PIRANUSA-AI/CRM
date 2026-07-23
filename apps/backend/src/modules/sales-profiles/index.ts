@@ -57,6 +57,15 @@ export const salesProfiles = new Elysia({ prefix: '/sales-profiles', tags: ['Sal
 			return toErrorResponse(error, set)
 		}
 	})
+	.get('/:userId/performance', async ({ resolvedAppId, userId, params, set }) => {
+		const actor = await resolveActor(resolvedAppId, userId, set)
+		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+		try {
+			return { data: await SalesProfileService.performanceSummary(actor, params.userId) }
+		} catch (error) {
+			return toErrorResponse(error, set)
+		}
+	}, { params: t.Object({ userId: t.String() }) })
 	.put('/:userId', async ({ resolvedAppId, userId, params, body, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
 		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }

@@ -2729,3 +2729,42 @@ model sales_profiles {
   @@unique([app_id, user_id], map: "sales_profiles_app_user_key")
   @@index([app_id], map: "idx_sales_profiles_app")
 }
+
+// Revenue/deal-count quota an administrator sets for a sales or leader, per
+// period. period_type/period_key (rather than three separate tables) let
+// yearly, monthly and daily targets live side by side, since a dashboard
+// widget needs more than one of them at once. No relations declared, same
+// convention as sales_profiles above.
+model sales_targets {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id            String   @db.Uuid
+  user_id           String   @db.Uuid
+  period_type       String   @db.VarChar(10) // "year" | "month" | "day"
+  period_key        String   @db.VarChar(10) // "2026" | "2026-07" | "2026-07-23"
+  revenue_target    Decimal  @default(0) @db.Decimal(14, 2)
+  deal_count_target Int      @default(0)
+  set_by            String?  @db.Uuid // administrator who set it
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, user_id, period_type, period_key], map: "sales_targets_app_user_period_key")
+  @@index([app_id, user_id], map: "idx_sales_targets_app_user")
+}
+
+// Generic cross-entity audit trail, for superadmin. Unlike
+// conversation_activity_log/company_activity_log (per-entity, predates this),
+// this is keyed by entity_type so one table covers every action instrumented
+// from here on rather than adding another per-entity twin.
+model audit_logs {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id      String   @db.Uuid
+  entity_type String   @db.VarChar(40)
+  entity_id   String?  @db.Uuid
+  action      String   @db.VarChar(50)
+  actor_id    String?  @db.Uuid
+  metadata    Json?    @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id, created_at], map: "idx_audit_logs_app_created")
+  @@index([app_id, entity_type, entity_id], map: "idx_audit_logs_entity")
+}

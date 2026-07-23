@@ -24,6 +24,7 @@ import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
 import { Route as AppOpportunityRouteImport } from './routes/_app/opportunity'
 import { Route as AppNotifikasiRouteImport } from './routes/_app/notifikasi'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
+import { Route as AppLogAktivitasRouteImport } from './routes/_app/log-aktivitas'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
 import { Route as AppIntegrationRouteImport } from './routes/_app/integration'
 import { Route as AppImportRouteImport } from './routes/_app/import'
@@ -142,6 +143,11 @@ const AppNotifikasiRoute = AppNotifikasiRouteImport.update({
 const AppMetricsRoute = AppMetricsRouteImport.update({
   id: '/metrics',
   path: '/metrics',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLogAktivitasRoute = AppLogAktivitasRouteImport.update({
+  id: '/log-aktivitas',
+  path: '/log-aktivitas',
   getParentRoute: () => AppRoute,
 } as any)
 const AppKnowledgeRoute = AppKnowledgeRouteImport.update({
@@ -396,6 +402,7 @@ export interface FileRoutesByFullPath {
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
   '/knowledge': typeof AppKnowledgeRoute
+  '/log-aktivitas': typeof AppLogAktivitasRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
   '/opportunity': typeof AppOpportunityRoute
@@ -457,6 +464,7 @@ export interface FileRoutesByTo {
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
   '/knowledge': typeof AppKnowledgeRoute
+  '/log-aktivitas': typeof AppLogAktivitasRoute
   '/metrics': typeof AppMetricsRoute
   '/notifikasi': typeof AppNotifikasiRoute
   '/opportunity': typeof AppOpportunityRoute
@@ -520,6 +528,7 @@ export interface FileRoutesById {
   '/_app/import': typeof AppImportRoute
   '/_app/integration': typeof AppIntegrationRoute
   '/_app/knowledge': typeof AppKnowledgeRoute
+  '/_app/log-aktivitas': typeof AppLogAktivitasRoute
   '/_app/metrics': typeof AppMetricsRoute
   '/_app/notifikasi': typeof AppNotifikasiRoute
   '/_app/opportunity': typeof AppOpportunityRoute
@@ -583,6 +592,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/integration'
     | '/knowledge'
+    | '/log-aktivitas'
     | '/metrics'
     | '/notifikasi'
     | '/opportunity'
@@ -644,6 +654,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/integration'
     | '/knowledge'
+    | '/log-aktivitas'
     | '/metrics'
     | '/notifikasi'
     | '/opportunity'
@@ -706,6 +717,7 @@ export interface FileRouteTypes {
     | '/_app/import'
     | '/_app/integration'
     | '/_app/knowledge'
+    | '/_app/log-aktivitas'
     | '/_app/metrics'
     | '/_app/notifikasi'
     | '/_app/opportunity'
@@ -864,6 +876,13 @@ declare module '@tanstack/react-router' {
       path: '/metrics'
       fullPath: '/metrics'
       preLoaderRoute: typeof AppMetricsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/log-aktivitas': {
+      id: '/_app/log-aktivitas'
+      path: '/log-aktivitas'
+      fullPath: '/log-aktivitas'
+      preLoaderRoute: typeof AppLogAktivitasRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/knowledge': {
@@ -1248,6 +1267,7 @@ interface AppRouteChildren {
   AppImportRoute: typeof AppImportRoute
   AppIntegrationRoute: typeof AppIntegrationRoute
   AppKnowledgeRoute: typeof AppKnowledgeRoute
+  AppLogAktivitasRoute: typeof AppLogAktivitasRoute
   AppMetricsRoute: typeof AppMetricsRoute
   AppNotifikasiRoute: typeof AppNotifikasiRoute
   AppOpportunityRoute: typeof AppOpportunityRoute
@@ -1298,6 +1318,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppImportRoute: AppImportRoute,
   AppIntegrationRoute: AppIntegrationRoute,
   AppKnowledgeRoute: AppKnowledgeRoute,
+  AppLogAktivitasRoute: AppLogAktivitasRoute,
   AppMetricsRoute: AppMetricsRoute,
   AppNotifikasiRoute: AppNotifikasiRoute,
   AppOpportunityRoute: AppOpportunityRoute,

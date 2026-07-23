@@ -8,6 +8,7 @@ import {
 	FileText,
 	Handshake,
 	HelpCircle,
+	History,
 	Kanban,
 	LayoutDashboard,
 	ListTodo,
@@ -198,6 +199,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/developers',
 		group: 'sistem',
 		icon: Code2,
+	},
+	{
+		id: 'log-aktivitas',
+		label: 'Log Aktivitas',
+		path: '/log-aktivitas',
+		group: 'sistem',
+		icon: History,
 	},
 	{
 		id: 'help',
