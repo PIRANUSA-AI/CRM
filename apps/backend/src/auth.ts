@@ -29,42 +29,44 @@ function formatPrismaDebugValue(value: unknown) {
 	})
 }
 
-const debugPrisma = new Proxy(prisma, {
-	get(target, prop) {
-		const val = (target as any)[prop]
-		if (val && typeof val === 'object') {
-			return new Proxy(val, {
-				get(t, p) {
-					const fn = (t as any)[p]
-					if (typeof fn === 'function') {
-						return async (...args: any[]) => {
-							console.log(
-								`[PRISMA] ${String(prop)}.${String(p)}`,
-								formatPrismaDebugValue(
-									args[0]?.data || args[0]?.where || args[0],
-								)?.substring(0, 500),
-							)
-							try {
-								const result = await fn.apply(t, args)
-								console.log(`[PRISMA OK] ${String(prop)}.${String(p)}`)
-								return result
-							} catch (e: any) {
-								console.error(
-									`[PRISMA ERR] ${String(prop)}.${String(p)}:`,
-									e?.message?.substring(0, 300),
+const debugPrisma = process.env.PRISMA_DEBUG === 'true'
+	? new Proxy(prisma, {
+		get(target, prop) {
+			const val = (target as any)[prop]
+			if (val && typeof val === 'object') {
+				return new Proxy(val, {
+					get(t, p) {
+						const fn = (t as any)[p]
+						if (typeof fn === 'function') {
+							return async (...args: any[]) => {
+								console.log(
+									`[PRISMA] ${String(prop)}.${String(p)}`,
+									formatPrismaDebugValue(
+										args[0]?.data || args[0]?.where || args[0],
+									)?.substring(0, 500),
 								)
-								console.error(`[PRISMA ERR META]:`, JSON.stringify(e?.meta))
-								throw e
+								try {
+									const result = await fn.apply(t, args)
+									console.log(`[PRISMA OK] ${String(prop)}.${String(p)}`)
+									return result
+								} catch (e: any) {
+									console.error(
+										`[PRISMA ERR] ${String(prop)}.${String(p)}:`,
+										e?.message?.substring(0, 300),
+									)
+									console.error(`[PRISMA ERR META]:`, JSON.stringify(e?.meta))
+									throw e
+								}
 							}
 						}
-					}
-					return fn
-				},
-			})
-		}
-		return val
-	},
-})
+						return fn
+					},
+				})
+			}
+			return val
+		},
+	})
+	: prisma
 
 export const auth = betterAuth({
 	baseURL: process.env.BETTER_AUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3010',

@@ -149,25 +149,28 @@ function rememberMessage(message: WAMessage) {
 	}
 }
 
+const LOG_LEVELS = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 } as const
+let currentLogLevel = LOG_LEVELS.info
+
 const baileysLogger = {
 	level: 'info',
 	child() {
 		return baileysLogger
 	},
 	trace(...args: unknown[]) {
-		console.debug('[Baileys]', ...args)
+		if (currentLogLevel <= LOG_LEVELS.trace) console.debug('[Baileys]', ...args)
 	},
 	debug(...args: unknown[]) {
-		console.debug('[Baileys]', ...args)
+		if (currentLogLevel <= LOG_LEVELS.debug) console.debug('[Baileys]', ...args)
 	},
 	info(...args: unknown[]) {
-		console.info('[Baileys]', ...args)
+		if (currentLogLevel <= LOG_LEVELS.info) console.info('[Baileys]', ...args)
 	},
 	warn(...args: unknown[]) {
-		console.warn('[Baileys]', ...args)
+		if (currentLogLevel <= LOG_LEVELS.warn) console.warn('[Baileys]', ...args)
 	},
 	error(...args: unknown[]) {
-		console.error('[Baileys]', ...args)
+		if (currentLogLevel <= LOG_LEVELS.error) console.error('[Baileys]', ...args)
 	},
 	fatal(...args: unknown[]) {
 		console.error('[Baileys]', ...args)
@@ -1172,14 +1175,17 @@ export abstract class BaileysServiceRuntime {
 			channelId: channel.id,
 			transport: BAILEYS_SOCKS_PROXY ? 'socks5' : 'direct',
 		})
+		const { version } = await fetchLatestBaileysVersion()
 		const socket = makeWASocket({
+			version,
 			auth: {
 				creds: auth.state.creds,
 				keys: makeCacheableSignalKeyStore(auth.state.keys, baileysLogger as any),
 			},
 			logger: baileysLogger as any,
 			printQRInTerminal: false,
-			markOnlineOnConnect: false,
+			markOnlineOnConnect: true,
+			generateHighQualityLinkPreview: true,
 			browser: Browsers.macOS('Chrome'),
 			agent,
 			getMessage: async () => undefined,
@@ -1199,94 +1205,105 @@ export abstract class BaileysServiceRuntime {
 				console.error('[BaileysService] Failed to persist initial auth creds', error)
 			})
 
-		socket.ev.on('creds.update', (updatedCreds) => {
-			if (updatedCreds) Object.assign(auth.state.creds, updatedCreds)
-			entry.pendingSaveCreds = entry.pendingSaveCreds
-				.then(() => saveCreds())
-				.catch((error) => {
-					console.error('[BaileysService] Failed to persist auth creds', error)
-				})
-		})
+		let processDetach: (() => void) | null = null
+		let credsUpdatePromise: Promise<void> = Promise.resolve()
 
-		socket.ev.on('connection.update', (update) => {
-			entry.connectionUpdatePromise = entry.connectionUpdatePromise
-				.catch((error) => {
-					console.error('[BaileysService] Connection update queue failed', error)
-				})
-				.then(async () => {
-					if (update.isNewLogin) {
-						await entry.pendingSaveCreds
-					}
-					await this.handleConnectionUpdate({
-						channel,
-						entry,
-						socket,
-						update,
+		processDetach = socket.ev.process(async (events: Record<string, any>) => {
+			if (events['creds.update']) {
+				const updatedCreds = events['creds.update']
+				if (updatedCreds) Object.assign(auth.state.creds, updatedCreds)
+				await credsUpdatePromise
+				credsUpdatePromise = auth.saveCreds()
+				entry.pendingSaveCreds = credsUpdatePromise
+				await credsUpdatePromise
+			}
+
+			if (events['connection.update']) {
+				const update: any = events['connection.update']
+				entry.connectionUpdatePromise = entry.connectionUpdatePromise
+					.catch((error: any) => {
+						console.error('[BaileysService] Connection update queue failed', error)
 					})
-				})
-				.catch((error) => {
-					console.error('[BaileysService] Connection update failed', error)
-				})
-		})
+					.then(async () => {
+						if (update.isNewLogin) {
+							await credsUpdatePromise
+						}
+						await this.handleConnectionUpdate({
+							channel,
+							entry,
+							socket,
+							update,
+						})
+					})
+					.catch((error: any) => {
+						console.error('[BaileysService] Connection update failed', error)
+					})
+			}
 
-		socket.ev.on('messages.upsert', ({ messages, type }) => {
-			if (type !== 'notify') return
-			void this.handleMessagesUpsert(entry, socket, messages, true)
-		})
+			if (events['messages.upsert']) {
+				const { messages, type }: any = events['messages.upsert']
+				if (type !== 'notify') return
+				void this.handleMessagesUpsert(entry, socket, messages, true)
+			}
 
-		socket.ev.on('messaging-history.set', ({ messages, lidPnMappings, progress, isLatest }: any) => {
-			reportHistoryProgress(entry, progress, messages.length, isLatest === true)
-			void (async () => {
-				if (lidPnMappings?.length) {
-					await socket.signalRepository.lidMapping.storeLIDPNMappings(lidPnMappings)
-				}
-				await this.handleMessagesUpsert(entry, socket, messages, false)
-			})().catch((error) => {
-				console.error('[BaileysService] Failed processing history batch', error)
-			})
-		})
-
-		socket.ev.on('messages.update', (updates) => {
-			void this.handleMessageStatusUpdates(entry, updates)
-		})
-
-		socket.ev.on('messages.delete', (event) => {
-			if (!('keys' in event) || !event.keys.length) return
-			const externalIds = event.keys.map((key) => String(key.id || '').trim()).filter(Boolean)
-			if (!externalIds.length) return
-			void postWebhookToCrm(entry, {
-				event: 'message.deleted',
-				channelKey: entry.providerChannelKey,
-				externalIds,
-				timestamp: Date.now(),
-			}).catch((error) => console.warn('[BaileysService] Message delete event failed', error))
-		})
-
-		socket.ev.on('presence.update', ({ id, presences }) => {
-			void (async () => {
-				const candidates = [id, ...Object.keys(presences || {})].map(normalizeWhatsappJid).filter((jid): jid is string => Boolean(jid))
-				let phoneJid = candidates.find((jid) => jid.endsWith('@s.whatsapp.net')) || null
-				if (!phoneJid) {
-					const lid = candidates.find((jid) => jid.endsWith('@lid'))
-					if (lid) phoneJid = await socket.signalRepository.lidMapping.getPNForLID(lid)
-				}
-				const phone = getWaIdFromJid(phoneJid)
-				const presence = Object.values(presences || {})[0]?.lastKnownPresence
-				if (!phone || !presence) return
-				await postWebhookToCrm(entry, { event: 'presence.update', channelKey: entry.providerChannelKey, phone, presence, timestamp: Date.now() })
-			})().catch((error) => console.warn('[BaileysService] Presence update failed', error))
-		})
-
-		socket.ev.on('contacts.update', (contacts) => {
-			for (const contact of contacts) {
-				if (contact.imgUrl !== 'changed') continue
+			if (events['messaging-history.set']) {
+				const { messages, lidPnMappings, progress, isLatest }: any = events['messaging-history.set']
+				reportHistoryProgress(entry, progress, messages.length, isLatest === true)
 				void (async () => {
-					let jid = normalizeWhatsappJid(contact.phoneNumber || contact.id)
-					if (jid?.endsWith('@lid')) jid = await socket.signalRepository.lidMapping.getPNForLID(jid)
-					const phone = getWaIdFromJid(jid)
-					if (!phone) return
-					await postWebhookToCrm(entry, { event: 'contact.profile_changed', channelKey: entry.providerChannelKey, phone, timestamp: Date.now() })
-				})().catch((error) => console.warn('[BaileysService] Contact profile event failed', error))
+					if (lidPnMappings?.length) {
+						await socket.signalRepository.lidMapping.storeLIDPNMappings(lidPnMappings)
+					}
+					await this.handleMessagesUpsert(entry, socket, messages, false)
+				})().catch((error: any) => {
+					console.error('[BaileysService] Failed processing history batch', error)
+				})
+			}
+
+			if (events['messages.update']) {
+				void this.handleMessageStatusUpdates(entry, events['messages.update'])
+			}
+
+			if (events['messages.delete']) {
+				const event: any = events['messages.delete']
+				if (!('keys' in event) || !event.keys.length) return
+				const externalIds = event.keys.map((key: any) => String(key.id || '').trim()).filter(Boolean)
+				if (!externalIds.length) return
+				void postWebhookToCrm(entry, {
+					event: 'message.deleted',
+					channelKey: entry.providerChannelKey,
+					externalIds,
+					timestamp: Date.now(),
+				}).catch((error: any) => console.warn('[BaileysService] Message delete event failed', error))
+			}
+
+			if (events['presence.update']) {
+				const { id, presences }: any = events['presence.update']
+				void (async () => {
+					const candidates = [id, ...Object.keys(presences || {})].map(normalizeWhatsappJid).filter((jid): jid is string => Boolean(jid))
+					let phoneJid = candidates.find((jid) => jid.endsWith('@s.whatsapp.net')) || null
+					if (!phoneJid) {
+						const lid = candidates.find((jid) => jid.endsWith('@lid'))
+						if (lid) phoneJid = await socket.signalRepository.lidMapping.getPNForLID(lid)
+					}
+					const phone = getWaIdFromJid(phoneJid)
+					const presence = (Object.values(presences || {})[0] as any)?.lastKnownPresence
+					if (!phone || !presence) return
+					await postWebhookToCrm(entry, { event: 'presence.update', channelKey: entry.providerChannelKey, phone, presence, timestamp: Date.now() })
+				})().catch((error: any) => console.warn('[BaileysService] Presence update failed', error))
+			}
+
+			if (events['contacts.update']) {
+				const contacts: any = events['contacts.update']
+				for (const contact of contacts) {
+					if (contact.imgUrl !== 'changed') continue
+					void (async () => {
+						let jid = normalizeWhatsappJid(contact.phoneNumber || contact.id)
+						if (jid?.endsWith('@lid')) jid = await socket.signalRepository.lidMapping.getPNForLID(jid)
+						const phone = getWaIdFromJid(jid)
+						if (!phone) return
+						await postWebhookToCrm(entry, { event: 'contact.profile_changed', channelKey: entry.providerChannelKey, phone, timestamp: Date.now() })
+					})().catch((error: any) => console.warn('[BaileysService] Contact profile event failed', error))
+				}
 			}
 		})
 	}
@@ -1317,6 +1334,7 @@ export abstract class BaileysServiceRuntime {
 				pairing_code: null,
 				qr_code: null,
 				last_error: null,
+				first_connected_at: sessionRow.first_connected_at || new Date(),
 				last_seen_at: new Date(),
 				updated_at: new Date(),
 			})
@@ -1447,7 +1465,8 @@ export abstract class BaileysServiceRuntime {
 		})
 
 		if (shouldReconnect) {
-			this.scheduleRestart(entry.channelId)
+			await entry.pendingSaveCreds
+			void this.ensureChannel(entry.channelId, { forceRestart: true })
 		}
 	}
 
