@@ -43,3 +43,6 @@ whatsapp-service/auth-data/
 
 # Playwright MCP test artifacts
 .playwright-mcp/
+
+# AGENTS.md = panduan lokal, jangan commit
+AGENTS.md
