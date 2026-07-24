@@ -56,3 +56,11 @@ export async function cached<T>(
 	}
 	return value
 }
+
+// Best-effort invalidation for a short-TTL cache entry right after a mutation
+// (e.g. "mark as read") so the next read doesn't show a stale value for the
+// rest of the TTL window. Fire-and-forget: worst case the TTL just expires
+// normally a few seconds later.
+export function invalidateCache(key: string): void {
+	void withTimeout(redis.del(key), CACHE_OP_TIMEOUT_MS).catch(() => {})
+}

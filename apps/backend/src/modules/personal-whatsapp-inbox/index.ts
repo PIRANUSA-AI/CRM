@@ -10,6 +10,7 @@ import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 import { getRealtimeIO } from '../../lib/realtime'
 import { requireRole } from '../../lib/require-role'
 import { normalizeS3PublicUrl } from '../../lib/s3'
+import { cached, invalidateCache } from '../../lib/cache'
 import { enqueueProfileContact, enqueueProfileSweep } from './profile-sync'
 import {
 	confirmPersonalLead,
@@ -491,19 +492,25 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	}, { params: t.Object({ taskId: t.String() }) })
 	.get('/unread-count', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
-		if (!session || !channel?.inbox_id) return { count: 0 }
-		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
-		if (!confirmedPhones.length) return { count: 0 }
-		// Number of the sales' own conversations that have unread messages.
-		const count = await prisma.conversations.count({
-			where: {
-				app_id: resolvedAppId,
-				inbox_id: channel.inbox_id,
-				deleted_at: null,
-				unread_count: { gt: 0 },
-				contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
-			},
+		// Badge count polled every 60s per tab AND refetched on every
+		// message:created socket event tenant-wide - at 50 concurrent agents a
+		// single incoming message can trigger 50 near-simultaneous identical
+		// queries. Short TTL absorbs that burst without making the badge feel stale.
+		const count = await cached(`count:pwa-unread:${resolvedAppId}:${userId}`, 5, async () => {
+			const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+			if (!session || !channel?.inbox_id) return 0
+			const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
+			if (!confirmedPhones.length) return 0
+			// Number of the sales' own conversations that have unread messages.
+			return prisma.conversations.count({
+				where: {
+					app_id: resolvedAppId,
+					inbox_id: channel.inbox_id,
+					deleted_at: null,
+					unread_count: { gt: 0 },
+					contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
+				},
+			})
 		})
 		return { count }
 	})
@@ -622,14 +629,16 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	})
 	.get('/takeovers/count', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const user = await prisma.users.findFirst({
-			where: { id: userId, app_id: resolvedAppId, deleted_at: null },
-			select: { role: true },
-		})
-		const count = await PersonalTakeoverService.count({
-			appId: resolvedAppId,
-			userId,
-			role: user?.role || 'sales',
+		const count = await cached(`count:pwa-takeover:${resolvedAppId}:${userId}`, 5, async () => {
+			const user = await prisma.users.findFirst({
+				where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+				select: { role: true },
+			})
+			return PersonalTakeoverService.count({
+				appId: resolvedAppId,
+				userId,
+				role: user?.role || 'sales',
+			})
 		})
 		return { count }
 	})
@@ -674,6 +683,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan untuk dialihkan' } }
 		// Cancel any AI draft/reply already queued for this lead.
 		await PersonalAiReplyService.cancelConversationTasks(resolvedAppId, ownerUserId, params.conversationId)
+		invalidateCache(`count:pwa-takeover:${resolvedAppId}:${ownerUserId}`)
 		return { success: true, ...result }
 	}, {
 		params: t.Object({ conversationId: t.String() }),
@@ -722,6 +732,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			note: typeof body?.note === 'string' ? body.note : null,
 		})
 		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan' } }
+		invalidateCache(`count:pwa-takeover:${resolvedAppId}:${ownerUserId}`)
 		return { success: true, ...result }
 	}, {
 		params: t.Object({ conversationId: t.String() }),
@@ -787,6 +798,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			data: { unread_count: 0, agent_last_seen_at: new Date(), updated_at: new Date() },
 		})
 		if (!updated.count) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		invalidateCache(`count:pwa-unread:${resolvedAppId}:${userId}`)
 		return { success: true }
 	}, { params: t.Object({ conversationId: t.String() }) })
 	.post('/:conversationId/presence', async ({ resolvedAppId, userId, params, body, set }) => {
