@@ -232,6 +232,30 @@ async function acquireMediaDownloadSlot(): Promise<() => void> {
 	}
 }
 
+// notify: the contact's own self-set WhatsApp display name (same concept as
+// message.pushName). verifiedName/name are lower-priority fallbacks (WA
+// Business verified name, or a name saved in our own address book, which a
+// bot/business number typically doesn't have).
+function resolveContactDisplayName(contact: any): string | null {
+	return (
+		asString(contact?.notify) ||
+		asString(contact?.verifiedName) ||
+		asString(contact?.name) ||
+		null
+	)
+}
+
+async function resolveContactPhone(
+	contact: any,
+	socket: WASocket,
+): Promise<string | null> {
+	let jid = normalizeWhatsappJid(contact?.phoneNumber || contact?.id)
+	if (jid?.endsWith('@lid')) {
+		jid = await socket.signalRepository.lidMapping.getPNForLID(jid)
+	}
+	return getWaIdFromJid(jid)
+}
+
 function pickProxyForChannel(channelId: string): string | null {
 	if (BAILEYS_SOCKS_PROXIES.length === 0) return BAILEYS_SOCKS_PROXY
 	let hash = 0
@@ -1083,6 +1107,26 @@ export abstract class BaileysServiceRuntime {
 		return { sent: true }
 	}
 
+	static async subscribePresence(payload: Record<string, unknown>) {
+		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
+		if (!channelKey) throw new Error('channelKey is required')
+		const channel = await getChannelByProviderKey(channelKey)
+		if (!channel?.id) throw new Error(`Baileys channel ${channelKey} not found`)
+		const session = await this.ensureChannel(channel.id, { waitForReadyMs: 5_000 })
+		if (session.status !== 'connected') return { subscribed: false }
+		const socket = runtimeEntries.get(channel.id)?.socket
+		if (!socket) return { subscribed: false }
+		const remoteJid = buildWhatsappJid(normalizeDigits(asString(payload.recipientWhatsAppId) || asString(payload.to)), 'pn')
+		if (!remoteJid) return { subscribed: false }
+		try {
+			await socket.presenceSubscribe(remoteJid)
+			return { subscribed: true }
+		} catch (error: any) {
+			console.warn('[BaileysService] presenceSubscribe failed', error?.message || error)
+			return { subscribed: false }
+		}
+	}
+
 	static async updateBlockStatus(payload: Record<string, unknown>) {
 		const channelKey = asString(payload.channelKey) || asString(payload.channel_key)
 		if (!channelKey) throw new Error('channelKey is required')
@@ -1330,6 +1374,31 @@ export abstract class BaileysServiceRuntime {
 				}).catch((error: any) => console.warn('[BaileysService] Message delete event failed', error))
 			}
 
+			if (events['call']) {
+				const calls: any[] = events['call']
+				for (const call of calls) {
+					// Only terminal outcomes matter for a call log - 'offer'/'ringing'
+					// are in-flight, 'accept' means it was answered (not missed), and
+					// 'terminate' also fires after a normal accepted call ends, so it
+					// can't be trusted alone to mean "missed".
+					if (call.status !== 'timeout' && call.status !== 'reject') continue
+					void (async () => {
+						const jid = normalizeWhatsappJid(call.callerPn || call.from)
+						const phone = getWaIdFromJid(jid)
+						if (!phone) return
+						await postWebhookToCrm(entry, {
+							event: 'call.missed',
+							channelKey: entry.providerChannelKey,
+							phone,
+							callId: call.id,
+							isVideo: Boolean(call.isVideo),
+							status: call.status,
+							timestamp: Date.now(),
+						})
+					})().catch((error: any) => console.warn('[BaileysService] Call event failed', error))
+				}
+			}
+
 			if (events['presence.update']) {
 				const { id, presences }: any = events['presence.update']
 				void (async () => {
@@ -1349,14 +1418,34 @@ export abstract class BaileysServiceRuntime {
 			if (events['contacts.update']) {
 				const contacts: any = events['contacts.update']
 				for (const contact of contacts) {
-					if (contact.imgUrl !== 'changed') continue
+					if (contact.imgUrl === 'changed') {
+						void (async () => {
+							const phone = await resolveContactPhone(contact, socket)
+							if (!phone) return
+							await postWebhookToCrm(entry, { event: 'contact.profile_changed', channelKey: entry.providerChannelKey, phone, timestamp: Date.now() })
+						})().catch((error: any) => console.warn('[BaileysService] Contact profile event failed', error))
+					}
+					const name = resolveContactDisplayName(contact)
+					if (name) {
+						void (async () => {
+							const phone = await resolveContactPhone(contact, socket)
+							if (!phone) return
+							await postWebhookToCrm(entry, { event: 'contact.name_changed', channelKey: entry.providerChannelKey, phone, name, timestamp: Date.now() })
+						})().catch((error: any) => console.warn('[BaileysService] Contact name update failed', error))
+					}
+				}
+			}
+
+			if (events['contacts.upsert']) {
+				const contacts: any = events['contacts.upsert']
+				for (const contact of contacts) {
+					const name = resolveContactDisplayName(contact)
+					if (!name) continue
 					void (async () => {
-						let jid = normalizeWhatsappJid(contact.phoneNumber || contact.id)
-						if (jid?.endsWith('@lid')) jid = await socket.signalRepository.lidMapping.getPNForLID(jid)
-						const phone = getWaIdFromJid(jid)
+						const phone = await resolveContactPhone(contact, socket)
 						if (!phone) return
-						await postWebhookToCrm(entry, { event: 'contact.profile_changed', channelKey: entry.providerChannelKey, phone, timestamp: Date.now() })
-					})().catch((error: any) => console.warn('[BaileysService] Contact profile event failed', error))
+						await postWebhookToCrm(entry, { event: 'contact.name_changed', channelKey: entry.providerChannelKey, phone, name, timestamp: Date.now() })
+					})().catch((error: any) => console.warn('[BaileysService] Contact upsert name failed', error))
 				}
 			}
 		})
@@ -1611,15 +1700,40 @@ export abstract class BaileysServiceRuntime {
 		let mimeType: string | null = null
 		let fileName: string | null = null
 		let replyToExternalId: string | null = null
+		let linkPreview: {
+			url: string
+			title: string | null
+			description: string | null
+			thumbnailUrl: string | null
+		} | null = null
 
 		if (contentType === 'conversation') {
 			text = asString(normalizedContent.conversation) || ''
 		} else if (contentType === 'extendedTextMessage') {
 			type = 'text'
-			text = asString(normalizedContent.extendedTextMessage?.text) || ''
-			replyToExternalId =
-				asString(normalizedContent.extendedTextMessage?.contextInfo?.stanzaId) ||
-				null
+			const extendedText = normalizedContent.extendedTextMessage
+			text = asString(extendedText?.text) || ''
+			replyToExternalId = asString(extendedText?.contextInfo?.stanzaId) || null
+			const previewTitle = asString(extendedText?.title)
+			const previewDescription = asString(extendedText?.description)
+			const previewUrl = asString(extendedText?.matchedText)
+			if (previewUrl && (previewTitle || previewDescription)) {
+				let thumbnailUrl: string | null = null
+				if (extendedText?.jpegThumbnail?.length) {
+					thumbnailUrl = await uploadInboundMedia({
+						channelId: params.channelId,
+						messageId: `${externalMessageId}-preview`,
+						buffer: Buffer.from(extendedText.jpegThumbnail),
+						mimeType: 'image/jpeg',
+					})
+				}
+				linkPreview = {
+					url: previewUrl,
+					title: previewTitle,
+					description: previewDescription,
+					thumbnailUrl,
+				}
+			}
 		} else if (contentType === 'imageMessage') {
 			type = 'image'
 			text = asString(normalizedContent.imageMessage?.caption) || ''
@@ -1730,6 +1844,9 @@ export abstract class BaileysServiceRuntime {
 		}
 		if (fileName) {
 			;(payload.message as Record<string, unknown>).fileName = fileName
+		}
+		if (linkPreview) {
+			;(payload.message as Record<string, unknown>).linkPreview = linkPreview
 		}
 
 		return payload

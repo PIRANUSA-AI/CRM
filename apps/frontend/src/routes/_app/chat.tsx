@@ -100,6 +100,7 @@ type ChatMessage = {
 	content_attributes: {
 		media?: { url?: string; mime_type?: string; file_name?: string; filename?: string; purpose?: string }
 		quote?: { message_id?: string; external_id?: string; content?: string | null; content_type?: string | null; sender_type?: string | null }
+		link_preview?: { url?: string; title?: string | null; description?: string | null; thumbnail_url?: string | null }
 	} | null
 	message_type: string
 	sender_type: string | null
@@ -158,6 +159,20 @@ function formatListTime(value: string | null) {
 		day: 'numeric',
 		month: 'short',
 	}).format(date)
+}
+
+function formatLastSeen(value: string | null) {
+	if (!value) return null
+	const then = new Date(value).getTime()
+	if (!Number.isFinite(then)) return null
+	const minutes = Math.floor((Date.now() - then) / 60_000)
+	if (minutes < 1) return 'baru saja'
+	if (minutes < 60) return `${minutes} menit lalu`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return `${hours} jam lalu`
+	const days = Math.floor(hours / 24)
+	if (days < 7) return `${days} hari lalu`
+	return formatListTime(value)
 }
 
 function formatCopyTimestamp(value: string | null) {
@@ -285,6 +300,7 @@ function PersonalWhatsappInbox() {
 	const voiceCanvasRef = useRef<HTMLCanvasElement | null>(null)
 	const voiceAnimRef = useRef<number | null>(null)
 	const [contactPresence, setContactPresence] = useState<string | null>(null)
+	const [contactLastOnlineAt, setContactLastOnlineAt] = useState<string | null>(null)
 	const [loading, setLoading] = useState(true)
 	const [repairing, setRepairing] = useState(false)
 	const [error, setError] = useState<string | null>(null)
@@ -411,8 +427,15 @@ function PersonalWhatsappInbox() {
 			`${API_BASE}/personal-whatsapp-inbox/${conversationId}/messages`,
 			{ headers: authHeaders() },
 		)
-		const payload = (await readApiResponse(response)) as { data?: ChatMessage[] }
-		if (response.ok) setMessages(payload.data || [])
+		const payload = (await readApiResponse(response)) as {
+			data?: ChatMessage[]
+			presence?: { status: string | null; lastOnlineAt: string | null }
+		}
+		if (response.ok) {
+			setMessages(payload.data || [])
+			setContactPresence(payload.presence?.status || null)
+			setContactLastOnlineAt(payload.presence?.lastOnlineAt || null)
+		}
 	}, [])
 
 	const markRead = useCallback(async (conversationId: string) => {
@@ -488,10 +511,13 @@ function PersonalWhatsappInbox() {
 			void Promise.all([loadConversations(), loadLeadLists()])
 			if (selectedId) void Promise.all([loadMessages(selectedId), markRead(selectedId)])
 		}
-		const handlePresence = (payload: { phone?: string; presence?: string }) => {
+		const handlePresence = (payload: { phone?: string; presence?: string; timestamp?: number }) => {
 			const incoming = String(payload.phone || '').replace(/\D/g, '')
 			const selected = selectedPhone.replace(/\D/g, '')
-			if (incoming && selected && incoming === selected) setContactPresence(String(payload.presence || 'unavailable'))
+			if (!incoming || !selected || incoming !== selected) return
+			const presence = String(payload.presence || 'unavailable')
+			setContactPresence(presence)
+			if (presence !== 'unavailable') setContactLastOnlineAt(new Date(payload.timestamp || Date.now()).toISOString())
 		}
 		const handleStatus = (payload: { message_id?: string; status?: string }) => {
 			if (!payload.message_id || !payload.status) return
@@ -1203,8 +1229,23 @@ function PersonalWhatsappInbox() {
 										<Avatar conversation={active} size="sm" />
 										<div className="min-w-0 flex-1">
 											<h2 className="truncate text-sm font-semibold text-foreground">{active.name}</h2>
-											<p className={cn('truncate text-xs', contactPresence === 'composing' || contactPresence === 'recording' ? 'font-medium text-primary' : 'text-muted-foreground')}>
-												{contactPresence === 'composing' ? 'sedang mengetik…' : contactPresence === 'recording' ? 'sedang merekam audio…' : active.phone}
+											<p className={cn(
+												'truncate text-xs',
+												contactPresence === 'composing' || contactPresence === 'recording'
+													? 'font-medium text-primary'
+													: contactPresence === 'available'
+														? 'font-medium text-emerald-600 dark:text-emerald-400'
+														: 'text-muted-foreground',
+											)}>
+												{contactPresence === 'composing'
+													? 'sedang mengetik…'
+													: contactPresence === 'recording'
+														? 'sedang merekam audio…'
+														: contactPresence === 'available'
+															? 'Online'
+															: formatLastSeen(contactLastOnlineAt)
+																? `terakhir dilihat ${formatLastSeen(contactLastOnlineAt)}`
+																: active.phone}
 											</p>
 										</div>
 										<Info className="mr-1 size-4 shrink-0 text-muted-foreground" />
@@ -1813,6 +1854,7 @@ function ContactProfilePanel({ conversation, onClose, onCopyPhone }: { conversat
 function MessageContent({ message }: { message: ChatMessage }) {
 	const media = message.content_attributes?.media
 	const url = media?.url
+	const linkPreview = message.content_attributes?.link_preview
 	const type = message.content_type || 'text'
 	const [downloading, setDownloading] = useState(false)
 	const [downloadError, setDownloadError] = useState<string | null>(null)
@@ -1865,6 +1907,23 @@ function MessageContent({ message }: { message: ChatMessage }) {
 				</div>
 			)}
 			{message.content && !(/^\[(IMAGE|VIDEO|AUDIO|DOCUMENT|STICKER)\]$/i.test(message.content)) && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+			{linkPreview?.url && (
+				<a
+					href={linkPreview.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="block overflow-hidden rounded-lg border border-border/50 bg-background/10 transition-colors hover:bg-background/20"
+				>
+					{linkPreview.thumbnail_url && (
+						<img src={linkPreview.thumbnail_url} alt="" className="h-32 w-full object-cover" />
+					)}
+					<div className="space-y-0.5 px-3 py-2">
+						{linkPreview.title && <p className="truncate text-xs font-semibold">{linkPreview.title}</p>}
+						{linkPreview.description && <p className="line-clamp-2 text-xs opacity-80">{linkPreview.description}</p>}
+						<p className="truncate text-[11px] opacity-60">{linkPreview.url}</p>
+					</div>
+				</a>
+			)}
 			{!message.content && !url && <p>[{type}]</p>}
 		</div>
 	)
