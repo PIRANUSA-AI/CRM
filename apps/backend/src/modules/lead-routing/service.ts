@@ -5,6 +5,10 @@ import { getRealtimeIO } from '../../lib/realtime'
 import { NotificationService } from '../notifications/service'
 import { OpportunityService } from '../opportunities/service'
 import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
+import {
+	normalizePersonalLeadPhone,
+	seedHandoffBrief,
+} from '../personal-whatsapp-inbox/lead-access'
 import { PersonalTakeoverService } from '../personal-whatsapp-inbox/takeover'
 import { SalesProfileService } from '../sales-profiles/service'
 import { generateHandoffBrief, type LeadContact } from '../tasks/lead-brief'
@@ -19,7 +23,17 @@ export class RoutingError extends Error {}
 export class RoutingNotFoundError extends Error {}
 
 // M2 deterministic weights (no AI). See docs/lead-auto-assign.md §3.
-const WEIGHTS = { product: 0.4, load: 0.3, fairness: 0.3 }
+const WEIGHTS = { product: 0.35, load: 0.25, fairness: 0.2, level: 0.2 }
+// sales_profiles.level only - never sales_persona (the AI suggestion staging
+// table). A leader must explicitly Save a suggested level before it's live
+// here, keeping routing 100% deterministic off human-confirmed data.
+const LEVEL_SCORE: Record<string, number> = {
+	junior: 0.25,
+	menengah: 0.5,
+	senior: 0.75,
+	lead: 1,
+}
+const DEFAULT_LEVEL_SCORE = 0.5 // no level set -> neutral, never penalize
 const ACTIVE_TASK_STATUSES = ['open', 'in_progress']
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -43,7 +57,9 @@ function tokenize(value: string): string[] {
 function matchedSkills(skills: string[], productInterest: string): string[] {
 	const need = new Set(tokenize(productInterest))
 	if (!need.size) return []
-	return skills.filter((skill) => tokenize(skill).some((token) => need.has(token)))
+	return skills.filter((skill) =>
+		tokenize(skill).some((token) => need.has(token)),
+	)
 }
 
 function clamp01(value: number): number {
@@ -51,7 +67,9 @@ function clamp01(value: number): number {
 	return Math.max(0, Math.min(1, value))
 }
 
-type Candidate = Awaited<ReturnType<typeof SalesProfileService.listWithProfiles>>[number]
+type Candidate = Awaited<
+	ReturnType<typeof SalesProfileService.listWithProfiles>
+>[number]
 
 type ConversationContext = {
 	id: string
@@ -64,7 +82,10 @@ type ConversationContext = {
 	contact: LeadContact | null
 }
 
-async function loadConversation(actor: RoutingActor, conversationId: string): Promise<ConversationContext> {
+async function loadConversation(
+	actor: RoutingActor,
+	conversationId: string,
+): Promise<ConversationContext> {
 	const conversation = await prisma.conversations.findFirst({
 		where: { id: conversationId, app_id: actor.appId, deleted_at: null },
 		select: {
@@ -85,13 +106,17 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 			},
 		},
 	})
-	if (!conversation) throw new RoutingNotFoundError('Percakapan tidak ditemukan')
+	if (!conversation)
+		throw new RoutingNotFoundError('Percakapan tidak ditemukan')
 	const attrs = asRecord(conversation.contacts?.custom_attributes)
-	const leadNeedRaw = asRecord(asRecord(conversation.additional_attributes).lead_need)
+	const leadNeedRaw = asRecord(
+		asRecord(conversation.additional_attributes).lead_need,
+	)
 	const leadNeed = Object.keys(leadNeedRaw).length ? leadNeedRaw : null
 	// Prefer the qualified product from lead_need; fall back to contact attribute.
-	const productInterest =
-		String(leadNeed?.product || attrs.product_interest || '').trim()
+	const productInterest = String(
+		leadNeed?.product || attrs.product_interest || '',
+	).trim()
 	const contact = conversation.contacts
 		? {
 				name: conversation.contacts.name,
@@ -107,7 +132,9 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 		id: conversation.id,
 		contactId: conversation.contact_id,
 		contactName:
-			conversation.contacts?.name || conversation.contacts?.phone_number || 'Lead',
+			conversation.contacts?.name ||
+			conversation.contacts?.phone_number ||
+			'Lead',
 		productInterest,
 		leadNeed,
 		contact,
@@ -116,10 +143,17 @@ async function loadConversation(actor: RoutingActor, conversationId: string): Pr
 
 // Last messages of the leader conversation, oldest-first, as a compact
 // transcript for the handoff briefing. Best-effort: never blocks the assign.
-async function loadLeaderTranscript(appId: string, conversationId: string): Promise<string> {
+async function loadLeaderTranscript(
+	appId: string,
+	conversationId: string,
+): Promise<string> {
 	try {
 		const rows = await prisma.messages.findMany({
-			where: { conversation_id: conversationId, app_id: appId, deleted_at: null },
+			where: {
+				conversation_id: conversationId,
+				app_id: appId,
+				deleted_at: null,
+			},
 			orderBy: { created_at: 'desc' },
 			take: 16,
 			select: { content: true, content_type: true, message_type: true },
@@ -140,7 +174,10 @@ async function loadLeaderTranscript(appId: string, conversationId: string): Prom
 }
 
 // Most recent assignment time per candidate (used for fairness / rotation).
-async function lastAssignedMap(appId: string, ids: string[]): Promise<Map<string, number>> {
+async function lastAssignedMap(
+	appId: string,
+	ids: string[],
+): Promise<Map<string, number>> {
 	if (!ids.length) return new Map()
 	const rows = await prisma.tasks.groupBy({
 		by: ['assignee_id'],
@@ -149,7 +186,8 @@ async function lastAssignedMap(appId: string, ids: string[]): Promise<Map<string
 	})
 	const map = new Map<string, number>()
 	for (const row of rows) {
-		if (row.assignee_id) map.set(row.assignee_id, row._max.created_at?.getTime() || 0)
+		if (row.assignee_id)
+			map.set(row.assignee_id, row._max.created_at?.getTime() || 0)
 	}
 	return map
 }
@@ -188,16 +226,22 @@ function scoreCandidates(
 		const last = lastAssigned.get(candidate.userId) ?? 0
 		// Older last-assignment (or never) => more fair to pick now.
 		const fairnessScore = span > 0 ? clamp01(1 - (last - minTime) / span) : 1
+		const level = candidate.profile.level
+		const levelScore = level
+			? (LEVEL_SCORE[level] ?? DEFAULT_LEVEL_SCORE)
+			: DEFAULT_LEVEL_SCORE
 
 		const total =
 			WEIGHTS.product * productScore +
 			WEIGHTS.load * loadScore +
-			WEIGHTS.fairness * fairnessScore
+			WEIGHTS.fairness * fairnessScore +
+			WEIGHTS.level * levelScore
 		const overloaded = candidate.activeLoad >= maxActive
 
 		const reasons: string[] = []
 		if (matched.length) reasons.push(`Cocok keahlian: ${matched.join(', ')}`)
-		else if (productInterest) reasons.push(`Belum ada keahlian yang cocok untuk ${productInterest}`)
+		else if (productInterest)
+			reasons.push(`Belum ada keahlian yang cocok untuk ${productInterest}`)
 		else reasons.push('Produk lead belum diketahui')
 		reasons.push(
 			overloaded
@@ -205,6 +249,7 @@ function scoreCandidates(
 				: `Beban ringan (${candidate.activeLoad}/${maxActive})`,
 		)
 		reasons.push(last ? 'Sudah pernah dapat lead' : 'Belum pernah dapat lead')
+		reasons.push(level ? `Level: ${level}` : 'Level belum diatur')
 
 		return {
 			userId: candidate.userId,
@@ -245,7 +290,9 @@ async function blockedAutoAssignTeamIds(appId: string): Promise<Set<string>> {
 // lead they are trying to hand out.
 function leadRecipients(candidates: Candidate[]): Candidate[] {
 	return candidates.filter((candidate) => {
-		const role = String(candidate.role || '').trim().toLowerCase()
+		const role = String(candidate.role || '')
+			.trim()
+			.toLowerCase()
 		return role === 'sales' || role === 'leader'
 	})
 }
@@ -270,7 +317,11 @@ export abstract class LeadRoutingService {
 			candidates.map((c) => c.userId),
 		)
 		const blocked = await blockedAutoAssignTeamIds(actor.appId)
-		const scored = scoreCandidates(candidates, context.productInterest, lastAssigned)
+		const scored = scoreCandidates(
+			candidates,
+			context.productInterest,
+			lastAssigned,
+		)
 		return {
 			conversationId: context.id,
 			contactName: context.contactName,
@@ -279,7 +330,10 @@ export abstract class LeadRoutingService {
 			// they only receive leads when picked manually.
 			candidates: scored.map((candidate) =>
 				candidate.teamId && blocked.has(candidate.teamId)
-					? { ...candidate, reasons: [...candidate.reasons, 'Auto-assign tim ini dimatikan'] }
+					? {
+							...candidate,
+							reasons: [...candidate.reasons, 'Auto-assign tim ini dimatikan'],
+						}
 					: candidate,
 			),
 		}
@@ -288,18 +342,27 @@ export abstract class LeadRoutingService {
 	// Assign a conversation to a sales (top suggestion by default, or an explicit
 	// override). Sets conversations.assignee_id + team_id, creates/updates a
 	// follow-up task, and notifies the sales.
-	static async assign(actor: RoutingActor, conversationId: string, salesUserId?: string | null) {
+	static async assign(
+		actor: RoutingActor,
+		conversationId: string,
+		salesUserId?: string | null,
+	) {
 		const context = await loadConversation(actor, conversationId)
 		const candidates = leadRecipients(
 			await SalesProfileService.listWithProfiles(actor),
 		)
-		if (!candidates.length) throw new RoutingError('Tidak ada sales yang bisa menerima lead')
+		if (!candidates.length)
+			throw new RoutingError('Tidak ada sales yang bisa menerima lead')
 
 		const lastAssigned = await lastAssignedMap(
 			actor.appId,
 			candidates.map((c) => c.userId),
 		)
-		const ranked = scoreCandidates(candidates, context.productInterest, lastAssigned)
+		const ranked = scoreCandidates(
+			candidates,
+			context.productInterest,
+			lastAssigned,
+		)
 		let target: (typeof ranked)[number] | undefined
 		if (salesUserId) {
 			// Explicit leader pick ("Bagikan") always wins, regardless of the
@@ -326,7 +389,11 @@ export abstract class LeadRoutingService {
 
 		await prisma.conversations.update({
 			where: { id: context.id },
-			data: { assignee_id: target.userId, team_id: target.teamId, updated_at: now },
+			data: {
+				assignee_id: target.userId,
+				team_id: target.teamId,
+				updated_at: now,
+			},
 		})
 
 		// Routing a lead is the moment it stops being the intake pool's and
@@ -345,7 +412,9 @@ export abstract class LeadRoutingService {
 			where: { id: context.id, app_id: actor.appId },
 			select: { additional_attributes: true },
 		})
-		const personal = asRecord(asRecord(convRow?.additional_attributes).personal_whatsapp)
+		const personal = asRecord(
+			asRecord(convRow?.additional_attributes).personal_whatsapp,
+		)
 		const leaderOwnerId =
 			typeof personal.owner_user_id === 'string' && personal.owner_user_id
 				? personal.owner_user_id
@@ -393,11 +462,34 @@ export abstract class LeadRoutingService {
 					salesName: target.name,
 				}).catch(() => null)
 			: null
+		// F4: persist the brief on the RECEIVING sales' own registration row (not
+		// the task) so their chat UI can show it without a task lookup. Best-effort:
+		// a failure here must not undo the assignment already made above.
+		const targetPhone = normalizePersonalLeadPhone(
+			context.contact?.phone_number,
+		)
+		if (brief && targetPhone) {
+			await seedHandoffBrief({
+				appId: actor.appId,
+				ownerUserId: target.userId,
+				phoneNumber: targetPhone,
+				brief: {
+					summary: brief.summary,
+					suggestedReply: brief.suggestedReply,
+					source: 'ai',
+					fromUserId: actor.userId,
+					generatedAt: now.toISOString(),
+					...(context.leadNeed ? { leadNeed: context.leadNeed } : {}),
+				},
+			}).catch(() => null)
+		}
 		// F1 + F4: lead-need profile + briefing (summary + ready opener) carried into
 		// the task's ai_snapshot for the sales pickup.
 		const leadNeedSnapshot = {
 			...(context.leadNeed ? { lead_need: context.leadNeed } : {}),
-			...(brief ? { summary: brief.summary, suggestedReply: brief.suggestedReply } : {}),
+			...(brief
+				? { summary: brief.summary, suggestedReply: brief.suggestedReply }
+				: {}),
 		}
 		const hasSnapshot = Object.keys(leadNeedSnapshot).length > 0
 
@@ -410,7 +502,12 @@ export abstract class LeadRoutingService {
 					team_id: target.teamId,
 					title,
 					...(hasSnapshot
-						? { ai_snapshot: { ...asRecord(existing.ai_snapshot), ...leadNeedSnapshot } as any }
+						? {
+								ai_snapshot: {
+									...asRecord(existing.ai_snapshot),
+									...leadNeedSnapshot,
+								} as any,
+							}
 						: {}),
 					updated_at: now,
 				},
@@ -423,7 +520,11 @@ export abstract class LeadRoutingService {
 					actor_id: actor.userId,
 					actor_type: 'user',
 					reason: 'Lead dibagikan ulang dari routing',
-					metadata: { source: 'routing', assignee_id: target.userId, score: target.score },
+					metadata: {
+						source: 'routing',
+						assignee_id: target.userId,
+						score: target.score,
+					},
 				},
 			})
 		} else {
@@ -450,7 +551,11 @@ export abstract class LeadRoutingService {
 					event_type: 'created',
 					actor_id: actor.userId,
 					actor_type: 'user',
-					metadata: { source: 'routing', assignee_id: target.userId, score: target.score },
+					metadata: {
+						source: 'routing',
+						assignee_id: target.userId,
+						score: target.score,
+					},
 				},
 			})
 		}
@@ -492,20 +597,25 @@ export abstract class LeadRoutingService {
 			metadata: { source: 'routing', by: actor.userId },
 		})
 
-		getRealtimeIO()
-			?.to(`app:${actor.appId}`)
-			.emit('lead-routing:assigned', {
-				conversationId: context.id,
-				assigneeId: target.userId,
-				taskId,
-			})
+		getRealtimeIO()?.to(`app:${actor.appId}`).emit('lead-routing:assigned', {
+			conversationId: context.id,
+			assigneeId: target.userId,
+			taskId,
+		})
 
 		return {
 			conversationId: context.id,
-			assignedTo: { userId: target.userId, name: target.name, email: target.email },
+			assignedTo: {
+				userId: target.userId,
+				name: target.name,
+				email: target.email,
+			},
 			taskId,
 			score: target.score,
 			reasons: target.reasons,
+			// F4: lets the leader's intro-message textarea prefer the AI opener
+			// (written in the receiving sales' voice) over the generic template.
+			suggestedIntro: brief?.suggestedReply || null,
 		}
 	}
 }

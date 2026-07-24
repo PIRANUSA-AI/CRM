@@ -613,8 +613,24 @@ export abstract class WhatsAppService {
 				},
 			})
 
-			await tx.baileys_sessions.create({
-				data: {
+			// upsert, not create: two concurrent requests for the same personal
+			// connection (deterministic providerChannelKey per app+user) can both
+			// miss the existingChannel check above and race here. provider_channel_key
+			// is @unique, so the loser of the race lands on the winner's row instead
+			// of crashing on a constraint violation.
+			await tx.baileys_sessions.upsert({
+				where: { provider_channel_key: providerChannelKey },
+				update: {
+					channel_id: createdChannel.id,
+					app_id: targetAppId,
+					phone_number: phoneNumber,
+					updated_at: new Date(),
+					metadata: {
+						channel_name: name,
+						provider_webhook_url: providerWebhookUrl,
+					},
+				},
+				create: {
 					id: generateBaileysSessionId(),
 					channel_id: createdChannel.id,
 					app_id: targetAppId,

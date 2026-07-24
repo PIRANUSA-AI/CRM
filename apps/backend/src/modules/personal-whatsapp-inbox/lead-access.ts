@@ -14,8 +14,18 @@ export type PersonalLeadRegistration = {
 	source: string
 	confirmed_at: Date | null
 	blocked_at: Date | null
+	handoff_brief: Record<string, unknown> | null
 	created_at: Date
 	updated_at: Date
+}
+
+export type HandoffBrief = {
+	summary: string
+	suggestedReply: string
+	source: 'ai' | 'deterministic'
+	fromUserId: string
+	generatedAt: string
+	leadNeed?: Record<string, unknown>
 }
 
 let storageReady = false
@@ -46,6 +56,7 @@ export async function ensurePersonalLeadStorage() {
 					"source" VARCHAR(40) NOT NULL DEFAULT 'inbound',
 					"confirmed_at" TIMESTAMPTZ(6),
 					"blocked_at" TIMESTAMPTZ(6),
+					"handoff_brief" JSONB,
 					"created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 					"updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT NOW(),
 					CONSTRAINT "whatsapp_lead_registrations_status_check"
@@ -69,7 +80,9 @@ export async function ensurePersonalLeadStorage() {
 }
 
 export async function resolvePersonalLeadOwner(appId: string, inboxId: string) {
-	const rows = await prisma.$queryRaw<Array<{ owner_user_id: string; channel_id: string }>>`
+	const rows = await prisma.$queryRaw<
+		Array<{ owner_user_id: string; channel_id: string }>
+	>`
 		SELECT s."owner_user_id", s."channel_id"
 		FROM "baileys_sessions" s
 		JOIN "whatsapp_channels" c ON c."id" = s."channel_id"
@@ -148,6 +161,36 @@ export async function confirmPersonalLead(params: {
 	return rows[0]
 }
 
+// F4: seed the AI handoff brief onto the RECEIVING sales' own registration row
+// (a different row than the leader-intake one PersonalTakeoverService touches).
+// Proactively creates a pending registration if the target sales hasn't
+// clicked "Mulai Chat" yet, so the brief is there waiting when they do.
+// Best-effort - assign() must never fail because this write failed.
+export async function seedHandoffBrief(params: {
+	appId: string
+	ownerUserId: string
+	phoneNumber: string
+	brief: HandoffBrief
+}) {
+	await ensurePersonalLeadStorage()
+	const phone = normalizePersonalLeadPhone(params.phoneNumber)
+	if (!phone) return null
+	const rows = await prisma.$queryRaw<PersonalLeadRegistration[]>`
+		INSERT INTO "whatsapp_lead_registrations" (
+			"app_id", "owner_user_id", "phone_number", "status", "source", "handoff_brief"
+		)
+		VALUES (
+			${params.appId}::uuid, ${params.ownerUserId}::uuid, ${phone}, 'pending', 'routing',
+			${JSON.stringify(params.brief)}::jsonb
+		)
+		ON CONFLICT ("app_id", "owner_user_id", "phone_number") DO UPDATE SET
+			"handoff_brief" = ${JSON.stringify(params.brief)}::jsonb,
+			"updated_at" = NOW()
+		RETURNING *
+	`
+	return rows[0] || null
+}
+
 export async function listPersonalLeadRegistrations(
 	appId: string,
 	ownerUserId: string,
@@ -191,7 +234,10 @@ export async function countPersonalLeadRegistrations(
 	return Number(rows[0]?.count || 0)
 }
 
-export async function listConfirmedPersonalLeadPhones(appId: string, ownerUserId: string) {
+export async function listConfirmedPersonalLeadPhones(
+	appId: string,
+	ownerUserId: string,
+) {
 	await ensurePersonalLeadStorage()
 	const rows = await prisma.$queryRaw<Array<{ phone_number: string }>>`
 		SELECT "phone_number" FROM "whatsapp_lead_registrations"

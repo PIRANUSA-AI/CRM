@@ -5,7 +5,9 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./ai-agent": "./src/ai-agent.ts"
+		"./ai-agent": "./src/ai-agent.ts",
+		"./lead-need": "./src/lead-need.ts",
+		"./sales-persona": "./src/sales-persona.ts"
 	},
 	"scripts": {
 		"build": "tsc --noEmit",

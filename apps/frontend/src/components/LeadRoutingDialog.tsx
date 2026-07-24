@@ -2,6 +2,7 @@ import {
 	CheckCircle2,
 	Loader2,
 	Pencil,
+	RefreshCw,
 	Sparkles,
 	TriangleAlert,
 } from 'lucide-react'
@@ -31,6 +32,9 @@ const LEAD_NEED_FIELD_LABELS: Record<string, string> = {
 	seats: 'Seat',
 	budget: 'Anggaran',
 	urgency: 'Urgensi',
+	timeline: 'Timeline',
+	painPoints: 'Masalah/keberatan',
+	decisionRole: 'Peran keputusan',
 	source: 'Sumber',
 	city: 'Kota',
 	notes: 'Catatan',
@@ -46,15 +50,25 @@ const LEAD_NEED_EDIT_FIELDS: Array<keyof LeadNeedPatch> = [
 	'seats',
 	'budget',
 	'urgency',
+	'timeline',
+	'painPoints',
+	'decisionRole',
 	'source',
 	'city',
 	'notes',
 ]
 
+// painPoints is the only array-valued field; the rest are scalar text/number.
+const ARRAY_EDIT_FIELDS = new Set<keyof LeadNeedPatch>(['painPoints'])
+
 function leadNeedToForm(need: LeadNeed): Record<string, string> {
 	const form: Record<string, string> = {}
 	for (const key of LEAD_NEED_EDIT_FIELDS) {
 		const value = need[key]
+		if (ARRAY_EDIT_FIELDS.has(key)) {
+			form[key] = Array.isArray(value) ? value.join('\n') : ''
+			continue
+		}
 		form[key] = value === null || value === undefined ? '' : String(value)
 	}
 	return form
@@ -69,13 +83,28 @@ type LeadNeedPanelProps = {
 // F1: qualified "lead need" profile with the deterministic "siap di-assign"
 // gate, plus inline leader override. The gate is a soft signal. The leader can
 // still assign even when it is incomplete.
-function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProps) {
+function LeadNeedPanel({
+	conversationId,
+	open,
+	onGateChange,
+}: LeadNeedPanelProps) {
 	const [need, setNeed] = useState<LeadNeed | null>(null)
 	const [loading, setLoading] = useState(false)
 	const [editing, setEditing] = useState(false)
 	const [saving, setSaving] = useState(false)
 	const [form, setForm] = useState<Record<string, string>>({})
 	const [error, setError] = useState<string | null>(null)
+	const [requalifying, setRequalifying] = useState(false)
+
+	const fetchLeadNeed = useCallback(async () => {
+		const response = await personalInbox.getLeadNeed(conversationId)
+		setNeed(response.data.leadNeed)
+		onGateChange({
+			ready: response.data.leadNeed.ready,
+			missing: response.data.leadNeed.missing,
+		})
+		return response.data.leadNeed
+	}, [conversationId, onGateChange])
 
 	useEffect(() => {
 		if (!open || !conversationId) return
@@ -83,16 +112,7 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 		setLoading(true)
 		setEditing(false)
 		setError(null)
-		personalInbox
-			.getLeadNeed(conversationId)
-			.then((response) => {
-				if (cancelled) return
-				setNeed(response.data.leadNeed)
-				onGateChange({
-					ready: response.data.leadNeed.ready,
-					missing: response.data.leadNeed.missing,
-				})
-			})
+		fetchLeadNeed()
 			.catch(() => {
 				if (!cancelled) setNeed(null)
 			})
@@ -102,7 +122,32 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 		return () => {
 			cancelled = true
 		}
-	}, [open, conversationId, onGateChange])
+	}, [open, conversationId, fetchLeadNeed])
+
+	// Queues a forced re-qualification, then polls briefly for the result -
+	// there's no realtime listener wired up for lead-need:updated on the
+	// frontend today, so a short bounded poll is the simplest reliable option.
+	const requalify = useCallback(async () => {
+		setRequalifying(true)
+		setError(null)
+		const previousUpdatedAt = need?.updatedAt
+		try {
+			await personalInbox.qualifyLeadNeed(conversationId)
+			for (let attempt = 0; attempt < 6; attempt++) {
+				await new Promise((resolve) => setTimeout(resolve, 3_000))
+				const latest = await fetchLeadNeed().catch(() => null)
+				if (latest && latest.updatedAt !== previousUpdatedAt) break
+			}
+		} catch (reason) {
+			setError(
+				reason instanceof Error
+					? reason.message
+					: 'Gagal memicu kualifikasi ulang.',
+			)
+		} finally {
+			setRequalifying(false)
+		}
+	}, [conversationId, fetchLeadNeed, need?.updatedAt])
 
 	const startEdit = useCallback(() => {
 		if (!need) return
@@ -116,8 +161,17 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 		try {
 			const patch: LeadNeedPatch = {}
 			for (const key of LEAD_NEED_EDIT_FIELDS) {
-				const raw = (form[key] ?? '').trim()
-				;(patch as Record<string, unknown>)[key] = raw === '' ? null : raw
+				const raw = form[key] ?? ''
+				if (ARRAY_EDIT_FIELDS.has(key)) {
+					;(patch as Record<string, unknown>)[key] = raw
+						.split('\n')
+						.map((line) => line.trim())
+						.filter(Boolean)
+					continue
+				}
+				const trimmed = raw.trim()
+				;(patch as Record<string, unknown>)[key] =
+					trimmed === '' ? null : trimmed
 			}
 			const response = await personalInbox.updateLeadNeed(conversationId, patch)
 			setNeed(response.data.leadNeed)
@@ -127,7 +181,11 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 			})
 			setEditing(false)
 		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : 'Gagal menyimpan kebutuhan lead.')
+			setError(
+				reason instanceof Error
+					? reason.message
+					: 'Gagal menyimpan kebutuhan lead.',
+			)
 		} finally {
 			setSaving(false)
 		}
@@ -142,17 +200,28 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 	}
 	if (!need) return null
 
-	const missingLabels = need.missing.map((key) => LEAD_NEED_FIELD_LABELS[key] || key)
+	const missingLabels = need.missing.map(
+		(key) => LEAD_NEED_FIELD_LABELS[key] || key,
+	)
 	const filled = LEAD_NEED_EDIT_FIELDS.map((key) => ({
 		key,
 		label: LEAD_NEED_FIELD_LABELS[key] || key,
 		value: need[key],
-	})).filter((row) => row.value !== null && row.value !== undefined && row.value !== '')
+		display: Array.isArray(need[key])
+			? (need[key] as string[]).join('; ')
+			: String(need[key] ?? ''),
+	})).filter((row) =>
+		Array.isArray(row.value)
+			? row.value.length > 0
+			: row.value !== null && row.value !== undefined && row.value !== '',
+	)
 
 	return (
 		<div className="rounded-lg border border-border bg-muted/20 p-3">
 			<div className="flex items-center justify-between gap-2">
-				<span className="text-xs font-semibold text-foreground">Kebutuhan Lead</span>
+				<span className="text-xs font-semibold text-foreground">
+					Kebutuhan Lead
+				</span>
 				<div className="flex items-center gap-2">
 					{need.ready ? (
 						<span className="flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-200">
@@ -163,6 +232,21 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 							<TriangleAlert size={11} /> Belum lengkap
 						</span>
 					)}
+					{!editing ? (
+						<button
+							type="button"
+							onClick={() => void requalify()}
+							disabled={requalifying}
+							className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted disabled:opacity-60"
+						>
+							{requalifying ? (
+								<Loader2 size={11} className="animate-spin" />
+							) : (
+								<RefreshCw size={11} />
+							)}
+							Kualifikasi ulang
+						</button>
+					) : null}
 					{!editing ? (
 						<button
 							type="button"
@@ -182,18 +266,37 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 							const label = LEAD_NEED_FIELD_LABELS[key] || key
 							const commonClass =
 								'w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring'
-							const wide = key === 'useCase' || key === 'notes'
+							const wide =
+								key === 'useCase' || key === 'notes' || key === 'painPoints'
 							return (
 								<label
 									key={key}
 									className={`flex flex-col gap-0.5 ${wide ? 'col-span-2' : ''}`}
 								>
-									<span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-									{key === 'segment' ? (
+									<span className="text-[10px] font-medium text-muted-foreground">
+										{label}
+									</span>
+									{key === 'painPoints' ? (
+										<textarea
+											value={form[key] ?? ''}
+											onChange={(event) =>
+												setForm((prev) => ({
+													...prev,
+													[key]: event.target.value,
+												}))
+											}
+											placeholder="Satu masalah per baris"
+											rows={2}
+											className={commonClass}
+										/>
+									) : key === 'segment' ? (
 										<select
 											value={form[key] ?? ''}
 											onChange={(event) =>
-												setForm((prev) => ({ ...prev, [key]: event.target.value }))
+												setForm((prev) => ({
+													...prev,
+													[key]: event.target.value,
+												}))
 											}
 											className={commonClass}
 										>
@@ -206,7 +309,10 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 										<select
 											value={form[key] ?? ''}
 											onChange={(event) =>
-												setForm((prev) => ({ ...prev, [key]: event.target.value }))
+												setForm((prev) => ({
+													...prev,
+													[key]: event.target.value,
+												}))
 											}
 											className={commonClass}
 										>
@@ -220,7 +326,10 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 											type={key === 'seats' ? 'number' : 'text'}
 											value={form[key] ?? ''}
 											onChange={(event) =>
-												setForm((prev) => ({ ...prev, [key]: event.target.value }))
+												setForm((prev) => ({
+													...prev,
+													[key]: event.target.value,
+												}))
 											}
 											className={commonClass}
 										/>
@@ -230,7 +339,9 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 						})}
 					</div>
 					{error ? (
-						<p className="text-[11px] text-red-600 dark:text-red-300">{error}</p>
+						<p className="text-[11px] text-red-600 dark:text-red-300">
+							{error}
+						</p>
 					) : null}
 					<div className="flex items-center justify-end gap-2">
 						<button
@@ -259,7 +370,9 @@ function LeadNeedPanel({ conversationId, open, onGateChange }: LeadNeedPanelProp
 							{filled.map((row) => (
 								<div key={row.key} className="min-w-0 text-[11px]">
 									<span className="text-muted-foreground">{row.label}: </span>
-									<span className="font-medium text-foreground">{String(row.value)}</span>
+									<span className="font-medium text-foreground">
+										{row.display}
+									</span>
 								</div>
 							))}
 						</div>
@@ -286,7 +399,12 @@ type Props = {
 	onAssigned?: (assigneeName: string | null) => void
 }
 
-export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssigned }: Props) {
+export function LeadRoutingDialog({
+	conversationId,
+	open,
+	onOpenChange,
+	onAssigned,
+}: Props) {
 	const [suggestion, setSuggestion] = useState<RoutingSuggestion | null>(null)
 	const [selected, setSelected] = useState<string | null>(null)
 	const [loading, setLoading] = useState(false)
@@ -295,7 +413,10 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 	const [sendIntro, setSendIntro] = useState(true)
 	const [introText, setIntroText] = useState('')
 	const [introEdited, setIntroEdited] = useState(false)
-	const [leadGate, setLeadGate] = useState<{ ready: boolean; missing: string[] }>({
+	const [leadGate, setLeadGate] = useState<{
+		ready: boolean
+		missing: string[]
+	}>({
 		ready: true,
 		missing: [],
 	})
@@ -306,7 +427,8 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 	)
 
 	const selectedName =
-		suggestion?.candidates.find((candidate) => candidate.userId === selected)?.name || null
+		suggestion?.candidates.find((candidate) => candidate.userId === selected)
+			?.name || null
 
 	// Keep the intro template in sync with the selected sales until the leader
 	// edits it manually.
@@ -337,7 +459,11 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 			})
 			.catch((reason) => {
 				if (cancelled) return
-				setError(reason instanceof Error ? reason.message : 'Gagal memuat rekomendasi.')
+				setError(
+					reason instanceof Error
+						? reason.message
+						: 'Gagal memuat rekomendasi.',
+				)
 			})
 			.finally(() => {
 				if (!cancelled) setLoading(false)
@@ -353,10 +479,17 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 		setError(null)
 		try {
 			const response = await leadRouting.assign(conversationId, selected)
-			// Optional handoff intro from the leader's number to the customer.
-			if (sendIntro && introText.trim()) {
+			// Optional handoff intro from the leader's number to the customer. If the
+			// leader never touched the textarea, prefer the AI opener (written in the
+			// receiving sales' voice) now that assign() has generated it - otherwise
+			// respect whatever the leader typed.
+			const finalIntro =
+				!introEdited && response.data.suggestedIntro
+					? response.data.suggestedIntro
+					: introText
+			if (sendIntro && finalIntro.trim()) {
 				try {
-					await personalInbox.sendMessage(conversationId, introText.trim())
+					await personalInbox.sendMessage(conversationId, finalIntro.trim())
 				} catch {
 					/* assignment succeeded; intro delivery is best-effort */
 				}
@@ -364,11 +497,21 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 			onAssigned?.(response.data.assignedTo.name)
 			onOpenChange(false)
 		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : 'Gagal membagikan lead.')
+			setError(
+				reason instanceof Error ? reason.message : 'Gagal membagikan lead.',
+			)
 		} finally {
 			setAssigning(false)
 		}
-	}, [conversationId, selected, sendIntro, introText, onAssigned, onOpenChange])
+	}, [
+		conversationId,
+		selected,
+		sendIntro,
+		introText,
+		introEdited,
+		onAssigned,
+		onOpenChange,
+	])
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -378,7 +521,9 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 					<DialogDescription>
 						{suggestion
 							? `${suggestion.contactName}${
-									suggestion.productInterest ? ` · ${suggestion.productInterest}` : ''
+									suggestion.productInterest
+										? ` · ${suggestion.productInterest}`
+										: ''
 								}`
 							: 'Rekomendasi sales berdasarkan keahlian, beban, dan pemerataan.'}
 					</DialogDescription>
@@ -394,7 +539,8 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 
 				{loading ? (
 					<div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-						<Loader2 size={16} className="animate-spin" /> Menghitung rekomendasi...
+						<Loader2 size={16} className="animate-spin" /> Menghitung
+						rekomendasi...
 					</div>
 				) : error && !suggestion ? (
 					<div className="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">
@@ -403,8 +549,8 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 					</div>
 				) : suggestion && suggestion.candidates.length === 0 ? (
 					<p className="py-6 text-sm text-muted-foreground">
-						Belum ada sales yang bisa menerima lead. Tambahkan sales di tim & atur profilnya
-						dulu.
+						Belum ada sales yang bisa menerima lead. Tambahkan sales di tim &
+						atur profilnya dulu.
 					</p>
 				) : suggestion ? (
 					// No inner max-height: the dialog itself scrolls now, and a second
@@ -499,7 +645,8 @@ export function LeadRoutingDialog({ conversationId, open, onOpenChange, onAssign
 									className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 								/>
 								<p className="text-[11px] text-muted-foreground">
-									Dikirim dari nomor kamu (leader) agar customer tahu akan dihubungi sales.
+									Dikirim dari nomor kamu (leader) agar customer tahu akan
+									dihubungi sales.
 								</p>
 							</>
 						) : null}

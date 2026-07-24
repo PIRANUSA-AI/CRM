@@ -28,6 +28,7 @@
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.985.0",
+		"@crm/shared": "workspace:*",
 		"@elysiajs/cors": "^1.1.0",
 		"@elysiajs/node": "^1.4.5",
 		"@elysiajs/openapi": "^1.4.14",

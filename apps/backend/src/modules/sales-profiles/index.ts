@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia'
 import { requireRole, type CanonicalRole } from '../../lib/require-role'
 import { appContext } from '../../plugins'
+import { maintenanceQueue } from '../../lib/queue'
 import {
 	SalesProfileError,
 	SalesProfileNotFoundError,
@@ -10,7 +11,12 @@ import {
 import { SALES_PRODUCTS } from './products'
 
 // Managing sales routing profiles is a leadership action.
-const ALLOWED_ROLES: CanonicalRole[] = ['leader', 'administrator', 'ceo', 'superadmin']
+const ALLOWED_ROLES: CanonicalRole[] = [
+	'leader',
+	'administrator',
+	'ceo',
+	'superadmin',
+]
 
 async function resolveActor(
 	resolvedAppId: string | null,
@@ -26,7 +32,11 @@ async function resolveActor(
 		set.status = authorization.status
 		return null
 	}
-	return { appId: resolvedAppId, userId, role: authorization.role as CanonicalRole }
+	return {
+		appId: resolvedAppId,
+		userId,
+		role: authorization.role as CanonicalRole,
+	}
 }
 
 function toErrorResponse(error: unknown, set: { status?: number | string }) {
@@ -46,7 +56,10 @@ function toErrorResponse(error: unknown, set: { status?: number | string }) {
 	return { error: 'Profil sales tidak dapat diproses' }
 }
 
-export const salesProfiles = new Elysia({ prefix: '/sales-profiles', tags: ['SalesProfiles'] })
+export const salesProfiles = new Elysia({
+	prefix: '/sales-profiles',
+	tags: ['SalesProfiles'],
+})
 	.use(appContext)
 	.get('/', async ({ resolvedAppId, userId, set }) => {
 		const actor = await resolveActor(resolvedAppId, userId, set)
@@ -57,31 +70,94 @@ export const salesProfiles = new Elysia({ prefix: '/sales-profiles', tags: ['Sal
 			return toErrorResponse(error, set)
 		}
 	})
-	.put('/:userId', async ({ resolvedAppId, userId, params, body, set }) => {
-		const actor = await resolveActor(resolvedAppId, userId, set)
-		if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
-		try {
-			return { data: await SalesProfileService.upsertProfile(actor, params.userId, body) }
-		} catch (error) {
-			return toErrorResponse(error, set)
-		}
-	}, {
-		params: t.Object({ userId: t.String() }),
-		body: t.Object({
-			productSkills: t.Optional(t.Array(t.String({ maxLength: 120 }))),
-			segments: t.Optional(t.Array(t.String({ maxLength: 120 }))),
-			level: t.Optional(t.Union([t.String({ maxLength: 20 }), t.Null()])),
-			maxActive: t.Optional(t.Union([t.Number(), t.Null()])),
-			workHours: t.Optional(t.Any()),
-			regions: t.Optional(t.Array(t.String({ maxLength: 120 }))),
-			languages: t.Optional(t.Array(t.String({ maxLength: 120 }))),
-			tags: t.Optional(t.Array(t.String({ maxLength: 120 }))),
-			notes: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
-			persona: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
-			experienceYears: t.Optional(t.Union([t.Number(), t.Null()])),
-			phone: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
-			position: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
-			joinedAt: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
-		}),
-	})
+	.put(
+		'/:userId',
+		async ({ resolvedAppId, userId, params, body, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId, set)
+			if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+			try {
+				return {
+					data: await SalesProfileService.upsertProfile(
+						actor,
+						params.userId,
+						body,
+					),
+				}
+			} catch (error) {
+				return toErrorResponse(error, set)
+			}
+		},
+		{
+			params: t.Object({ userId: t.String() }),
+			body: t.Object({
+				productSkills: t.Optional(t.Array(t.String({ maxLength: 120 }))),
+				segments: t.Optional(t.Array(t.String({ maxLength: 120 }))),
+				level: t.Optional(t.Union([t.String({ maxLength: 20 }), t.Null()])),
+				maxActive: t.Optional(t.Union([t.Number(), t.Null()])),
+				workHours: t.Optional(t.Any()),
+				regions: t.Optional(t.Array(t.String({ maxLength: 120 }))),
+				languages: t.Optional(t.Array(t.String({ maxLength: 120 }))),
+				tags: t.Optional(t.Array(t.String({ maxLength: 120 }))),
+				notes: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+				persona: t.Optional(t.Union([t.String({ maxLength: 2000 }), t.Null()])),
+				experienceYears: t.Optional(t.Union([t.Number(), t.Null()])),
+				phone: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
+				position: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+				joinedAt: t.Optional(t.Union([t.String({ maxLength: 40 }), t.Null()])),
+			}),
+		},
+	)
 	.get('/meta/products', () => ({ data: SALES_PRODUCTS }))
+	// AI persona/level suggestion, staged in sales_persona for leader review.
+	// "Refresh" queues a batch job rather than running inline - the AI reads a
+	// transcript sample + task stats, which is too slow for a request/response.
+	.get(
+		'/:userId/persona-suggestion',
+		async ({ resolvedAppId, userId, params, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId, set)
+			if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+			try {
+				return {
+					data: await SalesProfileService.getPersonaSuggestion(
+						actor,
+						params.userId,
+					),
+				}
+			} catch (error) {
+				return toErrorResponse(error, set)
+			}
+		},
+		{ params: t.Object({ userId: t.String() }) },
+	)
+	.post(
+		'/:userId/persona-suggestion/refresh',
+		async ({ resolvedAppId, userId, params, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId, set)
+			if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+			await maintenanceQueue.add(
+				'generate-sales-persona-suggestion',
+				{ appId: actor.appId, userId: params.userId },
+				{ attempts: 2, backoff: { type: 'exponential', delay: 2_000 } },
+			)
+			return { queued: true }
+		},
+		{ params: t.Object({ userId: t.String() }) },
+	)
+	.post(
+		'/:userId/persona-suggestion/dismiss',
+		async ({ resolvedAppId, userId, params, set }) => {
+			const actor = await resolveActor(resolvedAppId, userId, set)
+			if (!actor) return { error: 'Akses hanya untuk leader/ceo/superadmin' }
+			try {
+				return {
+					data: await SalesProfileService.dismissPersonaSuggestion(
+						actor,
+						params.userId,
+					),
+				}
+			} catch (error) {
+				return toErrorResponse(error, set)
+			}
+		},
+		{ params: t.Object({ userId: t.String() }) },
+	)

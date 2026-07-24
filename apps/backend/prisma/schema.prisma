@@ -1261,6 +1261,10 @@ model conversations {
   messaging_window_expires_at DateTime?                   @db.Timestamp(6)
   messaging_window_open       Boolean?                    @default(false)
   total_messages              Int?                        @default(0)
+  /// Inbound-only counter used to throttle F1 lead-need qualification
+  /// (skip until LEAD_NEED_MIN_INBOUND is reached). Distinct from
+  /// total_messages, which is unused/unwritten and covers both directions.
+  inbound_message_count       Int                         @default(0)
   agent_last_seen_at          DateTime?                   @db.Timestamp(6)
   contact_last_seen_at        DateTime?                   @db.Timestamp(6)
   additional_attributes       Json?
@@ -2202,6 +2206,10 @@ model whatsapp_lead_registrations {
   takeover_source     String?   @db.VarChar(20)
   takeover_reason     String?
   handoff_note        String?
+  /// AI-generated summary + suggested opener from generateHandoffBrief(),
+  /// seeded at assign() time so the receiving sales' chat can show it
+  /// without a task lookup. Distinct from handoff_note (human-authored).
+  handoff_brief       Json?
   released_at         DateTime? @db.Timestamptz(6)
   created_at      DateTime  @default(now()) @db.Timestamptz(6)
   updated_at      DateTime  @default(now()) @db.Timestamptz(6)
@@ -2728,4 +2736,41 @@ model sales_profiles {
 
   @@unique([app_id, user_id], map: "sales_profiles_app_user_key")
   @@index([app_id], map: "idx_sales_profiles_app")
+}
+
+/// AI-generated persona/level suggestion, staged for leader review. Never the
+/// source of truth for routing - `sales_profiles.persona`/`.level` are, and
+/// stay human-owned. A leader must explicitly Save via kelola-tim (which
+/// copies from here) before a suggestion can affect anything. One row per
+/// salesperson holding the latest suggestion; regenerating overwrites it.
+model sales_persona {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id             String   @db.Uuid
+  user_id            String   @db.Uuid
+
+  /// Free-text prose describing selling style/strengths - NEVER an
+  /// enum/category label. Archetypes like "hunter"/"closer" are illustrative
+  /// only and must not appear as a forced classification here.
+  persona            String?  @db.Text
+
+  /// { [productName]: proficiency 0-100 }, best-effort.
+  product_expertise  Json?
+
+  /// Job-ladder tier, not a personality label. Must be one of the SAME 4
+  /// values as sales_profiles.level: junior/menengah/senior/lead.
+  experience_level   String?  @db.VarChar(20)
+
+  strengths          Json?
+  weaknesses         Json?
+
+  /// Why the AI concluded this - shown to the leader for trust.
+  rationale          String?  @db.Text
+
+  status             String   @default("pending") @db.VarChar(20)
+  generated_at       DateTime @default(now()) @db.Timestamptz(6)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, user_id], map: "sales_persona_owner_key")
+  @@index([app_id, status], map: "idx_sales_persona_app_status")
 }

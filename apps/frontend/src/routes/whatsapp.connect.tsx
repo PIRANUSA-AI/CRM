@@ -29,8 +29,16 @@ function isMobile() {
 	} catch { return false }
 }
 
-function getConnectionIssue(connection: PersonalWhatsAppConnection | null) {
+function getConnectionIssue(connection: PersonalWhatsAppConnection | null, stuckConnecting: boolean) {
 	if (!connection || connection.isConnected || connection.qrCode) return null
+
+	if (connection.status === 'connecting' && stuckConnecting) {
+		return {
+			title: 'Koneksi macet',
+			description: 'Sesi ini nyangkut lebih lama dari biasanya. Minta QR baru untuk mereset dan coba lagi.',
+			action: true,
+		}
+	}
 
 	if (connection.status === 'rate_limited') {
 		return {
@@ -95,6 +103,30 @@ function WhatsAppConnectPage() {
 		return () => window.removeEventListener('resize', check)
 	}, [])
 	const [forceQr, setForceQr] = useState(false)
+
+	// "connecting" with no QR yet is normal for the first second or two, but if
+	// it never resolves (e.g. the Baileys socket got stuck), there was no way
+	// back for the user - no error state fires, so the retry button never
+	// appeared. Flag it as stuck after 15s so "Request QR Baru" shows up.
+	const [stuckConnecting, setStuckConnecting] = useState(false)
+	const connectingSinceRef = useRef<number | null>(null)
+	useEffect(() => {
+		const isConnectingLimbo =
+			connection && !connection.isConnected && !connection.qrCode && connection.status === 'connecting'
+		if (!isConnectingLimbo) {
+			connectingSinceRef.current = null
+			setStuckConnecting(false)
+			return
+		}
+		if (connectingSinceRef.current === null) connectingSinceRef.current = Date.now()
+		const elapsed = Date.now() - connectingSinceRef.current
+		if (elapsed >= 15_000) {
+			setStuckConnecting(true)
+			return
+		}
+		const timeout = window.setTimeout(() => setStuckConnecting(true), 15_000 - elapsed)
+		return () => window.clearTimeout(timeout)
+	}, [connection])
 
 	const refresh = useCallback(async (start = false) => {
 		try {
@@ -176,7 +208,7 @@ function WhatsAppConnectPage() {
 		void navigate({ to: '/login', replace: true })
 	}
 
-	const connectionIssue = getConnectionIssue(connection)
+	const connectionIssue = getConnectionIssue(connection, stuckConnecting)
 
 	const requestNewQr = async () => {
 		setRequestingQr(true)

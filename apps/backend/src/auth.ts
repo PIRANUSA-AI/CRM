@@ -68,8 +68,14 @@ const debugPrisma = process.env.PRISMA_DEBUG === 'true'
 	})
 	: prisma
 
+// FRONTEND_URL can be a comma-separated list (local dev runs multiple frontend
+// ports, e.g. "http://localhost:3005,http://localhost:3006") for trustedOrigins
+// below. baseURL needs exactly one URL, so take the first entry rather than
+// handing better-auth's `new URL()` an unparseable joined string.
+const primaryFrontendUrl = process.env.FRONTEND_URL?.split(',')[0]?.trim()
+
 export const auth = betterAuth({
-	baseURL: process.env.BETTER_AUTH_URL || process.env.FRONTEND_URL || 'http://localhost:3010',
+	baseURL: process.env.BETTER_AUTH_URL || primaryFrontendUrl || 'http://localhost:3010',
 	basePath: '/auth',
 	database: prismaAdapter(debugPrisma, {
 		provider: 'postgresql',

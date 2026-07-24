@@ -1,6 +1,7 @@
 import prisma from '../../lib/prisma'
 import { isUuid, resolveAppId } from '../../lib/utils'
 import { BusinessWebhookDispatchService } from '../business-webhooks/dispatch-service'
+import { PersonalAiReplyService } from '../personal-whatsapp-inbox/ai-reply'
 
 type StageSettingsPayload = {
 	pipelineId: string
@@ -201,7 +202,8 @@ export abstract class ContactService {
 			...asObject(existing.custom_attributes),
 			...asObject(data.customAttributes),
 		}
-		const effectiveAppId = appId || existing.app_id || existing.account_id || null
+		const effectiveAppId =
+			appId || existing.app_id || existing.account_id || null
 
 		await ContactService.validateCustomAttributes(
 			effectiveAppId,
@@ -240,6 +242,27 @@ export abstract class ContactService {
 					},
 				},
 			})
+
+			// F1 trigger (d): a leader updating product_interest on the contact should
+			// resync any still-unassigned lead-need profile, not just seed new ones.
+			const previousProduct = String(
+				asObject(existing.custom_attributes).product_interest ?? '',
+			).trim()
+			const nextProduct = String(
+				mergedCustomAttributes.product_interest ?? '',
+			).trim()
+			if (nextProduct && nextProduct !== previousProduct) {
+				void PersonalAiReplyService.syncLeadNeedProductFromContact(
+					effectiveAppId,
+					id,
+					nextProduct,
+				).catch((error) => {
+					console.warn(
+						'[ContactService] syncLeadNeedProductFromContact failed:',
+						error,
+					)
+				})
+			}
 		}
 
 		return updatedContact
@@ -258,7 +281,8 @@ export abstract class ContactService {
 		fields: ContactFieldPayload[]
 	}> {
 		const targetAppId = await ContactService.requireAppId(appId)
-		const stageSettings = await ContactService.getOrCreateContactStages(targetAppId)
+		const stageSettings =
+			await ContactService.getOrCreateContactStages(targetAppId)
 		const fields = await prisma.contact_custom_fields.findMany({
 			where: { app_id: targetAppId },
 			orderBy: [{ display_order: 'asc' }, { created_at: 'asc' }],
@@ -293,7 +317,8 @@ export abstract class ContactService {
 			throw new Error('Stage name is required')
 		}
 		const targetAppId = await ContactService.requireAppId(appId)
-		const pipeline = await ContactService.getOrCreateContactPipeline(targetAppId)
+		const pipeline =
+			await ContactService.getOrCreateContactPipeline(targetAppId)
 		const currentStages = await prisma.pipeline_stages.findMany({
 			where: { pipeline_id: pipeline.id },
 			orderBy: { stage_order: 'asc' },
@@ -359,7 +384,8 @@ export abstract class ContactService {
 
 	static async deleteContactStage(appId: string, stageId: string) {
 		const targetAppId = await ContactService.requireAppId(appId)
-		const pipeline = await ContactService.getOrCreateContactPipeline(targetAppId)
+		const pipeline =
+			await ContactService.getOrCreateContactPipeline(targetAppId)
 		const stages = await prisma.pipeline_stages.findMany({
 			where: { pipeline_id: pipeline.id },
 			orderBy: { stage_order: 'asc' },
@@ -386,7 +412,10 @@ export abstract class ContactService {
 
 		const pipelineSettings = asObject(pipeline.settings)
 		if (pipelineSettings.default_stage_id === stageId) {
-			await ContactService.setDefaultStageId(pipeline.id, remaining[0]?.id || null)
+			await ContactService.setDefaultStageId(
+				pipeline.id,
+				remaining[0]?.id || null,
+			)
 		}
 
 		return ContactService.getOrCreateContactStages(targetAppId)
@@ -394,7 +423,8 @@ export abstract class ContactService {
 
 	static async reorderContactStages(appId: string, stageIds: string[]) {
 		const targetAppId = await ContactService.requireAppId(appId)
-		const pipeline = await ContactService.getOrCreateContactPipeline(targetAppId)
+		const pipeline =
+			await ContactService.getOrCreateContactPipeline(targetAppId)
 		const stages = await prisma.pipeline_stages.findMany({
 			where: { pipeline_id: pipeline.id },
 			select: { id: true },
@@ -443,7 +473,10 @@ export abstract class ContactService {
 			select: { display_order: true },
 		})
 		const baseKey = normalizeFieldKey(input.fieldKey || input.fieldLabel)
-		const fieldKey = await ContactService.buildUniqueFieldKey(targetAppId, baseKey)
+		const fieldKey = await ContactService.buildUniqueFieldKey(
+			targetAppId,
+			baseKey,
+		)
 
 		await prisma.contact_custom_fields.create({
 			data: {
@@ -663,9 +696,7 @@ export abstract class ContactService {
 			fieldKey: field.field_key,
 			fieldLabel: field.field_label,
 			fieldType: field.field_type,
-			options: Array.isArray(field.options)
-				? (field.options as unknown[])
-				: [],
+			options: Array.isArray(field.options) ? (field.options as unknown[]) : [],
 			isRequired: !!field.is_required,
 			isVisible: field.is_visible !== false,
 			displayOrder: field.display_order || 0,

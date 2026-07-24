@@ -78,29 +78,31 @@ Skor tiap sales dihitung terhadap Profil Kebutuhan Lead. Sales dengan skor terti
 
 ### 3.1 Faktor — Data Keras (fase awal)
 
-| Faktor | Bobot awal | Sumber data |
+> **Update (P2)**: implementasi aktual di `lead-routing/service.ts` `scoreCandidates()` cuma pakai 4 faktor di bawah ini — track record dan ketersediaan online/jam-kerja dari desain awal belum pernah diimplementasi (gak ada sumber data win-rate/status online yang siap dipakai). Level baru diwire di P2; sebelumnya `sales_profiles.level` tersimpan tapi inert (gak mempengaruhi skor).
+
+| Faktor | Bobot aktual | Sumber data |
 |---|---|---|
-| **Kecocokan keahlian produk** | 40% | `sales_profiles.product_skills` |
-| **Track record segmen/produk** (win-rate, jumlah closing) | 20% | dihitung dari `tasks` + pipeline (`conversations.stage_id`) |
-| **Beban aktif** (makin ringan makin baik) | 20% | hitung lead/tasks aktif per sales |
-| **Ketersediaan** (online / jam kerja) | 10% | `baileys_sessions.status`, jam kerja profil |
-| **Level/pengalaman & wilayah/bahasa** | 10% | `sales_profiles` |
+| **Kecocokan keahlian produk** | 35% | `sales_profiles.product_skills` |
+| **Beban aktif** (makin ringan makin baik) | 25% | task `open`/`in_progress` per sales |
+| **Pemerataan (fairness)** | 20% | waktu assignment terakhir per sales |
+| **Level/pengalaman** | 20% | `sales_profiles.level` (junior/menengah/senior/lead) |
+
+Faktor yang didesain tapi belum diimplementasi: track record win-rate per produk/segmen, ketersediaan online/jam-kerja.
 
 ### 3.2 Faktor — Data Lunak (ditunda / opsional)
 
 Kepribadian, gaya komunikasi, "kecocokan karakter". **Tidak dijadikan fondasi** — sulit dikuantifikasi objektif, cepat basi, rawan bias. Kalau dipakai nanti: sebagai **bobot kecil** lewat tag manual leader (mis. `cocok_customer_teknis`).
 
-### 3.3 Rumus skor (contoh)
+### 3.3 Rumus skor (aktual, P2)
 
 ```
 skor(sales) =
-    0.40 * cocokProduk(lead.produk, sales.product_skills)
-  + 0.20 * trackRecord(sales, lead.produk, lead.segmen)   // 0..1, dari histori
-  + 0.20 * (1 - bebanRelatif(sales))                       // beban ringan → tinggi
-  + 0.10 * tersedia(sales)                                 // 0/1
-  + 0.10 * levelWilayah(sales, lead)
+    0.35 * cocokProduk(lead.produk, sales.product_skills)
+  + 0.25 * (1 - bebanRelatif(sales))        // beban ringan → tinggi
+  + 0.20 * fairness(sales)                  // makin lama gak dapat lead → makin tinggi
+  + 0.20 * levelScore(sales.level)          // junior .25 / menengah .5 / senior .75 / lead 1
 
-// kapasitas penuh → sales dikeluarkan dari kandidat (skor = -∞)
+// kapasitas penuh (overloaded) → skor dikali 0.4, tetap bisa dipilih manual
 ```
 
 - Bobot **bisa diatur leader** (mis. utamakan keahlian vs pemerataan beban).

@@ -89,7 +89,9 @@ export function buildDeterministicBrief(contact: LeadContact): LeadBrief {
 	const who = [text(attrs.contact_title), text(contact.company)]
 		.filter(Boolean)
 		.join(', ')
-	const place = [text(attrs.industry), text(contact.city)].filter(Boolean).join(', ')
+	const place = [text(attrs.industry), text(contact.city)]
+		.filter(Boolean)
+		.join(', ')
 	const headline = [who, place].filter(Boolean).join(' · ')
 	parts.push(`Segmen: ${segment}${headline ? `. ${headline}.` : '.'}`)
 
@@ -112,7 +114,9 @@ export function buildDeterministicBrief(contact: LeadContact): LeadBrief {
 
 	const fn = firstName(contact.name)
 	const greet = fn ? `Halo ${fn}` : 'Halo'
-	const productBit = interest ? ` soal ${interest}` : ' soal kebutuhan software CAD Anda'
+	const productBit = interest
+		? ` soal ${interest}`
+		: ' soal kebutuhan software CAD Anda'
 	const suggestedReply = `${greet}, saya dari PIRANUSA (reseller resmi ZWCAD/Archicad). Saya ingin membantu menindaklanjuti kebutuhan Anda${productBit}. Boleh saya jelaskan pilihan lisensi dan penawaran yang paling pas? Terima kasih.`
 
 	return { summary, suggestedReply }
@@ -150,7 +154,9 @@ function profileLines(contact: LeadContact): string {
 function parseBrief(content: unknown): LeadBrief | null {
 	const raw = String(
 		Array.isArray(content)
-			? content.map((p) => (typeof p === 'string' ? p : text((p as any)?.text))).join('')
+			? content
+					.map((p) => (typeof p === 'string' ? p : text((p as any)?.text)))
+					.join('')
 			: content || '',
 	)
 		.replace(/^```(?:json)?\s*/i, '')
@@ -159,7 +165,10 @@ function parseBrief(content: unknown): LeadBrief | null {
 	if (!raw) return null
 	try {
 		const parsed = BriefSchema.parse(JSON.parse(raw))
-		return { summary: parsed.summary.trim(), suggestedReply: parsed.opener.trim() }
+		return {
+			summary: parsed.summary.trim(),
+			suggestedReply: parsed.opener.trim(),
+		}
 	} catch {
 		return null
 	}
@@ -167,7 +176,9 @@ function parseBrief(content: unknown): LeadBrief | null {
 
 // Human-readable lines for the F1 lead-need profile qualified on the leader's
 // intake number.
-function leadNeedLines(leadNeed: Record<string, unknown> | null | undefined): string {
+function leadNeedLines(
+	leadNeed: Record<string, unknown> | null | undefined,
+): string {
 	const need = asRecord(leadNeed)
 	if (!Object.keys(need).length) return ''
 	const lines: string[] = []
@@ -181,6 +192,17 @@ function leadNeedLines(leadNeed: Record<string, unknown> | null | undefined): st
 	push('Jumlah seat', need.seats)
 	push('Anggaran', need.budget)
 	push('Urgensi', need.urgency)
+	push('Timeline', need.timeline)
+	if (Array.isArray(need.painPoints) && need.painPoints.length) {
+		push(
+			'Masalah/keberatan',
+			need.painPoints
+				.map((p) => text(p))
+				.filter(Boolean)
+				.join('; '),
+		)
+	}
+	push('Peran keputusan', need.decisionRole)
 	push('Tahu PIRANUSA dari', need.source)
 	push('Catatan', need.notes)
 	return lines.join('\n')
@@ -196,7 +218,8 @@ function buildDeterministicHandoff(
 	const base = buildDeterministicBrief(contact)
 	const need = asRecord(leadNeed)
 	const product =
-		text(need.product) || text(asRecord(contact.custom_attributes).product_interest)
+		text(need.product) ||
+		text(asRecord(contact.custom_attributes).product_interest)
 	const bits = [
 		text(need.useCase) ? `kebutuhan: ${text(need.useCase)}` : '',
 		text(need.seats) ? `${text(need.seats)} seat` : '',
@@ -216,7 +239,9 @@ function buildDeterministicHandoff(
 		.slice(0, 600)
 	const fn = firstName(contact.name)
 	const greet = fn ? `Halo ${fn}` : 'Halo'
-	const productBit = product ? ` soal ${product}` : ' soal kebutuhan software CAD Anda'
+	const productBit = product
+		? ` soal ${product}`
+		: ' soal kebutuhan software CAD Anda'
 	// The sales sends this themselves, so it introduces them by name in the
 	// first person. Naming them in the third person ("Deska akan menghubungi
 	// Anda") reads as yet another handoff, from the sales the customer is
@@ -238,7 +263,11 @@ export async function generateHandoffBrief(input: {
 	/** The sales receiving the lead. The opener is written in their voice. */
 	salesName?: string | null
 }): Promise<LeadBrief> {
-	const fallback = buildDeterministicHandoff(input.contact, input.leadNeed, input.salesName)
+	const fallback = buildDeterministicHandoff(
+		input.contact,
+		input.leadNeed,
+		input.salesName,
+	)
 	if (!AI_API_KEY) return fallback
 	try {
 		const model = new ChatOpenAI({
@@ -254,7 +283,8 @@ export async function generateHandoffBrief(input: {
 			...(AI_BASE_URL ? { configuration: { baseURL: AI_BASE_URL } } : {}),
 		})
 		const salesLabel = firstName(input.salesName) || ''
-		const needBlock = leadNeedLines(input.leadNeed) || '(belum ada profil kebutuhan)'
+		const needBlock =
+			leadNeedLines(input.leadNeed) || '(belum ada profil kebutuhan)'
 		const transcriptBlock = text(input.transcript)
 			? text(input.transcript).slice(0, 4000)
 			: '(tidak ada riwayat)'
@@ -277,7 +307,9 @@ export async function generateHandoffBrief(input: {
 
 // Generate a natural-language lead brief + WhatsApp opener with the AI, falling
 // back to the deterministic version if the AI is not configured or fails.
-export async function generateLeadBrief(contact: LeadContact): Promise<LeadBrief> {
+export async function generateLeadBrief(
+	contact: LeadContact,
+): Promise<LeadBrief> {
 	const fallback = buildDeterministicBrief(contact)
 	if (!AI_API_KEY) return fallback
 	try {

@@ -94,20 +94,27 @@ async function ensureContext(
 		sourceMessageId?: string | null
 	},
 ) {
-	let conversation: { id: string; contact_id: string | null; assignee_id: string | null; team_id: string | null } | null = null
+	let conversation: {
+		id: string
+		contact_id: string | null
+		assignee_id: string | null
+		team_id: string | null
+	} | null = null
 	if (input.conversationId) {
 		conversation = await prisma.conversations.findFirst({
 			where: { id: input.conversationId, app_id: appId, deleted_at: null },
 			select: { id: true, contact_id: true, assignee_id: true, team_id: true },
 		})
-		if (!conversation) throw new TaskNotFoundError('Conversation tidak ditemukan pada app aktif')
+		if (!conversation)
+			throw new TaskNotFoundError('Conversation tidak ditemukan pada app aktif')
 	}
 	if (input.contactId) {
 		const contact = await prisma.contacts.findFirst({
 			where: { id: input.contactId, app_id: appId, deleted_at: null },
 			select: { id: true },
 		})
-		if (!contact) throw new TaskNotFoundError('Contact tidak ditemukan pada app aktif')
+		if (!contact)
+			throw new TaskNotFoundError('Contact tidak ditemukan pada app aktif')
 	}
 	if (input.sourceMessageId) {
 		const message = await prisma.messages.findFirst({
@@ -115,28 +122,45 @@ async function ensureContext(
 				id: input.sourceMessageId,
 				app_id: appId,
 				deleted_at: null,
-				...(input.conversationId ? { conversation_id: input.conversationId } : {}),
+				...(input.conversationId
+					? { conversation_id: input.conversationId }
+					: {}),
 			},
 			select: { id: true, conversation_id: true },
 		})
-		if (!message) throw new TaskNotFoundError('Pesan sumber tidak ditemukan pada app aktif')
+		if (!message)
+			throw new TaskNotFoundError('Pesan sumber tidak ditemukan pada app aktif')
 	}
 	return conversation
 }
 
 async function enrichTasks(rows: TaskRecord[]) {
-	const contactIds = [...new Set(rows.map((row) => row.contact_id).filter(Boolean))] as string[]
-	const conversationIds = [...new Set(rows.map((row) => row.conversation_id).filter(Boolean))] as string[]
-	const teamIds = [...new Set(rows.map((row) => row.team_id).filter(Boolean))] as string[]
+	const contactIds = [
+		...new Set(rows.map((row) => row.contact_id).filter(Boolean)),
+	] as string[]
+	const conversationIds = [
+		...new Set(rows.map((row) => row.conversation_id).filter(Boolean)),
+	] as string[]
+	const teamIds = [
+		...new Set(rows.map((row) => row.team_id).filter(Boolean)),
+	] as string[]
 	// A leader sees their whole team's tasks, so the rows have to say who each
 	// one belongs to; for a sales the list is all their own and the name is
 	// simply unused.
-	const assigneeIds = [...new Set(rows.map((row) => row.assignee_id).filter(Boolean))] as string[]
+	const assigneeIds = [
+		...new Set(rows.map((row) => row.assignee_id).filter(Boolean)),
+	] as string[]
 	const [contacts, conversations, teams, assignees] = await Promise.all([
 		contactIds.length
 			? prisma.contacts.findMany({
 					where: { id: { in: contactIds }, deleted_at: null },
-					select: { id: true, name: true, phone_number: true, whatsapp_id: true, email: true },
+					select: {
+						id: true,
+						name: true,
+						phone_number: true,
+						whatsapp_id: true,
+						email: true,
+					},
 				})
 			: [],
 		conversationIds.length
@@ -159,7 +183,9 @@ async function enrichTasks(rows: TaskRecord[]) {
 			: [],
 	])
 	const contactsById = new Map(contacts.map((contact) => [contact.id, contact]))
-	const conversationsById = new Map(conversations.map((conversation) => [conversation.id, conversation]))
+	const conversationsById = new Map(
+		conversations.map((conversation) => [conversation.id, conversation]),
+	)
 	const teamsById = new Map(teams.map((team) => [team.id, team.name]))
 	const assigneesById = new Map(
 		assignees.map((user) => [user.id, user.name || user.email || null]),
@@ -173,7 +199,9 @@ async function enrichTasks(rows: TaskRecord[]) {
 			id: row.id,
 			appId: row.app_id,
 			assigneeId: row.assignee_id,
-			assigneeName: row.assignee_id ? assigneesById.get(row.assignee_id) || null : null,
+			assigneeName: row.assignee_id
+				? assigneesById.get(row.assignee_id) || null
+				: null,
 			teamId: row.team_id,
 			teamName: row.team_id ? teamsById.get(row.team_id) || null : null,
 			conversationId: row.conversation_id,
@@ -185,7 +213,7 @@ async function enrichTasks(rows: TaskRecord[]) {
 			priority: row.priority,
 			status: row.status,
 			dueAt: row.due_at,
-				completedAt: row.completed_at,
+			completedAt: row.completed_at,
 			source: row.source,
 			aiSnapshot: row.ai_snapshot,
 			analysisVersion: row.analysis_version,
@@ -241,7 +269,9 @@ export abstract class TaskService {
 			...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
 		})
 		const hasMore = rows.length > Math.max(1, Math.min(100, input.limit || 25))
-		const page = rows.slice(0, Math.max(1, Math.min(100, input.limit || 25))).map(asTask)
+		const page = rows
+			.slice(0, Math.max(1, Math.min(100, input.limit || 25)))
+			.map(asTask)
 		return {
 			data: await enrichTasks(page),
 			nextCursor: hasMore ? page.at(-1)?.id || null : null,
@@ -339,7 +369,9 @@ export abstract class TaskService {
 		// open; falls back to a deterministic brief if the AI is unavailable.
 		let taskOut = task
 		const snap =
-			task.aiSnapshot && typeof task.aiSnapshot === 'object' && !Array.isArray(task.aiSnapshot)
+			task.aiSnapshot &&
+			typeof task.aiSnapshot === 'object' &&
+			!Array.isArray(task.aiSnapshot)
 				? (task.aiSnapshot as Record<string, unknown>)
 				: {}
 		const alreadyHasSummary = String(snap.summary || '').trim().length > 0
@@ -347,7 +379,9 @@ export abstract class TaskService {
 			!task.conversationId &&
 			contact &&
 			!alreadyHasSummary &&
-			(task.source === 'import' || task.source === 'manual' || task.actionKind === 'follow_up')
+			(task.source === 'import' ||
+				task.source === 'manual' ||
+				task.actionKind === 'follow_up')
 		if (eligibleForBrief && contact) {
 			try {
 				const brief = await generateLeadBrief(contact)
@@ -357,7 +391,10 @@ export abstract class TaskService {
 					suggestedReply: brief.suggestedReply,
 					generatedBy: 'lead_brief',
 				}
-				await prisma.tasks.update({ where: { id: taskId }, data: { ai_snapshot: merged } })
+				await prisma.tasks.update({
+					where: { id: taskId },
+					data: { ai_snapshot: merged },
+				})
 				taskOut = { ...task, aiSnapshot: merged }
 			} catch {
 				/* non-blocking: detail still loads without a brief */
@@ -428,14 +465,19 @@ export abstract class TaskService {
 			return { conversationId: task.conversationId }
 		}
 
-		if (!task.contactId) throw new TaskConflictError('Tugas ini tidak punya kontak')
+		if (!task.contactId)
+			throw new TaskConflictError('Tugas ini tidak punya kontak')
 		const contact = await prisma.contacts.findFirst({
 			where: { id: task.contactId, app_id: actor.appId, deleted_at: null },
 			select: { id: true, name: true, phone_number: true, whatsapp_id: true },
 		})
-		const phoneNumber = normalizeInboxPhone(contact?.phone_number || contact?.whatsapp_id)
+		const phoneNumber = normalizeInboxPhone(
+			contact?.phone_number || contact?.whatsapp_id,
+		)
 		if (!phoneNumber)
-			throw new TaskConflictError('Lead ini belum punya nomor WhatsApp yang valid')
+			throw new TaskConflictError(
+				'Lead ini belum punya nomor WhatsApp yang valid',
+			)
 
 		// The acting user must have a connected personal WhatsApp (baileys) so the
 		// conversation lands in their inbox.
@@ -445,7 +487,12 @@ export abstract class TaskService {
 		})
 		const channel = session
 			? await prisma.whatsapp_channels.findFirst({
-					where: { id: session.channel_id, app_id: actor.appId, provider: 'baileys', deleted_at: null },
+					where: {
+						id: session.channel_id,
+						app_id: actor.appId,
+						provider: 'baileys',
+						deleted_at: null,
+					},
 					select: { id: true, inbox_id: true },
 				})
 			: null
@@ -462,7 +509,11 @@ export abstract class TaskService {
 				where: {
 					app_id: actor.appId,
 					deleted_at: null,
-					OR: [{ identifier }, { whatsapp_id: phoneNumber }, { phone_number: phoneNumber }],
+					OR: [
+						{ identifier },
+						{ whatsapp_id: phoneNumber },
+						{ phone_number: phoneNumber },
+					],
 				},
 			})
 			const owned = existingContact
@@ -540,7 +591,8 @@ export abstract class TaskService {
 			})
 			if (existing) {
 				const attrs =
-					existing.additional_attributes && typeof existing.additional_attributes === 'object'
+					existing.additional_attributes &&
+					typeof existing.additional_attributes === 'object'
 						? (existing.additional_attributes as Record<string, unknown>)
 						: {}
 				await prisma.conversations.update({
@@ -552,6 +604,11 @@ export abstract class TaskService {
 								owner_user_id: actor.userId,
 								lead_registration_id: registration.id,
 								lead_status: registration.status,
+								// F4: AI handoff brief seeded by lead-routing's assign() - lets
+								// the chat UI show it without a separate task lookup.
+								...(registration.handoff_brief
+									? { handoff_brief: registration.handoff_brief }
+									: {}),
 							},
 						} as object,
 						updated_at: new Date(),
@@ -619,15 +676,23 @@ export abstract class TaskService {
 		const conversation = await prisma.conversations.findFirst({
 			where: { id: conversationId, app_id: actor.appId, deleted_at: null },
 			include: {
-				contacts: { select: { id: true, phone_number: true, whatsapp_id: true } },
+				contacts: {
+					select: { id: true, phone_number: true, whatsapp_id: true },
+				},
 			},
 		})
 		const phone = String(
-			conversation?.contacts?.phone_number || conversation?.contacts?.whatsapp_id || '',
+			conversation?.contacts?.phone_number ||
+				conversation?.contacts?.whatsapp_id ||
+				'',
 		).replace(/\D/g, '')
 		if (!conversation || !phone) return
 		const session = await prisma.baileys_sessions.findFirst({
-			where: { app_id: actor.appId, owner_user_id: actor.userId, status: 'connected' },
+			where: {
+				app_id: actor.appId,
+				owner_user_id: actor.userId,
+				status: 'connected',
+			},
 			select: { provider_channel_key: true, channel_id: true },
 		})
 		if (!session)
@@ -635,7 +700,12 @@ export abstract class TaskService {
 				'WhatsApp kamu belum terhubung, hubungkan dulu untuk memulai chat AI.',
 			)
 		const channel = await prisma.whatsapp_channels.findFirst({
-			where: { id: session.channel_id, app_id: actor.appId, provider: 'baileys', deleted_at: null },
+			where: {
+				id: session.channel_id,
+				app_id: actor.appId,
+				provider: 'baileys',
+				deleted_at: null,
+			},
 			select: { api_key: true, inbox_id: true },
 		})
 		if (!channel?.api_key || !channel.inbox_id)
@@ -679,14 +749,22 @@ export abstract class TaskService {
 			if (conversation.contacts?.id)
 				await tx.contacts.update({
 					where: { id: conversation.contacts.id },
-					data: { last_message_at: now, last_activity_at: now, updated_at: now },
+					data: {
+						last_message_at: now,
+						last_activity_at: now,
+						updated_at: now,
+					},
 				})
 			return created
 		})
 		const io = getRealtimeIO()
 		const payload = {
 			message,
-			conversation: { id: conversationId, app_id: actor.appId, channel_type: 'whatsapp' },
+			conversation: {
+				id: conversationId,
+				app_id: actor.appId,
+				channel_type: 'whatsapp',
+			},
 		}
 		io?.to(`app:${actor.appId}`).emit('message:created', payload)
 		io?.to(`conversation:${conversationId}`).emit('message:created', payload)
@@ -699,9 +777,19 @@ export abstract class TaskService {
 		const base = { app_id: actor.appId, ...scope } as any
 		const visible = activeAndVisibleAt(now)
 		const [overdue, today, completedToday] = await Promise.all([
-			prisma.tasks.count({ where: { ...base, AND: [visible, { due_at: { lt: start } }] } }),
-			prisma.tasks.count({ where: { ...base, AND: [visible, { due_at: { gte: start, lt: end } }] } }),
-			prisma.tasks.count({ where: { ...base, status: 'done', completed_at: { gte: start, lt: end } } }),
+			prisma.tasks.count({
+				where: { ...base, AND: [visible, { due_at: { lt: start } }] },
+			}),
+			prisma.tasks.count({
+				where: { ...base, AND: [visible, { due_at: { gte: start, lt: end } }] },
+			}),
+			prisma.tasks.count({
+				where: {
+					...base,
+					status: 'done',
+					completed_at: { gte: start, lt: end },
+				},
+			}),
 		])
 		return { overdue, today, completedToday }
 	}
@@ -721,7 +809,8 @@ export abstract class TaskService {
 		},
 	) {
 		const conversation = await ensureContext(actor.appId, input)
-		const assigneeId = input.assigneeId || conversation?.assignee_id || actor.userId
+		const assigneeId =
+			input.assigneeId || conversation?.assignee_id || actor.userId
 		const teamId = input.teamId || conversation?.team_id || null
 		const contactId = input.contactId || conversation?.contact_id || null
 		await assertAssignableTask(actor, assigneeId, teamId)
@@ -761,22 +850,40 @@ export abstract class TaskService {
 	static async update(
 		actor: TaskActor,
 		taskId: string,
-		input: { title?: string; description?: string | null; priority?: string; dueAt?: Date | null },
+		input: {
+			title?: string
+			description?: string | null
+			priority?: string
+			dueAt?: Date | null
+		},
 	) {
 		const scope = await taskVisibilityScope(actor)
 		const task = await prisma.$transaction(async (tx) => {
 			const updated = await tx.tasks.updateMany({
-				where: { id: taskId, app_id: actor.appId, ...scope, status: { in: ACTIVE_STATUSES } } as any,
+				where: {
+					id: taskId,
+					app_id: actor.appId,
+					...scope,
+					status: { in: ACTIVE_STATUSES },
+				} as any,
 				data: {
 					...(input.title !== undefined ? { title: input.title.trim() } : {}),
-					...(input.description !== undefined ? { description: input.description?.trim() || null } : {}),
+					...(input.description !== undefined
+						? { description: input.description?.trim() || null }
+						: {}),
 					...(input.priority !== undefined ? { priority: input.priority } : {}),
 					...(input.dueAt !== undefined ? { due_at: input.dueAt } : {}),
 				},
 			})
-			if (!updated.count) throw new TaskNotFoundError('Task tidak ditemukan atau sudah selesai')
+			if (!updated.count)
+				throw new TaskNotFoundError('Task tidak ditemukan atau sudah selesai')
 			await tx.task_events.create({
-				data: { task_id: taskId, event_type: 'updated', actor_id: actor.userId, metadata: input },
+				data: {
+					task_id: taskId,
+					event_type: 'updated',
+					actor_id: actor.userId,
+					metadata: input,
+				},
 			})
 			const row = await tx.tasks.findUnique({ where: { id: taskId } })
 			if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
@@ -787,15 +894,34 @@ export abstract class TaskService {
 	}
 
 	static async start(actor: TaskActor, taskId: string) {
-		return TaskService.transition(actor, taskId, ['open'], 'in_progress', 'started')
+		return TaskService.transition(
+			actor,
+			taskId,
+			['open'],
+			'in_progress',
+			'started',
+		)
 	}
 
 	static async complete(actor: TaskActor, taskId: string) {
-		return TaskService.transition(actor, taskId, ACTIVE_STATUSES, 'done', 'completed')
+		return TaskService.transition(
+			actor,
+			taskId,
+			ACTIVE_STATUSES,
+			'done',
+			'completed',
+		)
 	}
 
 	static async cancel(actor: TaskActor, taskId: string, reason?: string) {
-		return TaskService.transition(actor, taskId, ACTIVE_STATUSES, 'cancelled', 'cancelled', reason)
+		return TaskService.transition(
+			actor,
+			taskId,
+			ACTIVE_STATUSES,
+			'cancelled',
+			'cancelled',
+			reason,
+		)
 	}
 
 	// When the sales agent starts replying to the customer (via the chat inbox or
@@ -837,7 +963,6 @@ export abstract class TaskService {
 		return ids.length
 	}
 
-
 	static async replyWhatsapp(actor: TaskActor, taskId: string, text: string) {
 		const trimmed = text.trim()
 		if (!trimmed) throw new Error('Balasan tidak boleh kosong')
@@ -855,7 +980,11 @@ export abstract class TaskService {
 		}
 
 		const conversation = await prisma.conversations.findFirst({
-			where: { id: task.conversation_id, app_id: actor.appId, deleted_at: null },
+			where: {
+				id: task.conversation_id,
+				app_id: actor.appId,
+				deleted_at: null,
+			},
 			select: {
 				id: true,
 				inbox_id: true,
@@ -867,15 +996,20 @@ export abstract class TaskService {
 			throw new Error('Percakapan WhatsApp tidak ditemukan')
 		}
 
-		const personal = ((conversation.additional_attributes as Record<string, unknown>)
-			?.personal_whatsapp || {}) as Record<string, unknown>
+		const personal = ((
+			conversation.additional_attributes as Record<string, unknown>
+		)?.personal_whatsapp || {}) as Record<string, unknown>
 		const ownerUserId =
 			(typeof personal.owner_user_id === 'string' && personal.owner_user_id) ||
 			task.assignee_id
 		if (!ownerUserId) throw new Error('Pemilik WhatsApp tidak diketahui')
 
 		const session = await prisma.baileys_sessions.findFirst({
-			where: { app_id: actor.appId, owner_user_id: ownerUserId, status: 'connected' },
+			where: {
+				app_id: actor.appId,
+				owner_user_id: ownerUserId,
+				status: 'connected',
+			},
 			select: { provider_channel_key: true, channel_id: true },
 		})
 		if (!session) throw new Error('WhatsApp sales sedang tidak terhubung')
@@ -892,7 +1026,9 @@ export abstract class TaskService {
 			throw new Error('Channel WhatsApp sales tidak valid')
 		}
 		const phone = String(
-			conversation.contacts.phone_number || conversation.contacts.whatsapp_id || '',
+			conversation.contacts.phone_number ||
+				conversation.contacts.whatsapp_id ||
+				'',
 		).replace(/\D/g, '')
 		if (!phone) throw new Error('Nomor WhatsApp customer tidak tersedia')
 
@@ -911,51 +1047,61 @@ export abstract class TaskService {
 		)
 
 		const now = new Date()
-		const { task: updatedTask, message } = await prisma.$transaction(async (tx) => {
-			const created = await tx.messages.create({
-				data: {
-					conversation_id: conversation.id,
-					app_id: actor.appId,
-					inbox_id: conversation.inbox_id,
-					message_type: 'outgoing',
-					sender_type: 'user',
-					sender_id: actor.userId,
-					content: trimmed,
-					content_type: 'text',
-					status: 'sent',
-					external_id: sent.externalId || null,
-					content_attributes: { from_task_id: taskId } as any,
-					created_at: now,
-					updated_at: now,
-				},
-			})
-			await tx.conversations.update({
-				where: { id: conversation.id },
-				data: { last_message_at: now, last_activity_at: now, updated_at: now },
-			})
-			// Replying marks the task as being worked on, not finished. The sales
-			// keeps the conversation going and completes the task manually later.
-			await tx.tasks.updateMany({
-				where: { id: taskId, app_id: actor.appId, status: 'open' },
-				data: { status: 'in_progress' },
-			})
-			await tx.task_events.create({
-				data: {
-					task_id: taskId,
-					event_type: 'replied_whatsapp',
-					actor_id: actor.userId,
-					metadata: { messageExternalId: sent.externalId || null },
-				},
-			})
-			const row = await tx.tasks.findUnique({ where: { id: taskId } })
-			if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
-			return { task: asTask(row), message: created }
-		})
+		const { task: updatedTask, message } = await prisma.$transaction(
+			async (tx) => {
+				const created = await tx.messages.create({
+					data: {
+						conversation_id: conversation.id,
+						app_id: actor.appId,
+						inbox_id: conversation.inbox_id,
+						message_type: 'outgoing',
+						sender_type: 'user',
+						sender_id: actor.userId,
+						content: trimmed,
+						content_type: 'text',
+						status: 'sent',
+						external_id: sent.externalId || null,
+						content_attributes: { from_task_id: taskId } as any,
+						created_at: now,
+						updated_at: now,
+					},
+				})
+				await tx.conversations.update({
+					where: { id: conversation.id },
+					data: {
+						last_message_at: now,
+						last_activity_at: now,
+						updated_at: now,
+					},
+				})
+				// Replying marks the task as being worked on, not finished. The sales
+				// keeps the conversation going and completes the task manually later.
+				await tx.tasks.updateMany({
+					where: { id: taskId, app_id: actor.appId, status: 'open' },
+					data: { status: 'in_progress' },
+				})
+				await tx.task_events.create({
+					data: {
+						task_id: taskId,
+						event_type: 'replied_whatsapp',
+						actor_id: actor.userId,
+						metadata: { messageExternalId: sent.externalId || null },
+					},
+				})
+				const row = await tx.tasks.findUnique({ where: { id: taskId } })
+				if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
+				return { task: asTask(row), message: created }
+			},
+		)
 
 		const io = getRealtimeIO()
 		const payload = {
 			message,
-			conversation: { id: conversation.id, app_id: actor.appId, channel_type: 'whatsapp' },
+			conversation: {
+				id: conversation.id,
+				app_id: actor.appId,
+				channel_type: 'whatsapp',
+			},
 		}
 		io?.to(`app:${actor.appId}`).emit('message:created', payload)
 		io?.to(`conversation:${conversation.id}`).emit('message:created', payload)
@@ -976,7 +1122,10 @@ export abstract class TaskService {
 		if (input.decision.action === 'ignore') return null
 		const result = await prisma.$transaction(async (tx) => {
 			const current = await tx.tasks.findFirst({
-				where: { app_id: input.actor.appId, source_message_id: input.messageId },
+				where: {
+					app_id: input.actor.appId,
+					source_message_id: input.messageId,
+				},
 			})
 			if (current) return { task: asTask(current), event: null }
 			const activeTask = await tx.tasks.findFirst({
@@ -996,7 +1145,10 @@ export abstract class TaskService {
 				title: input.decision.title || 'Tindak lanjuti percakapan WhatsApp',
 				description: input.decision.summary,
 				priority: input.decision.priority || 'medium',
-				due_at: dueAtFromRecommendation(input.decision.action, input.decision.dueInMinutes),
+				due_at: dueAtFromRecommendation(
+					input.decision.action,
+					input.decision.dueInMinutes,
+				),
 				ai_snapshot: input.decision,
 				analysis_version: input.analysisVersion,
 				confidence: input.decision.confidence,
@@ -1007,7 +1159,12 @@ export abstract class TaskService {
 					data,
 				})
 				await tx.task_events.create({
-					data: { task_id: updated.id, event_type: 'ai_analyzed', actor_type: 'system', metadata: input.decision },
+					data: {
+						task_id: updated.id,
+						event_type: 'ai_analyzed',
+						actor_type: 'system',
+						metadata: input.decision,
+					},
 				})
 				return { task: asTask(updated), event: 'task:updated' as const }
 			}
@@ -1023,7 +1180,12 @@ export abstract class TaskService {
 				},
 			})
 			await tx.task_events.create({
-				data: { task_id: created.id, event_type: 'created', actor_type: 'system', metadata: input.decision },
+				data: {
+					task_id: created.id,
+					event_type: 'created',
+					actor_type: 'system',
+					metadata: input.decision,
+				},
 			})
 			return { task: asTask(created), event: 'task:created' as const }
 		})
@@ -1064,15 +1226,28 @@ export abstract class TaskService {
 		const now = new Date()
 		const task = await prisma.$transaction(async (tx) => {
 			const updated = await tx.tasks.updateMany({
-				where: { id: taskId, app_id: actor.appId, ...scope, status: { in: from } } as any,
+				where: {
+					id: taskId,
+					app_id: actor.appId,
+					...scope,
+					status: { in: from },
+				} as any,
 				data: {
 					status: to,
 					...(to === 'done' ? { completed_at: now } : {}),
 				},
 			})
-			if (!updated.count) throw new TaskConflictError('Task tidak dapat diproses pada status saat ini')
+			if (!updated.count)
+				throw new TaskConflictError(
+					'Task tidak dapat diproses pada status saat ini',
+				)
 			await tx.task_events.create({
-				data: { task_id: taskId, event_type: eventType, actor_id: actor.userId, reason },
+				data: {
+					task_id: taskId,
+					event_type: eventType,
+					actor_id: actor.userId,
+					reason,
+				},
 			})
 			const row = await tx.tasks.findUnique({ where: { id: taskId } })
 			if (!row) throw new TaskNotFoundError('Task tidak ditemukan')
@@ -1082,8 +1257,16 @@ export abstract class TaskService {
 		// Clear any pending "urgent"/"due" bell notifications for a task that is
 		// now closed, so the assignee's inbox does not keep stale reminders.
 		if ((to === 'done' || to === 'cancelled') && task.assignee_id) {
-			await NotificationService.resolve(actor.appId, task.assignee_id, `task:${taskId}`).catch(() => 0)
-			await NotificationService.resolve(actor.appId, task.assignee_id, `task-due:${taskId}`).catch(() => 0)
+			await NotificationService.resolve(
+				actor.appId,
+				task.assignee_id,
+				`task:${taskId}`,
+			).catch(() => 0)
+			await NotificationService.resolve(
+				actor.appId,
+				task.assignee_id,
+				`task-due:${taskId}`,
+			).catch(() => 0)
 		}
 		return (await enrichTasks([task]))[0]
 	}

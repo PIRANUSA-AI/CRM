@@ -43,7 +43,9 @@ function cleanStringArray(value: unknown, max = 40): string[] {
 	if (!Array.isArray(value)) return []
 	const out: string[] = []
 	for (const item of value) {
-		const text = String(item ?? '').trim().slice(0, 120)
+		const text = String(item ?? '')
+			.trim()
+			.slice(0, 120)
 		if (text && !out.includes(text)) out.push(text)
 		if (out.length >= max) break
 	}
@@ -60,7 +62,9 @@ function asArray(value: unknown): string[] {
  * - leader: only members sharing a team with the leader.
  * - ceo/superadmin: all active sales/leaders in the app.
  */
-async function resolveTeamSales(actor: SalesProfileActor): Promise<Map<string, TeamSales>> {
+async function resolveTeamSales(
+	actor: SalesProfileActor,
+): Promise<Map<string, TeamSales>> {
 	const appTeams = await prisma.teams.findMany({
 		where: { app_id: actor.appId, deleted_at: null },
 		select: { id: true, name: true },
@@ -110,7 +114,7 @@ async function resolveTeamSales(actor: SalesProfileActor): Promise<Map<string, T
 			email: user.email,
 			role: user.role,
 			teamId,
-			teamName: teamId ? teamNameById.get(teamId) ?? null : null,
+			teamName: teamId ? (teamNameById.get(teamId) ?? null) : null,
 		})
 	}
 	return map
@@ -224,7 +228,9 @@ export abstract class SalesProfileService {
 				teamName: s.teamName,
 				activeLoad: loadByUser.get(s.userId) || 0,
 				lastActivityAt: latest.get(s.userId) ?? null,
-				profile: profileShape((profileByUser.get(s.userId) as ProfileRow) || null),
+				profile: profileShape(
+					(profileByUser.get(s.userId) as ProfileRow) || null,
+				),
 			}))
 			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
 	}
@@ -239,7 +245,9 @@ export abstract class SalesProfileService {
 		const sales = await resolveTeamSales(actor)
 		const target = sales.get(userId)
 		if (!target)
-			throw new SalesProfileNotFoundError('Sales tidak ditemukan atau di luar tim Anda')
+			throw new SalesProfileNotFoundError(
+				'Sales tidak ditemukan atau di luar tim Anda',
+			)
 
 		const maxActiveRaw = Number(input.maxActive)
 		const maxActive =
@@ -249,7 +257,9 @@ export abstract class SalesProfileService {
 		// Only include work_hours when a real object is supplied; a nullable Json
 		// column cannot take a plain `null` via Prisma, so we omit it otherwise.
 		const workHours =
-			input.workHours && typeof input.workHours === 'object' && !Array.isArray(input.workHours)
+			input.workHours &&
+			typeof input.workHours === 'object' &&
+			!Array.isArray(input.workHours)
 				? { work_hours: input.workHours as object }
 				: {}
 
@@ -262,13 +272,20 @@ export abstract class SalesProfileService {
 			languages: cleanStringArray(input.languages),
 			tags: cleanStringArray(input.tags),
 			notes: input.notes ? String(input.notes).trim().slice(0, 2000) : null,
-			persona: input.persona ? String(input.persona).trim().slice(0, 2000) : null,
+			persona: input.persona
+				? String(input.persona).trim().slice(0, 2000)
+				: null,
 			experience_years:
 				input.experienceYears === null || input.experienceYears === undefined
 					? null
-					: Math.max(0, Math.min(60, Math.floor(Number(input.experienceYears) || 0))),
+					: Math.max(
+							0,
+							Math.min(60, Math.floor(Number(input.experienceYears) || 0)),
+						),
 			phone: input.phone ? String(input.phone).trim().slice(0, 40) : null,
-			position: input.position ? String(input.position).trim().slice(0, 120) : null,
+			position: input.position
+				? String(input.position).trim().slice(0, 120)
+				: null,
 			// Date-only column, so a bad string becomes null rather than throwing
 			// at the driver and losing the rest of the save.
 			joined_at: (() => {
@@ -284,6 +301,15 @@ export abstract class SalesProfileService {
 			update: { ...data, ...workHours },
 		})
 
+		// The leader just explicitly saved via the form - that IS the review step,
+		// so any pending AI suggestion for this sales is now resolved. Doesn't
+		// matter whether the save matches the suggestion; a deliberate edit
+		// supersedes it either way.
+		await prisma.sales_persona.updateMany({
+			where: { app_id: actor.appId, user_id: userId, status: 'pending' },
+			data: { status: 'accepted' },
+		})
+
 		return {
 			userId: target.userId,
 			name: target.name,
@@ -292,5 +318,45 @@ export abstract class SalesProfileService {
 			teamId: target.teamId,
 			profile: profileShape(row as ProfileRow),
 		}
+	}
+
+	// F: AI persona/level suggestion, staged in sales_persona for leader review.
+	static async getPersonaSuggestion(actor: SalesProfileActor, userId: string) {
+		const sales = await resolveTeamSales(actor)
+		if (!sales.get(userId))
+			throw new SalesProfileNotFoundError(
+				'Sales tidak ditemukan atau di luar tim Anda',
+			)
+		const row = await prisma.sales_persona.findUnique({
+			where: { app_id_user_id: { app_id: actor.appId, user_id: userId } },
+		})
+		if (!row || row.status !== 'pending') return null
+		return {
+			persona: row.persona,
+			productExpertise:
+				(row.product_expertise as Record<string, number> | null) ?? null,
+			experienceLevel: row.experience_level,
+			strengths: asArray(row.strengths),
+			weaknesses: asArray(row.weaknesses),
+			rationale: row.rationale,
+			status: row.status,
+			generatedAt: row.generated_at,
+		}
+	}
+
+	static async dismissPersonaSuggestion(
+		actor: SalesProfileActor,
+		userId: string,
+	) {
+		const sales = await resolveTeamSales(actor)
+		if (!sales.get(userId))
+			throw new SalesProfileNotFoundError(
+				'Sales tidak ditemukan atau di luar tim Anda',
+			)
+		await prisma.sales_persona.updateMany({
+			where: { app_id: actor.appId, user_id: userId, status: 'pending' },
+			data: { status: 'dismissed' },
+		})
+		return { dismissed: true }
 	}
 }

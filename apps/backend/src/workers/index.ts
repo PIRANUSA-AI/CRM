@@ -16,6 +16,7 @@ import { AIResponseLogService } from '../modules/chatbot/response-log-service'
 import { InstagramService } from '../modules/instagram/service'
 import { BusinessWebhookDispatchService } from '../modules/business-webhooks/dispatch-service'
 import { KnowledgeIndexService } from '../modules/knowledge/indexing-service'
+import { generateAndStorePersonaSuggestion } from '../modules/sales-profiles/ai-suggest'
 import { WebhookService } from '../modules/webhook/service'
 import { PersonalAiReplyService } from '../modules/personal-whatsapp-inbox/ai-reply'
 import { NotificationService } from '../modules/notifications/service'
@@ -70,7 +71,10 @@ const WEBHOOK_REPLAY_JOB_BACKOFF_MS = Math.max(
 )
 const CHATBOT_FOLLOWUP_DISPATCH_BATCH_LIMIT = Math.max(
 	1,
-	Math.min(500, Number(process.env.CHATBOT_FOLLOWUP_DISPATCH_BATCH_LIMIT || 100)),
+	Math.min(
+		500,
+		Number(process.env.CHATBOT_FOLLOWUP_DISPATCH_BATCH_LIMIT || 100),
+	),
 )
 const WHATSAPP_MEDIA_URL_VALIDATION_TIMEOUT_MS = Math.max(
 	1_500,
@@ -142,7 +146,9 @@ function normalizeWhatsappJid(value: string | null | undefined): string | null {
 		.trim()
 		.toLowerCase()
 	if (!normalized) return null
-	const match = normalized.match(/^([0-9]+)(?::[0-9]+)?@(s\.whatsapp\.net|lid)$/)
+	const match = normalized.match(
+		/^([0-9]+)(?::[0-9]+)?@(s\.whatsapp\.net|lid)$/,
+	)
 	if (!match?.[1] || !match?.[2]) return null
 	return `${match[1]}@${match[2]}`
 }
@@ -197,7 +203,9 @@ async function lookupBaileysSessionRecipientJid(params: {
 	const pnJid = buildWhatsappJid(params.recipientWaId, 'pn')
 	if (!lidJid && !pnJid) return null
 
-	const [match] = await prisma.$queryRaw<Array<{ recipient_jid: string | null }>>`
+	const [match] = await prisma.$queryRaw<
+		Array<{ recipient_jid: string | null }>
+	>`
 		SELECT
 			CASE
 				WHEN ${lidJid} IS NOT NULL AND auth_state::text LIKE ${`%${lidJid}%`} THEN ${lidJid}
@@ -509,7 +517,10 @@ function startOutboundConversationLockAutoRenew(
 				String(OUTBOUND_CONVERSATION_LOCK_TTL_MS),
 			)
 			.catch((error) => {
-				console.warn('[OutboundWorker] Failed renewing conversation lock:', error)
+				console.warn(
+					'[OutboundWorker] Failed renewing conversation lock:',
+					error,
+				)
 			})
 	}, OUTBOUND_CONVERSATION_LOCK_RENEW_MS)
 
@@ -618,8 +629,14 @@ async function markBroadcastFailed(
 		.catch(() => null)
 }
 
-function resolveWebhookInboundJobName(source: string | null | undefined): string | null {
-	switch (String(source || '').trim().toLowerCase()) {
+function resolveWebhookInboundJobName(
+	source: string | null | undefined,
+): string | null {
+	switch (
+		String(source || '')
+			.trim()
+			.toLowerCase()
+	) {
 		case 'whatsapp':
 			return 'whatsapp-inbound'
 		case 'instagram':
@@ -689,7 +706,9 @@ function isTrustedWhatsAppMediaHost(url: string): boolean {
 }
 
 function resolveHeaderContentType(response: Response): string | null {
-	const raw = String(response.headers.get('content-type') || '').trim().toLowerCase()
+	const raw = String(response.headers.get('content-type') || '')
+		.trim()
+		.toLowerCase()
 	return raw.length > 0 ? raw : null
 }
 
@@ -781,7 +800,10 @@ async function validateWhatsAppMediaUrl(args: {
 			WHATSAPP_MEDIA_URL_VALIDATION_TIMEOUT_MS,
 		)
 
-		const headValidated = validateResponse(headResponse, 'Media URL not accessible')
+		const headValidated = validateResponse(
+			headResponse,
+			'Media URL not accessible',
+		)
 		if (headValidated.ok) {
 			return headValidated
 		}
@@ -809,7 +831,10 @@ async function validateWhatsAppMediaUrl(args: {
 				},
 				WHATSAPP_MEDIA_URL_VALIDATION_TIMEOUT_MS,
 			)
-			const getValidated = validateResponse(getProbe, 'Media URL not accessible')
+			const getValidated = validateResponse(
+				getProbe,
+				'Media URL not accessible',
+			)
 			if (getValidated.ok) return getValidated
 			return getValidated
 		}
@@ -829,7 +854,9 @@ async function validateWhatsAppMediaUrl(args: {
 function normalizeWhatsappChannelProvider(
 	value: unknown,
 ): 'whatsapp_cloud' | 'baileys' {
-	return String(value || '').trim().toLowerCase() === 'baileys'
+	return String(value || '')
+		.trim()
+		.toLowerCase() === 'baileys'
 		? 'baileys'
 		: 'whatsapp_cloud'
 }
@@ -975,7 +1002,14 @@ function buildBaileysBridgePayload(params: {
 	recipientJid?: string
 	recipientAddressingMode?: 'lid' | 'pn' | null
 	messageId: string
-	type: 'text' | 'template' | 'interactive' | 'image' | 'video' | 'audio' | 'document'
+	type:
+		| 'text'
+		| 'template'
+		| 'interactive'
+		| 'image'
+		| 'video'
+		| 'audio'
+		| 'document'
 	content: string
 	contentAttributes: Record<string, any>
 	replyToExternalId?: string
@@ -1055,7 +1089,14 @@ async function dispatchWhatsAppProviderSend(params: {
 	recipientAddressingMode?: 'lid' | 'pn' | null
 	content: string
 	contentAttributes: Record<string, any>
-	type: 'text' | 'template' | 'interactive' | 'image' | 'video' | 'audio' | 'document'
+	type:
+		| 'text'
+		| 'template'
+		| 'interactive'
+		| 'image'
+		| 'video'
+		| 'audio'
+		| 'document'
 	components?: any[] | undefined
 	templateLanguage?: string | undefined
 	replyToExternalId?: string
@@ -1257,7 +1298,9 @@ function extractImageUrlContextsFromText(
 	return candidates
 }
 
-function collectAiKnowledgeReferenceIds(contentAttributes: Record<string, any>): {
+function collectAiKnowledgeReferenceIds(
+	contentAttributes: Record<string, any>,
+): {
 	sourceIds: string[]
 	faqIds: string[]
 } {
@@ -1286,18 +1329,16 @@ function collectAiKnowledgeReferenceIds(contentAttributes: Record<string, any>):
 	}
 }
 
-function resolveAiMediaContextText(
-	args: {
-		contentAttributes: Record<string, any>
-		recentMessages: Array<{
-			sender_type: string | null
-			content_type: string | null
-			content: string | null
-			content_attributes: unknown
-		}>
-		originalUrl: string
-	},
-): string {
+function resolveAiMediaContextText(args: {
+	contentAttributes: Record<string, any>
+	recentMessages: Array<{
+		sender_type: string | null
+		content_type: string | null
+		content: string | null
+		content_attributes: unknown
+	}>
+	originalUrl: string
+}): string {
 	const parts: string[] = []
 	const aiLogId = String(args.contentAttributes.ai_response_log_id || '').trim()
 	const caption = String(args.contentAttributes.media_caption || '').trim()
@@ -1338,7 +1379,9 @@ async function resolveAiMediaFallbackUrl(args: {
 	contentAttributes: Record<string, any>
 }): Promise<string | null> {
 	if (args.mediaType !== 'image') return null
-	const { sourceIds, faqIds } = collectAiKnowledgeReferenceIds(args.contentAttributes)
+	const { sourceIds, faqIds } = collectAiKnowledgeReferenceIds(
+		args.contentAttributes,
+	)
 	if (sourceIds.length === 0 && faqIds.length === 0) return null
 
 	const [sources, faqs, recentMessages] = await Promise.all([
@@ -1397,7 +1440,9 @@ async function resolveAiMediaFallbackUrl(args: {
 		url: string
 		score: number
 	}> = []
-	const originalNormalized = String(args.originalUrl || '').trim().toLowerCase()
+	const originalNormalized = String(args.originalUrl || '')
+		.trim()
+		.toLowerCase()
 	const contextHasPriceCue = /(promo|harga|price|flash|sale|rb|diskon)/i.test(
 		contextText,
 	)
@@ -1411,7 +1456,10 @@ async function resolveAiMediaFallbackUrl(args: {
 			const contextScore = scoreKeywordOverlap(keywords, item.context)
 			const urlScore = scoreKeywordOverlap(keywords, item.url)
 			const cueBoost =
-				contextHasPriceCue && /(promo|harga|price|flash|sale|rb|diskon)/i.test(item.context + ' ' + item.url)
+				contextHasPriceCue &&
+				/(promo|harga|price|flash|sale|rb|diskon)/i.test(
+					item.context + ' ' + item.url,
+				)
 					? 4
 					: 0
 			const score = contextScore * 6 + urlScore * 8 + cueBoost
@@ -1429,7 +1477,10 @@ async function resolveAiMediaFallbackUrl(args: {
 			const contextScore = scoreKeywordOverlap(keywords, item.context)
 			const urlScore = scoreKeywordOverlap(keywords, item.url)
 			const cueBoost =
-				contextHasPriceCue && /(promo|harga|price|flash|sale|rb|diskon)/i.test(item.context + ' ' + item.url)
+				contextHasPriceCue &&
+				/(promo|harga|price|flash|sale|rb|diskon)/i.test(
+					item.context + ' ' + item.url,
+				)
 					? 4
 					: 0
 			const score = contextScore * 5 + urlScore * 7 + cueBoost
@@ -1453,7 +1504,10 @@ async function resolveAiMediaFallbackUrl(args: {
 	return ranked[0]?.url || null
 }
 
-function buildButtonsFallbackText(messageText: string, options: string[]): string {
+function buildButtonsFallbackText(
+	messageText: string,
+	options: string[],
+): string {
 	return [
 		messageText.trim() || 'Please choose one option:',
 		'',
@@ -1463,7 +1517,9 @@ function buildButtonsFallbackText(messageText: string, options: string[]): strin
 		.join('\n')
 }
 
-function normalizeFlowButtonOptions(contentAttributes: Record<string, any>): string[] {
+function normalizeFlowButtonOptions(
+	contentAttributes: Record<string, any>,
+): string[] {
 	const options = Array.isArray(contentAttributes.flow_buttons)
 		? contentAttributes.flow_buttons
 		: Array.isArray(contentAttributes.buttons)
@@ -1526,10 +1582,8 @@ async function processBroadcastJob(job: Job) {
 			throw new Error(reason)
 		}
 
-		const recipients: BroadcastAudienceRecipient[] = await resolveBroadcastAudience(
-			broadcast.app_id,
-			targetAudience,
-		)
+		const recipients: BroadcastAudienceRecipient[] =
+			await resolveBroadcastAudience(broadcast.app_id, targetAudience)
 
 		await prisma.broadcast_logs.deleteMany({
 			where: { broadcast_id: broadcast.id },
@@ -1812,7 +1866,9 @@ async function processOutboundMessageJob(job: Job) {
 			})
 
 			if (!message) {
-				console.error(`[OutboundWorker] Message not found after lock: ${messageId}`)
+				console.error(
+					`[OutboundWorker] Message not found after lock: ${messageId}`,
+				)
 				return { success: false, reason: 'message_not_found_after_lock' }
 			}
 
@@ -1839,7 +1895,9 @@ async function processOutboundMessageJob(job: Job) {
 			let externalId = ''
 			const channelType = inbox.channel_type
 			let conversationProvider: string | null = null
-			const conversationAttributes = asRecord(conversation.additional_attributes)
+			const conversationAttributes = asRecord(
+				conversation.additional_attributes,
+			)
 			const conversationSource = String(conversationAttributes.source || '')
 				.trim()
 				.toLowerCase()
@@ -1931,8 +1989,12 @@ async function processOutboundMessageJob(job: Job) {
 				)
 					.trim()
 					.toLowerCase()
-				const components = resolveTemplateComponents(contentAttributes.components)
-				const templateLanguage = resolveTemplateLanguage(contentAttributes.language)
+				const components = resolveTemplateComponents(
+					contentAttributes.components,
+				)
+				const templateLanguage = resolveTemplateLanguage(
+					contentAttributes.language,
+				)
 
 				let type:
 					| 'text'
@@ -1956,7 +2018,9 @@ async function processOutboundMessageJob(job: Job) {
 					type = 'template'
 				} else if (messageTypeRaw === 'interactive') {
 					const options = normalizeFlowButtonOptions(contentAttributes)
-					const fromAttributesInteractive = asRecord(contentAttributes.interactive)
+					const fromAttributesInteractive = asRecord(
+						contentAttributes.interactive,
+					)
 					const actionRecord = asRecord(fromAttributesInteractive.action)
 					const nativeInteractiveType = String(
 						fromAttributesInteractive.type || '',
@@ -1977,13 +2041,10 @@ async function processOutboundMessageJob(job: Job) {
 								})
 								.filter((value): value is string => Boolean(value))
 						: []
-					const resolvedButtons = nativeButtons.length > 0 ? nativeButtons : options
+					const resolvedButtons =
+						nativeButtons.length > 0 ? nativeButtons : options
 
-					if (
-						nativeInteractiveType === 'cta_url' &&
-						ctaUrl &&
-						ctaDisplayText
-					) {
+					if (nativeInteractiveType === 'cta_url' && ctaUrl && ctaDisplayText) {
 						type = 'interactive'
 						const bodyText = String(
 							asRecord(fromAttributesInteractive.body).text ||
@@ -2049,7 +2110,9 @@ async function processOutboundMessageJob(job: Job) {
 					}
 				} else {
 					const mediaType = resolveWhatsAppMediaType(
-						contentAttributes.media_type || message.content_type || messageTypeRaw,
+						contentAttributes.media_type ||
+							message.content_type ||
+							messageTypeRaw,
 					)
 					const mediaUrl = String(
 						contentAttributes.media_url ||
@@ -2103,8 +2166,7 @@ async function processOutboundMessageJob(job: Job) {
 								...contentAttributes,
 								type: mediaType,
 								media_url: selectedMediaValidation.url,
-								...(repairedMediaUrl &&
-								repairedMediaUrl !== mediaUrl
+								...(repairedMediaUrl && repairedMediaUrl !== mediaUrl
 									? {
 											media_repaired_from: mediaUrl,
 											media_repaired_to: repairedMediaUrl,
@@ -2114,8 +2176,7 @@ async function processOutboundMessageJob(job: Job) {
 									ok: true,
 									status_code: selectedMediaValidation.statusCode,
 									content_type: selectedMediaValidation.contentType,
-									...(repairedMediaUrl &&
-									repairedMediaUrl !== mediaUrl
+									...(repairedMediaUrl && repairedMediaUrl !== mediaUrl
 										? {
 												repaired_from_validation: {
 													ok: false,
@@ -2151,8 +2212,7 @@ async function processOutboundMessageJob(job: Job) {
 								media_fallback_to_text: true,
 								original_media_url: selectedMediaValidation.url,
 								original_media_type: mediaType,
-								...(repairedMediaUrl &&
-								repairedMediaUrl !== mediaUrl
+								...(repairedMediaUrl && repairedMediaUrl !== mediaUrl
 									? {
 											media_repair_attempted: true,
 											media_repaired_candidate: repairedMediaUrl,
@@ -2166,32 +2226,32 @@ async function processOutboundMessageJob(job: Job) {
 								},
 							}
 						}
-						}
 					}
+				}
 
-					if (type === 'text') {
-						sentMessageContentType = 'text'
-						sentMessageContent = content
-						sentMessageContentAttributes = {
-							...sentMessageContentAttributes,
-							type: 'text',
-						}
-					} else if (type === 'template') {
-						sentMessageContentType = 'template'
-						sentMessageContent = content
-						sentMessageContentAttributes = {
-							...sentMessageContentAttributes,
-							type: 'template',
-						}
-					} else if (type === 'interactive') {
-						sentMessageContentType = 'interactive'
-						sentMessageContent = content
-						sentMessageContentAttributes = {
-							...sentMessageContentAttributes,
-							type: 'interactive',
-							...(interactivePayload ? { interactive: interactivePayload } : {}),
-						}
+				if (type === 'text') {
+					sentMessageContentType = 'text'
+					sentMessageContent = content
+					sentMessageContentAttributes = {
+						...sentMessageContentAttributes,
+						type: 'text',
 					}
+				} else if (type === 'template') {
+					sentMessageContentType = 'template'
+					sentMessageContent = content
+					sentMessageContentAttributes = {
+						...sentMessageContentAttributes,
+						type: 'template',
+					}
+				} else if (type === 'interactive') {
+					sentMessageContentType = 'interactive'
+					sentMessageContent = content
+					sentMessageContentAttributes = {
+						...sentMessageContentAttributes,
+						type: 'interactive',
+						...(interactivePayload ? { interactive: interactivePayload } : {}),
+					}
+				}
 
 				// Resolve reply_to_message_id to WhatsApp external wamid
 				let replyToWamid: string | undefined
@@ -2262,7 +2322,9 @@ async function processOutboundMessageJob(job: Job) {
 					identifier.split(':').length >= 3
 						? identifier.split(':').slice(-1)[0]
 						: null
-				const recipientId = String(contact.tiktok_id || inferredRecipientId || '').trim()
+				const recipientId = String(
+					contact.tiktok_id || inferredRecipientId || '',
+				).trim()
 
 				if (!token || !recipientId) {
 					throw new Error('Missing TikTok configuration or recipient info')
@@ -2373,16 +2435,16 @@ async function processOutboundMessageJob(job: Job) {
 				},
 			})
 
-				workerDebug(`[OutboundWorker] Successfully sent message: ${messageId}`)
-				return { success: true, externalId }
-			} finally {
-				if (stopConversationLockAutoRenew) {
-					stopConversationLockAutoRenew()
-					stopConversationLockAutoRenew = null
-				}
-				await releaseOutboundConversationLock(conversationLock)
-				conversationLock = null
+			workerDebug(`[OutboundWorker] Successfully sent message: ${messageId}`)
+			return { success: true, externalId }
+		} finally {
+			if (stopConversationLockAutoRenew) {
+				stopConversationLockAutoRenew()
+				stopConversationLockAutoRenew = null
 			}
+			await releaseOutboundConversationLock(conversationLock)
+			conversationLock = null
+		}
 	} catch (error: any) {
 		console.error(
 			`[OutboundWorker] Error processing message ${messageId}:`,
@@ -2529,13 +2591,29 @@ export const webhookWorker = RUN_WORKERS
 				}
 
 				if (job.name === 'personal-ai-review') {
-					const finalAttempt = job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
-					return PersonalAiReplyService.processReview(String(payload?.taskId || ''), finalAttempt)
+					const finalAttempt =
+						job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
+					return PersonalAiReplyService.processReview(
+						String(payload?.taskId || ''),
+						finalAttempt,
+					)
 				}
 
 				if (job.name === 'personal-ai-compose') {
-					const finalAttempt = job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
-					return PersonalAiReplyService.processCompose(String(payload?.taskId || ''), finalAttempt)
+					const finalAttempt =
+						job.attemptsMade + 1 >= Number(job.opts.attempts || 1)
+					return PersonalAiReplyService.processCompose(
+						String(payload?.taskId || ''),
+						finalAttempt,
+					)
+				}
+
+				if (job.name === 'personal-ai-lead-qualify') {
+					return PersonalAiReplyService.forceQualifyLeadNeed(
+						String(payload?.appId || ''),
+						String(payload?.conversationId || ''),
+						String(payload?.requestedByUserId || ''),
+					)
 				}
 
 				console.warn(`[WebhookWorker] Unknown job type: ${job.name}`)
@@ -2575,7 +2653,9 @@ export const maintenanceWorker = RUN_WORKERS
 					})
 
 					if (expiredConversations.length > 0) {
-						console.log(`🔒 Closing ${expiredConversations.length} expired windows`)
+						console.log(
+							`🔒 Closing ${expiredConversations.length} expired windows`,
+						)
 						await prisma.conversations.updateMany({
 							where: { id: { in: expiredConversations.map((c) => c.id) } },
 							data: {
@@ -2636,6 +2716,30 @@ export const maintenanceWorker = RUN_WORKERS
 
 				if (job.name === 'purge-knowledge-index') {
 					await KnowledgeIndexService.purgeKnowledgeIndexJob(job.data)
+				}
+
+				if (job.name === 'generate-sales-persona-suggestion') {
+					const data = job.data as { appId?: string; userId?: string }
+					if (data.appId && data.userId) {
+						await generateAndStorePersonaSuggestion(data.appId, data.userId)
+					}
+				}
+
+				if (job.name === 'generate-sales-persona-suggestions-sweep') {
+					const profiles = await prisma.sales_profiles.findMany({
+						select: { app_id: true, user_id: true },
+					})
+					for (const profile of profiles) {
+						await generateAndStorePersonaSuggestion(
+							profile.app_id,
+							profile.user_id,
+						).catch((error) => {
+							console.warn(
+								`[MaintenanceWorker] persona suggestion failed for ${profile.user_id}:`,
+								error,
+							)
+						})
+					}
 				}
 
 				return { success: true }
@@ -2741,6 +2845,18 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 60 * 1000 },
 			jobId: 'dispatch-chatbot-followups',
+			...repeatableJobCleanup,
+		},
+	)
+	// Weekly batch: refresh AI persona/level suggestions for every sales profile.
+	// Monday 03:00 - off-hours, and gives the leader a fresh suggestion to review
+	// at the start of the week rather than a stale one from mid-cycle.
+	await maintenanceQueue.add(
+		'generate-sales-persona-suggestions-sweep',
+		{},
+		{
+			repeat: { pattern: '0 3 * * 1' },
+			jobId: 'generate-sales-persona-suggestions-sweep',
 			...repeatableJobCleanup,
 		},
 	)
