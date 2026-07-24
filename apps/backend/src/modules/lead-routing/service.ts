@@ -1,3 +1,4 @@
+import { recordAuditLog } from '../../lib/audit-log'
 import { setContactOwner } from '../../lib/contact-ownership'
 import prisma from '../../lib/prisma'
 import type { CanonicalRole } from '../../lib/require-role'
@@ -327,6 +328,15 @@ export abstract class LeadRoutingService {
 		await prisma.conversations.update({
 			where: { id: context.id },
 			data: { assignee_id: target.userId, team_id: target.teamId, updated_at: now },
+		})
+
+		await recordAuditLog({
+			appId: actor.appId,
+			entityType: 'lead_assignment',
+			entityId: context.id,
+			action: 'assigned',
+			actorId: actor.userId,
+			metadata: { assigneeId: target.userId, teamId: target.teamId },
 		})
 
 		// Routing a lead is the moment it stops being the intake pool's and

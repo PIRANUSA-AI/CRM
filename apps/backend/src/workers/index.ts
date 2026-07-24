@@ -6,7 +6,6 @@ import { emitRealtimeToRoom } from '../lib/realtime-emitter'
 import { BAILEYS_INTERNAL_SEND_PATH } from '../modules/whatsapp/webhook-config'
 import { getBaileysServiceSendUrl } from '../modules/whatsapp/baileys-service-client'
 import {
-	aiProcessingQueue,
 	maintenanceQueue,
 	outboundMessageQueue,
 	webhookQueue,
@@ -35,8 +34,14 @@ import {
 } from '../modules/broadcast/service'
 
 const APP_MODE = (process.env.APP_MODE || 'api').toLowerCase()
+// WORKER_MODE_ENABLED: this process runs background tasks at all (worker or
+// scheduler) - gates one-off startup replay scans and job registration.
 const WORKER_MODE_ENABLED = APP_MODE === 'worker' || APP_MODE === 'scheduler'
 const SCHEDULER_MODE_ENABLED = APP_MODE === 'scheduler'
+// RUN_WORKERS: this process actually consumes queues. Only 'worker' does -
+// 'scheduler' only registers repeatable jobs and does startup catch-up scans,
+// it must not also run a full duplicate set of BullMQ Workers.
+const RUN_WORKERS = APP_MODE === 'worker'
 const WORKER_VERBOSE_LOGS = process.env.WORKER_VERBOSE_LOGS === 'true'
 
 function workerDebug(message: string) {
@@ -2462,11 +2467,12 @@ const dispatchDueChatbotFollowups = async () => {
 }
 
 // Profile-photo sync consumer, owned by the worker process (see profile-sync.ts).
-export const whatsappProfileSyncWorker = WORKER_MODE_ENABLED
+export const whatsappProfileSyncWorker = RUN_WORKERS
 	? startWhatsappProfileSyncWorker()
 	: null
 
-export const incomingWorker = new Worker(
+export const incomingWorker = RUN_WORKERS
+	? new Worker(
 			'incoming-messages',
 			async (job: Job) => {
 				if (job.name === 'whatsapp.inbound' && (job.data as any)?.payload) {
@@ -2476,8 +2482,9 @@ export const incomingWorker = new Worker(
 			},
 			{ connection: redis, concurrency: 10 },
 		)
+	: null
 
-export const outboundWorker = WORKER_MODE_ENABLED
+export const outboundWorker = RUN_WORKERS
 	? new Worker(
 			'outbound-messages',
 			async (job: Job) => {
@@ -2487,11 +2494,15 @@ export const outboundWorker = WORKER_MODE_ENABLED
 
 				return processOutboundMessageJob(job)
 			},
-			{ connection: redis },
+			{
+				connection: redis,
+				concurrency: Number(process.env.OUTBOUND_WORKER_CONCURRENCY || 8),
+			},
 		)
 	: null
 
-export const webhookWorker = new Worker(
+export const webhookWorker = RUN_WORKERS
+	? new Worker(
 			'webhooks',
 			async (job: Job) => {
 				workerDebug(`🪝 Processing webhook job: ${job.name} (${job.id})`)
@@ -2532,20 +2543,23 @@ export const webhookWorker = new Worker(
 			},
 			{ connection: redis, concurrency: 5 },
 		)
+	: null
 
-export const taskAnalysisWorker = new Worker(
-	'ai-processing',
-	async (job: Job) => {
-		if (job.name !== 'task-analysis') {
-			console.warn(`[TaskAnalysisWorker] Unknown job type: ${job.name}`)
-			return { success: false, ignored: true, reason: 'unknown_job_type' }
-		}
-		return processTaskAnalysisJob(job.data)
-	},
-	{ connection: redis, concurrency: TASK_ANALYSIS_CONCURRENCY },
-)
+export const taskAnalysisWorker = RUN_WORKERS
+	? new Worker(
+			'ai-processing',
+			async (job: Job) => {
+				if (job.name !== 'task-analysis') {
+					console.warn(`[TaskAnalysisWorker] Unknown job type: ${job.name}`)
+					return { success: false, ignored: true, reason: 'unknown_job_type' }
+				}
+				return processTaskAnalysisJob(job.data)
+			},
+			{ connection: redis, concurrency: TASK_ANALYSIS_CONCURRENCY },
+		)
+	: null
 
-export const maintenanceWorker = WORKER_MODE_ENABLED
+export const maintenanceWorker = RUN_WORKERS
 	? new Worker(
 			'maintenance',
 			async (job: Job) => {
@@ -2626,11 +2640,14 @@ export const maintenanceWorker = WORKER_MODE_ENABLED
 
 				return { success: true }
 			},
-			{ connection: redis },
+			{
+				connection: redis,
+				concurrency: Number(process.env.MAINTENANCE_WORKER_CONCURRENCY || 4),
+			},
 		)
 	: null
 
-export const conversationBulkWorker = WORKER_MODE_ENABLED
+export const conversationBulkWorker = RUN_WORKERS
 	? new Worker(
 			'conversation-bulk',
 			async (job: Job) => {
@@ -2649,7 +2666,7 @@ export const conversationBulkWorker = WORKER_MODE_ENABLED
 		)
 	: null
 
-export const cronWorker = WORKER_MODE_ENABLED
+export const cronWorker = RUN_WORKERS
 	? new Worker(
 			'cron-jobs',
 			async (job: Job) => {
@@ -2664,6 +2681,11 @@ export const cronWorker = WORKER_MODE_ENABLED
 		)
 	: null
 
+const repeatableJobCleanup = {
+	removeOnComplete: { age: 3_600, count: 100 },
+	removeOnFail: { age: 86_400, count: 500 },
+}
+
 const scheduleJobs = async () => {
 	const { cronQueue } = await import('../lib/queue')
 	await cronQueue.add(
@@ -2674,6 +2696,7 @@ const scheduleJobs = async () => {
 				pattern: '0 0 * * *',
 			},
 			jobId: 'instagram-token-refresh',
+			...repeatableJobCleanup,
 		},
 	)
 	await maintenanceQueue.add(
@@ -2682,6 +2705,7 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 10 * 60 * 1000 },
 			jobId: 'check-expired-windows',
+			...repeatableJobCleanup,
 		},
 	)
 	await maintenanceQueue.add(
@@ -2690,6 +2714,7 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 60 * 1000 },
 			jobId: 'dispatch-scheduled-broadcasts',
+			...repeatableJobCleanup,
 		},
 	)
 	await maintenanceQueue.add(
@@ -2698,6 +2723,7 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 5 * 60 * 1000 },
 			jobId: 'notify-due-tasks',
+			...repeatableJobCleanup,
 		},
 	)
 	await maintenanceQueue.add(
@@ -2706,6 +2732,7 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 60 * 1000 },
 			jobId: 'retry-failed-webhooks',
+			...repeatableJobCleanup,
 		},
 	)
 	await maintenanceQueue.add(
@@ -2714,6 +2741,7 @@ const scheduleJobs = async () => {
 		{
 			repeat: { every: 60 * 1000 },
 			jobId: 'dispatch-chatbot-followups',
+			...repeatableJobCleanup,
 		},
 	)
 }

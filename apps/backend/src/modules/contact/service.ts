@@ -1,3 +1,4 @@
+import { recordAuditLog } from '../../lib/audit-log'
 import prisma from '../../lib/prisma'
 import { isUuid, resolveAppId } from '../../lib/utils'
 import { BusinessWebhookDispatchService } from '../business-webhooks/dispatch-service'
@@ -245,12 +246,36 @@ export abstract class ContactService {
 		return updatedContact
 	}
 
-	static async deleteContact(id: string) {
+	static async deleteContact(id: string, appId?: string | null, actorId?: string | null) {
 		// Soft delete if possible, but prisma schema pull will show if it exists
 		// For now, hard delete or mark as inactive if field exists
-		return prisma.contacts.delete({
+		//
+		// This is a hard delete, so the row is genuinely gone afterward. The
+		// snapshot below is captured before that happens because it is the only
+		// place this contact's identity will still exist once deleteContact
+		// returns; without it the audit entry would just say "something was
+		// deleted" with no way to say what.
+		const snapshot = await prisma.contacts.findUnique({
+			where: { id },
+			select: { name: true, email: true, phone_number: true, owner_id: true },
+		})
+
+		const deleted = await prisma.contacts.delete({
 			where: { id },
 		})
+
+		if (appId) {
+			await recordAuditLog({
+				appId,
+				entityType: 'contact',
+				entityId: id,
+				action: 'deleted',
+				actorId,
+				metadata: snapshot ? { ...snapshot } : {},
+			})
+		}
+
+		return deleted
 	}
 
 	static async getContactSettings(appId: string): Promise<{

@@ -1223,6 +1223,10 @@ model conversation_sales {
   stage_entered_at     DateTime?        @default(now()) @db.Timestamp(6)
   stage_history        Json?            @default("[]")
   metadata             Json?            @default("{}")
+  // W2I.md §3.2 / §24.4: AI-generated handoff brief when a deal moves to a
+  // new sales, and when it was last (re)computed.
+  ai_handoff_brief     String?
+  last_ai_analysis_at  DateTime?        @db.Timestamptz(6)
   created_at           DateTime?        @default(now()) @db.Timestamp(6)
   updated_at           DateTime?        @default(now()) @db.Timestamp(6)
   pipelines            pipelines?       @relation(fields: [pipeline_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -2306,6 +2310,15 @@ model users {
   webhook_configured_at   DateTime? @db.Timestamp(6)
   webhook_last_rotated_at DateTime? @db.Timestamp(6)
 
+  // W2I.md §3.2. sales_level/max_active_leads/persona_id duplicate columns
+  // already on sales_profiles/sales_persona in effect - kept here anyway per
+  // W2I.md so the schema matches it exactly; service layer decides which is
+  // authoritative.
+  sales_level             String?   @db.VarChar(20)
+  persona_id              String?   @db.Uuid
+  max_active_leads        Int?
+  current_score           Float?
+
   sessions    session[]
   accounts    account[]
   members     member[]
@@ -2530,6 +2543,14 @@ model tasks {
   analysis_version  String?   @db.VarChar(32)
   confidence        Float?
 
+  // W2I.md §3.2. source_conversation_id skipped - conversation_id above
+  // already is that column, adding a second one just for the name would be a
+  // byte-for-byte duplicate rather than a different perspective.
+  ai_generated      Boolean?  @default(false)
+  source_agent      String?   @db.VarChar(20)
+  suggested_start   DateTime? @db.Timestamptz(6)
+  priority_score    Float?
+
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -2728,4 +2749,127 @@ model sales_profiles {
 
   @@unique([app_id, user_id], map: "sales_profiles_app_user_key")
   @@index([app_id], map: "idx_sales_profiles_app")
+}
+
+// Revenue/deal/lead quota an administrator sets for a sales or leader, per
+// period. Shape follows W2I.md §3.1 (period_start/period_end rather than a
+// period_key string) so a target period is a real calendar range, not a
+// parsed label. No relations declared, same convention as sales_profiles
+// above.
+model sales_targets {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id         String   @db.Uuid
+  user_id        String   @db.Uuid
+  period_type    String   @db.VarChar(10) // "annual" | "quarterly" | "monthly"
+  period_start   DateTime @db.Date
+  period_end     DateTime @db.Date
+  target_leads   Int      @default(0)
+  target_deals   Int      @default(0)
+  target_revenue Decimal  @default(0) @db.Decimal(14, 2)
+  metrics        Json?    @default("{}")
+  set_by         String?  @db.Uuid // administrator who set it
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, user_id, period_type, period_start], map: "sales_targets_app_user_period_key")
+  @@index([app_id, user_id], map: "idx_sales_targets_app_user")
+}
+
+// Computed performance score per sales, per period. Written by a worker
+// (batch, not per-request - see W2I.md §13), read by dashboard/leaderboard.
+// breakdown carries the same 6 dimensions as total_score for the "why" behind
+// the number.
+model sales_scores {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id                String   @db.Uuid
+  user_id               String   @db.Uuid
+  period_start          DateTime @db.Date
+  period_end            DateTime @db.Date
+  total_score           Float    @default(0)
+  product_score         Float    @default(0)
+  conversion_score      Float    @default(0)
+  response_time_score   Float    @default(0)
+  task_completion_score Float    @default(0)
+  breakdown             Json?    @default("{}")
+  computed_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id, user_id], map: "idx_sales_scores_app_user")
+  @@index([app_id, period_start], map: "idx_sales_scores_app_period")
+}
+
+// Sales persona/level profile, one row per user (W2I.md §3.1/§4.3). The plan
+// is AI detects this from conversation history on first use and an
+// administrator can override the recommendation - no self-report step exists
+// in W2I.md. Until the AI detection agent is built, administrator sets this
+// directly instead of overriding a recommendation.
+model sales_persona {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id            String   @db.Uuid
+  user_id           String   @db.Uuid
+  persona_type      String?  @db.VarChar(20) // hunter|farmer|closer|advisor|negotiator
+  product_expertise Json?    @default("{}") // product_id -> proficiency 0-100
+  experience_years  Int?
+  experience_level  String?  @db.VarChar(20) // junior|mid|senior|lead
+  strengths         Json?    @default("[]")
+  weaknesses        Json?    @default("[]")
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([app_id, user_id], map: "sales_persona_app_user_key")
+  @@index([app_id, user_id], map: "idx_sales_persona_app_user")
+}
+
+// Audit trail of what an AI agent read/concluded about one conversation -
+// distinct from audit_logs (business actions like assign/delete/target-set).
+// This is specifically "what did the agent think", scoped per conversation so
+// it can be replayed for debugging ("why did this task get generated").
+model agent_conversations {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id          String   @db.Uuid
+  conversation_id String   @db.Uuid
+  agent_id        String?  @db.Uuid
+  agent_type      String   @db.VarChar(20) // supervisor|task|lead|report
+  input_summary   String?
+  output_summary  String?
+  metadata        Json?    @default("{}")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id, conversation_id], map: "idx_agent_conversations_conversation")
+  @@index([app_id, created_at], map: "idx_agent_conversations_app_created")
+}
+
+// Scheduled reminder tied to a task (subscription expiry, daily/weekly nudge).
+// Sent flag rather than a delete-on-send so a reminder worker has something
+// to query "already sent" against without losing the history.
+model task_reminders {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id        String   @db.Uuid
+  task_id       String   @db.Uuid
+  user_id       String   @db.Uuid
+  reminder_type String   @db.VarChar(20) // daily|weekly|custom
+  remind_at     DateTime @db.Timestamptz(6)
+  is_sent       Boolean  @default(false)
+  message       String?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id, remind_at], map: "idx_task_reminders_app_remind_at")
+  @@index([task_id], map: "idx_task_reminders_task")
+}
+
+// Generic cross-entity audit trail, for superadmin. Unlike
+// conversation_activity_log/company_activity_log (per-entity, predates this),
+// this is keyed by entity_type so one table covers every action instrumented
+// from here on rather than adding another per-entity twin.
+model audit_logs {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  app_id      String   @db.Uuid
+  entity_type String   @db.VarChar(40)
+  entity_id   String?  @db.Uuid
+  action      String   @db.VarChar(50)
+  actor_id    String?  @db.Uuid
+  metadata    Json?    @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([app_id, created_at], map: "idx_audit_logs_app_created")
+  @@index([app_id, entity_type, entity_id], map: "idx_audit_logs_entity")
 }

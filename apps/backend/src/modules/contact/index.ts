@@ -316,8 +316,8 @@ export const contact = new Elysia({ prefix: '/contacts', tags: ['Contact'] })
 	)
 	.delete(
 		'/:id',
-		async ({ params }) => {
-			await ContactService.deleteContact(params.id)
+		async ({ params, resolvedAppId, userId }) => {
+			await ContactService.deleteContact(params.id, resolvedAppId, userId)
 			return { success: true }
 		},
 		{

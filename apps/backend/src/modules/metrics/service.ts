@@ -1,5 +1,12 @@
 import prisma from '../../lib/prisma'
 import { resolveAppId } from '../../lib/utils'
+import { DEFAULT_DEAL_THRESHOLD } from '../opportunities/stages'
+import {
+	resolveMetricsScope,
+	scopeFragment,
+	type MetricsActor,
+	type MetricsScope,
+} from './policy'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000
@@ -57,17 +64,38 @@ type DashboardAlert = {
 	description: string
 }
 
+type DashboardTopDeal = {
+	id: string
+	name: string
+	product: string | null
+	value: number
+	status: string
+	stage: string | null
+	ownerName: string | null
+	closedAt: string | null
+}
+
+type DashboardLeaderboardRow = {
+	userId: string
+	name: string
+	revenue: number
+	dealCount: number
+}
+
 type DashboardPayload = {
 	cards: {
 		incomingChats: MetricValue
 		aiResolvedRate: MetricValue
 		avgResponseSeconds: MetricValue
 		revenue: MetricValue
+		winRate: MetricValue
 	}
 	volume: DashboardVolumeRow[]
 	funnel: DashboardFunnelStep[]
 	agents: DashboardAgentRow[]
 	alerts: DashboardAlert[]
+	topDeals: DashboardTopDeal[]
+	leaderboard: DashboardLeaderboardRow[]
 	range: {
 		period: DashboardPeriod
 		start: string
@@ -105,13 +133,19 @@ type AiResolutionRow = {
 	ai_resolved?: unknown
 }
 
-type OrderAggregateRow = {
+// Sourced from opportunities (deals), the same table sales_targets achievement
+// reads from, so the dashboard revenue card and a sales' target progress never
+// disagree about what "revenue" means. orders/order_invoices exist in the
+// schema but nothing in the app writes to them, so they were computing a
+// permanently-zero card before this.
+type DealAggregateRow = {
 	revenue_current?: unknown
 	revenue_previous?: unknown
-	orders_current?: unknown
-	orders_previous?: unknown
-	quoted_orders_current?: unknown
-	paid_orders_current?: unknown
+	won_current?: unknown
+	won_previous?: unknown
+	lost_current?: unknown
+	lost_previous?: unknown
+	opportunity_current?: unknown
 }
 
 type HandoverAggregateRow = {
@@ -147,6 +181,24 @@ type RawAgentRow = {
 	status?: string | null
 }
 
+type RawTopDealRow = {
+	id: string
+	name: string | null
+	product: string | null
+	value?: unknown
+	status: string | null
+	stage: string | null
+	owner_name: string | null
+	closed_at: Date | string | null
+}
+
+type RawLeaderboardRow = {
+	id: string
+	name: string | null
+	revenue?: unknown
+	deal_count?: unknown
+}
+
 type ChannelHealthRow = {
 	active_channels?: unknown
 	error_channels?: unknown
@@ -157,7 +209,9 @@ type ChannelHealthRow = {
 type SummaryPeriod = '1h' | '24h' | '7d' | '30d'
 
 function normalizeDashboardPeriod(input?: string | null): DashboardPeriod {
-	const normalized = String(input || '').trim().toLowerCase()
+	const normalized = String(input || '')
+		.trim()
+		.toLowerCase()
 	if (normalized === '24h') return 'today'
 	if (DASHBOARD_PERIODS.includes(normalized as DashboardPeriod)) {
 		return normalized as DashboardPeriod
@@ -166,7 +220,9 @@ function normalizeDashboardPeriod(input?: string | null): DashboardPeriod {
 }
 
 function normalizeSummaryPeriod(input?: string | null): SummaryPeriod {
-	const normalized = String(input || '').trim().toLowerCase()
+	const normalized = String(input || '')
+		.trim()
+		.toLowerCase()
 	if (['1h', '24h', '7d', '30d'].includes(normalized)) {
 		return normalized as SummaryPeriod
 	}
@@ -227,7 +283,10 @@ function resolveDashboardRange(
 			? todayStart
 			: new Date(todayStart.getTime() - (dayCount - 1) * DAY_MS)
 	const currentEnd = now
-	const currentDuration = Math.max(1, currentEnd.getTime() - currentStart.getTime())
+	const currentDuration = Math.max(
+		1,
+		currentEnd.getTime() - currentStart.getTime(),
+	)
 	const previousEnd = currentStart
 	const previousStart = new Date(previousEnd.getTime() - currentDuration)
 
@@ -291,13 +350,15 @@ function emptyDashboard(appId: string, period?: string | null) {
 		conversationAggregate: {},
 		aiCurrent: {},
 		aiPrevious: {},
-		orderAggregate: {},
+		dealAggregate: {},
 		handoverAggregate: {},
 		qualifiedAggregate: {},
 		customerAggregate: {},
 		volume,
 		agents: [],
 		channelHealth: {},
+		topDeals: [],
+		leaderboard: [],
 	})
 
 	return {
@@ -367,22 +428,34 @@ function buildFunnel({
 	incomingChats,
 	aiEngaged,
 	qualified,
-	quoted,
-	paid,
+	opportunity,
+	won,
 }: {
 	incomingChats: number
 	aiEngaged: number
 	qualified: number
-	quoted: number
-	paid: number
+	opportunity: number
+	won: number
 }): DashboardFunnelStep[] {
 	const baseline = Math.max(1, incomingChats)
 	return [
-		{ label: 'Chat masuk', value: incomingChats, pct: percent(incomingChats, baseline) },
-		{ label: 'AI engaged', value: aiEngaged, pct: percent(aiEngaged, baseline) },
+		{
+			label: 'Chat masuk',
+			value: incomingChats,
+			pct: percent(incomingChats, baseline),
+		},
+		{
+			label: 'AI engaged',
+			value: aiEngaged,
+			pct: percent(aiEngaged, baseline),
+		},
 		{ label: 'Qualified', value: qualified, pct: percent(qualified, baseline) },
-		{ label: 'Quoted', value: quoted, pct: percent(quoted, baseline) },
-		{ label: 'Paid', value: paid, pct: percent(paid, baseline) },
+		{
+			label: 'Opportunity',
+			value: opportunity,
+			pct: percent(opportunity, baseline),
+		},
+		{ label: 'Won', value: won, pct: percent(won, baseline) },
 	]
 }
 
@@ -400,23 +473,46 @@ function mapAgents(rows: RawAgentRow[]): DashboardAgentRow[] {
 	})
 }
 
+function mapTopDeals(rows: RawTopDealRow[]): DashboardTopDeal[] {
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name || 'Deal',
+		product: row.product,
+		value: toNumber(row.value),
+		status: row.status || 'open',
+		stage: row.stage,
+		ownerName: row.owner_name,
+		closedAt: row.closed_at ? new Date(row.closed_at).toISOString() : null,
+	}))
+}
+
+function mapLeaderboard(rows: RawLeaderboardRow[]): DashboardLeaderboardRow[] {
+	return rows.map((row) => ({
+		userId: row.id,
+		name: row.name || 'Sales',
+		revenue: toNumber(row.revenue),
+		dealCount: toNumber(row.deal_count),
+	}))
+}
+
 function buildAlerts({
 	pendingHandovers,
 	pendingUnassigned,
 	channelHealth,
 	incomingChats,
 	aiResolvedRate,
-	paidOrders,
+	wonDeals,
 }: {
 	pendingHandovers: number
 	pendingUnassigned: number
 	channelHealth: ChannelHealthRow
 	incomingChats: number
 	aiResolvedRate: number
-	paidOrders: number
+	wonDeals: number
 }): DashboardAlert[] {
 	const activeChannels =
-		toNumber(channelHealth.active_channels) + toNumber(channelHealth.whatsapp_inboxes)
+		toNumber(channelHealth.active_channels) +
+		toNumber(channelHealth.whatsapp_inboxes)
 	const errorChannels = toNumber(channelHealth.error_channels)
 
 	const handoverAlert: DashboardAlert =
@@ -425,14 +521,16 @@ function buildAlerts({
 					id: 'handover-unassigned',
 					tone: 'warning',
 					title: `${pendingUnassigned.toLocaleString('id-ID')} handover belum diassign`,
-					description: 'Prioritaskan queue pending agar lead tidak menunggu terlalu lama.',
+					description:
+						'Prioritaskan queue pending agar lead tidak menunggu terlalu lama.',
 				}
 			: pendingHandovers > 0
 				? {
 						id: 'handover-pending',
 						tone: 'warning',
 						title: `${pendingHandovers.toLocaleString('id-ID')} handover pending`,
-						description: 'Pantau request handover yang masih menunggu approval.',
+						description:
+							'Pantau request handover yang masih menunggu approval.',
 					}
 				: {
 						id: 'handover-clear',
@@ -447,7 +545,8 @@ function buildAlerts({
 					id: 'wa-channel-missing',
 					tone: 'neutral',
 					title: 'WA channel belum aktif',
-					description: 'Hubungkan WhatsApp channel agar pesan masuk dapat dipantau.',
+					description:
+						'Hubungkan WhatsApp channel agar pesan masuk dapat dipantau.',
 				}
 			: errorChannels > 0
 				? {
@@ -464,25 +563,28 @@ function buildAlerts({
 					}
 
 	const recommendation: DashboardAlert =
-		incomingChats > 0 && paidOrders <= 0
+		incomingChats > 0 && wonDeals <= 0
 			? {
 					id: 'recommend-followup',
 					tone: 'neutral',
 					title: 'Rekomendasi periode ini',
-					description: 'Follow-up lead aktif yang belum menghasilkan order paid.',
+					description:
+						'Follow-up lead aktif yang belum menghasilkan deal won.',
 				}
 			: aiResolvedRate > 0 && aiResolvedRate < 75
 				? {
 						id: 'recommend-ai-handover',
 						tone: 'warning',
 						title: 'Rekomendasi periode ini',
-						description: 'Review alur AI karena resolved tanpa handover masih di bawah target.',
+						description:
+							'Review alur AI karena resolved tanpa handover masih di bawah target.',
 					}
 				: {
 						id: 'recommend-stable',
 						tone: 'success',
 						title: 'Rekomendasi periode ini',
-						description: 'Operasional stabil; lanjutkan monitoring volume dan kualitas respons.',
+						description:
+							'Operasional stabil; lanjutkan monitoring volume dan kualitas respons.',
 					}
 
 	return [handoverAlert, channelAlert, recommendation]
@@ -494,13 +596,15 @@ function buildDashboardPayload(input: {
 	conversationAggregate: ConversationAggregateRow
 	aiCurrent: AiResolutionRow
 	aiPrevious: AiResolutionRow
-	orderAggregate: OrderAggregateRow
+	dealAggregate: DealAggregateRow
 	handoverAggregate: HandoverAggregateRow
 	qualifiedAggregate: QualifiedAggregateRow
 	customerAggregate: CustomerAggregateRow
 	volume: DashboardVolumeRow[]
 	agents: DashboardAgentRow[]
 	channelHealth: ChannelHealthRow
+	topDeals: DashboardTopDeal[]
+	leaderboard: DashboardLeaderboardRow[]
 }): DashboardPayload {
 	const incomingCurrent = toNumber(input.messageAggregate.incoming_current)
 	const incomingPrevious = toNumber(input.messageAggregate.incoming_previous)
@@ -516,10 +620,15 @@ function buildDashboardPayload(input: {
 	const avgResponsePrevious = toNumber(
 		input.conversationAggregate.avg_first_response_previous,
 	)
-	const revenueCurrent = toNumber(input.orderAggregate.revenue_current)
-	const revenuePrevious = toNumber(input.orderAggregate.revenue_previous)
-	const quotedOrders = toNumber(input.orderAggregate.quoted_orders_current)
-	const paidOrders = toNumber(input.orderAggregate.paid_orders_current)
+	const revenueCurrent = toNumber(input.dealAggregate.revenue_current)
+	const revenuePrevious = toNumber(input.dealAggregate.revenue_previous)
+	const wonCurrent = toNumber(input.dealAggregate.won_current)
+	const wonPrevious = toNumber(input.dealAggregate.won_previous)
+	const lostCurrent = toNumber(input.dealAggregate.lost_current)
+	const lostPrevious = toNumber(input.dealAggregate.lost_previous)
+	const opportunityCurrent = toNumber(input.dealAggregate.opportunity_current)
+	const winRateCurrent = percent(wonCurrent, wonCurrent + lostCurrent)
+	const winRatePrevious = percent(wonPrevious, wonPrevious + lostPrevious)
 	const qualified = toNumber(input.qualifiedAggregate.qualified_current)
 	const pendingHandovers = toNumber(input.handoverAggregate.pending_current)
 	const pendingUnassigned = toNumber(
@@ -529,17 +638,21 @@ function buildDashboardPayload(input: {
 	return {
 		cards: {
 			incomingChats: metricValue(incomingCurrent, incomingPrevious),
-			aiResolvedRate: metricValue(aiResolvedRateCurrent, aiResolvedRatePrevious),
+			aiResolvedRate: metricValue(
+				aiResolvedRateCurrent,
+				aiResolvedRatePrevious,
+			),
 			avgResponseSeconds: metricValue(avgResponseCurrent, avgResponsePrevious),
 			revenue: metricValue(revenueCurrent, revenuePrevious),
+			winRate: metricValue(winRateCurrent, winRatePrevious),
 		},
 		volume: input.volume,
 		funnel: buildFunnel({
 			incomingChats: incomingCurrent,
 			aiEngaged: aiEngagedCurrent,
 			qualified,
-			quoted: quotedOrders,
-			paid: paidOrders,
+			opportunity: opportunityCurrent,
+			won: wonCurrent,
 		}),
 		agents: input.agents,
 		alerts: buildAlerts({
@@ -548,8 +661,10 @@ function buildDashboardPayload(input: {
 			channelHealth: input.channelHealth,
 			incomingChats: incomingCurrent,
 			aiResolvedRate: aiResolvedRateCurrent,
-			paidOrders,
+			wonDeals: wonCurrent,
 		}),
+		topDeals: input.topDeals,
+		leaderboard: input.leaderboard,
 		range: {
 			period: input.range.period,
 			start: input.range.currentStart.toISOString(),
@@ -562,8 +677,9 @@ function buildDashboardPayload(input: {
 }
 
 export abstract class MetricsService {
-	static async getSummary(appId: string, period: string = '24h') {
-		const targetAppId = await resolveAppId(appId)
+	static async getSummary(actor: MetricsActor, period: string = '24h') {
+		const targetAppId = await resolveAppId(actor.appId)
+		const scope = await resolveMetricsScope(actor)
 		const summaryPeriod = normalizeSummaryPeriod(period)
 		const range = resolveSummaryRange(summaryPeriod)
 
@@ -597,32 +713,34 @@ export abstract class MetricsService {
 		}
 
 		const target = targetAppId
-		const [messageAggregate, conversationAggregate, aiCurrent, handoverAggregate] =
-			await Promise.all([
-				this.getMessageAggregate(target, {
-					...range,
-					period: 'today',
-					dayCount: 1,
-					timezone: 'Asia/Jakarta',
-				}),
-				this.getConversationAggregate(target, {
-					...range,
-					period: 'today',
-					dayCount: 1,
-					timezone: 'Asia/Jakarta',
-				}),
-				this.getAiResolutionAggregate(
-					target,
-					range.currentStart,
-					range.currentEnd,
-				),
-				this.getHandoverAggregate(target, {
-					...range,
-					period: 'today',
-					dayCount: 1,
-					timezone: 'Asia/Jakarta',
-				}),
-			])
+		const [
+			messageAggregate,
+			conversationAggregate,
+			aiCurrent,
+			handoverAggregate,
+		] = await Promise.all([
+			this.getMessageAggregate(
+				target,
+				{ ...range, period: 'today', dayCount: 1, timezone: 'Asia/Jakarta' },
+				scope,
+			),
+			this.getConversationAggregate(
+				target,
+				{ ...range, period: 'today', dayCount: 1, timezone: 'Asia/Jakarta' },
+				scope,
+			),
+			this.getAiResolutionAggregate(
+				target,
+				range.currentStart,
+				range.currentEnd,
+				scope,
+			),
+			this.getHandoverAggregate(
+				target,
+				{ ...range, period: 'today', dayCount: 1, timezone: 'Asia/Jakarta' },
+				scope,
+			),
+		])
 
 		const totalMessages = toNumber(messageAggregate.total_messages)
 		const totalConversations = toNumber(
@@ -637,7 +755,9 @@ export abstract class MetricsService {
 		return {
 			period: summaryPeriod,
 			total_messages: totalMessages,
-			active_conversations: toNumber(conversationAggregate.active_conversations),
+			active_conversations: toNumber(
+				conversationAggregate.active_conversations,
+			),
 			avg_response_time: toNumber(
 				conversationAggregate.avg_first_response_current,
 			),
@@ -676,11 +796,12 @@ export abstract class MetricsService {
 		}
 	}
 
-	static async getDashboard(appId: string, period: string = '7d') {
-		const targetAppId = await resolveAppId(appId)
-		if (!targetAppId) return emptyDashboard(appId, period)
+	static async getDashboard(actor: MetricsActor, period: string = '7d') {
+		const targetAppId = await resolveAppId(actor.appId)
+		if (!targetAppId) return emptyDashboard(actor.appId, period)
 
 		const target = targetAppId
+		const scope = await resolveMetricsScope(actor)
 		const range = resolveDashboardRange(period)
 
 		const [
@@ -688,33 +809,39 @@ export abstract class MetricsService {
 			conversationAggregateBase,
 			aiCurrent,
 			aiPrevious,
-			orderAggregate,
+			dealAggregate,
 			handoverAggregate,
 			qualifiedAggregate,
 			customerAggregate,
 			rawVolume,
 			rawAgents,
 			channelHealth,
+			rawTopDeals,
+			rawLeaderboard,
 		] = await Promise.all([
-			this.getMessageAggregate(target, range),
-			this.getConversationAggregate(target, range),
+			this.getMessageAggregate(target, range, scope),
+			this.getConversationAggregate(target, range, scope),
 			this.getAiResolutionAggregate(
 				target,
 				range.currentStart,
 				range.currentEnd,
+				scope,
 			),
 			this.getAiResolutionAggregate(
 				target,
 				range.previousStart,
 				range.previousEnd,
+				scope,
 			),
-			this.getOrderAggregate(target, range),
-			this.getHandoverAggregate(target, range),
-			this.getQualifiedAggregate(target, range),
-			this.getCustomerAggregate(target, range),
-			this.getVolume(target, range),
-			this.getAgents(target, range),
+			this.getDealAggregate(target, range, scope),
+			this.getHandoverAggregate(target, range, scope),
+			this.getQualifiedAggregate(target, range, scope),
+			this.getCustomerAggregate(target, range, scope),
+			this.getVolume(target, range, scope),
+			this.getAgents(target, range, scope),
 			this.getChannelHealth(target),
+			this.getTopDeals(target, range, scope),
+			this.getLeaderboard(target, range, scope),
 		])
 
 		const conversationAggregate = {
@@ -725,6 +852,7 @@ export abstract class MetricsService {
 					target,
 					range.currentStart,
 					range.currentEnd,
+					scope,
 				)),
 			avg_first_response_previous:
 				toNumber(conversationAggregateBase.avg_first_response_previous) ||
@@ -732,23 +860,28 @@ export abstract class MetricsService {
 					target,
 					range.previousStart,
 					range.previousEnd,
+					scope,
 				)),
 		}
 		const volume = buildVolume(range, rawVolume)
 		const agents = mapAgents(rawAgents)
+		const topDeals = mapTopDeals(rawTopDeals)
+		const leaderboard = mapLeaderboard(rawLeaderboard)
 		const dashboard = buildDashboardPayload({
 			range,
 			messageAggregate,
 			conversationAggregate,
 			aiCurrent,
 			aiPrevious,
-			orderAggregate,
+			dealAggregate,
 			handoverAggregate,
 			qualifiedAggregate,
 			customerAggregate,
 			volume,
 			agents,
 			channelHealth,
+			topDeals,
+			leaderboard,
 		})
 
 		const totalMessages = toNumber(messageAggregate.total_messages)
@@ -758,7 +891,9 @@ export abstract class MetricsService {
 		return {
 			period: range.period,
 			total_messages: totalMessages,
-			active_conversations: toNumber(conversationAggregate.active_conversations),
+			active_conversations: toNumber(
+				conversationAggregate.active_conversations,
+			),
 			total_customers: toNumber(customerAggregate.total_customers),
 			avg_response_time: dashboard.cards.avgResponseSeconds.value,
 			ai_handling_rate: dashboard.cards.aiResolvedRate.value,
@@ -776,15 +911,16 @@ export abstract class MetricsService {
 				ai_handling_rate: dashboard.cards.aiResolvedRate.value,
 				revenue: dashboard.cards.revenue.value,
 				revenue_7d: dashboard.cards.revenue.value,
-				closing_rate: percent(
-					toNumber(orderAggregate.paid_orders_current),
-					Math.max(1, toNumber(orderAggregate.quoted_orders_current)),
-				),
+				closing_rate: dashboard.cards.winRate.value,
 				daily: volume,
 			},
 		}
 	}
 
+	// Not scoped by actor: ai_evaluations has no relation to conversations,
+	// sales, or teams at all (only to chatbots/apps), so it cannot be narrowed
+	// to "mine" or "my team" without a schema change. The /metrics/ai route
+	// gates this to leader-and-above as the only available protection.
 	static async getAIMetrics(appId: string) {
 		const targetAppId = await resolveAppId(appId)
 
@@ -812,7 +948,12 @@ export abstract class MetricsService {
 		}
 	}
 
-	private static getMessageAggregate(appId: string, range: DashboardRange) {
+	private static getMessageAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 6)
 		return queryFirst<MessageAggregateRow>(
 			`/* metrics:message-aggregate */
 			SELECT
@@ -861,16 +1002,23 @@ export abstract class MetricsService {
 			  AND m.created_at >= $4
 			  AND m.created_at < $3
 			  AND m.deleted_at IS NULL
-			  AND COALESCE(m.is_deleted, false) = false`,
+			  AND COALESCE(m.is_deleted, false) = false
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
 			range.previousStart,
 			range.previousEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getConversationAggregate(appId: string, range: DashboardRange) {
+	private static getConversationAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 6)
 		return queryFirst<ConversationAggregateRow>(
 			`/* metrics:conversation-aggregate */
 			SELECT
@@ -903,12 +1051,14 @@ export abstract class MetricsService {
 				)::double precision AS avg_first_response_previous
 			FROM conversations c
 			WHERE c.app_id = $1::uuid
-			  AND c.deleted_at IS NULL`,
+			  AND c.deleted_at IS NULL
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
 			range.previousStart,
 			range.previousEnd,
+			...scoped.values,
 		)
 	}
 
@@ -916,7 +1066,9 @@ export abstract class MetricsService {
 		appId: string,
 		startDate: Date,
 		endDate: Date,
+		scope: MetricsScope,
 	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 4)
 		return queryFirst<AiResolutionRow>(
 			`/* metrics:ai-resolution */
 			WITH ai_conversations AS (
@@ -931,6 +1083,7 @@ export abstract class MetricsService {
 				  AND COALESCE(m.is_deleted, false) = false
 				  AND LOWER(m.message_type) = 'outgoing'
 				  AND LOWER(COALESCE(m.sender_type, '')) IN ('${AI_SENDER_TYPES.join("','")}')
+				  ${scoped.clause}
 			)
 			SELECT
 				COUNT(*)::bigint AS ai_engaged,
@@ -947,49 +1100,156 @@ export abstract class MetricsService {
 			appId,
 			startDate,
 			endDate,
+			...scoped.values,
 		)
 	}
 
-	private static getOrderAggregate(appId: string, range: DashboardRange) {
-		return queryFirst<OrderAggregateRow>(
-			`/* metrics:order-aggregate */
+	// Deals (opportunities), not orders: nothing in the app writes to `orders`
+	// (checked - only the generated Prisma types reference it), so a dashboard
+	// keyed off it always read zero. opportunities.owner_id/team_id are
+	// materialised directly on the row, same as contacts, so this scopes
+	// without a join, and closed_at is the same field sales_targets' achievement
+	// sums from - a sales' "Revenue" card and their target progress bar now
+	// come from the same rows.
+	private static getDealAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'owner_id', 'team_id', 'o.', 6)
+		return queryFirst<DealAggregateRow>(
+			`/* metrics:deal-aggregate */
 			SELECT
-				COALESCE(SUM(o.grand_total) FILTER (
-					WHERE o.created_at >= $2 AND o.created_at < $3
-					  AND (LOWER(COALESCE(o.order_status, '')) IN ('completed', 'paid') OR o.paid_at IS NOT NULL)
+				COALESCE(SUM(o.value) FILTER (
+					WHERE o.status = 'won' AND o.closed_at >= $2 AND o.closed_at < $3
 				), 0)::double precision AS revenue_current,
-				COALESCE(SUM(o.grand_total) FILTER (
-					WHERE o.created_at >= $4 AND o.created_at < $5
-					  AND (LOWER(COALESCE(o.order_status, '')) IN ('completed', 'paid') OR o.paid_at IS NOT NULL)
+				COALESCE(SUM(o.value) FILTER (
+					WHERE o.status = 'won' AND o.closed_at >= $4 AND o.closed_at < $5
 				), 0)::double precision AS revenue_previous,
 				COUNT(*) FILTER (
-					WHERE o.created_at >= $2 AND o.created_at < $3
-				)::bigint AS orders_current,
+					WHERE o.status = 'won' AND o.closed_at >= $2 AND o.closed_at < $3
+				)::bigint AS won_current,
 				COUNT(*) FILTER (
-					WHERE o.created_at >= $4 AND o.created_at < $5
-				)::bigint AS orders_previous,
+					WHERE o.status = 'won' AND o.closed_at >= $4 AND o.closed_at < $5
+				)::bigint AS won_previous,
 				COUNT(*) FILTER (
-					WHERE o.created_at >= $2 AND o.created_at < $3
-					  AND COALESCE(o.grand_total, 0) > 0
-				)::bigint AS quoted_orders_current,
+					WHERE o.status = 'lost' AND o.closed_at >= $2 AND o.closed_at < $3
+				)::bigint AS lost_current,
 				COUNT(*) FILTER (
-					WHERE o.created_at >= $2 AND o.created_at < $3
-					  AND (LOWER(COALESCE(o.order_status, '')) IN ('completed', 'paid') OR o.paid_at IS NOT NULL)
-				)::bigint AS paid_orders_current
-			FROM orders o
-			LEFT JOIN conversations c ON c.id = o.conversation_id
-			WHERE COALESCE(o.app_id, c.app_id) = $1::uuid
-			  AND o.created_at >= $4
-			  AND o.created_at < $3`,
+					WHERE o.status = 'lost' AND o.closed_at >= $4 AND o.closed_at < $5
+				)::bigint AS lost_previous,
+				COUNT(*) FILTER (
+					WHERE o.status = 'open' AND o.probability >= ${DEFAULT_DEAL_THRESHOLD}
+					  AND o.stage_changed_at >= $2 AND o.stage_changed_at < $3
+				)::bigint AS opportunity_current
+			FROM opportunities o
+			WHERE o.app_id = $1::uuid
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
 			range.previousStart,
 			range.previousEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getHandoverAggregate(appId: string, range: DashboardRange) {
+	// The biggest deals in play this period: a won deal closed in-range, or an
+	// open deal that moved stage in-range, whichever value is largest. Gives
+	// administrator/ceo/leader a "what actually moved the needle" list next to
+	// the aggregate revenue number, and a sales the same for their own deals.
+	private static getTopDeals(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+		limit = 5,
+	) {
+		const scoped = scopeFragment(scope, 'owner_id', 'team_id', 'o.', 4)
+		return queryRows<RawTopDealRow>(
+			`/* metrics:top-deals */
+			SELECT
+				o.id,
+				o.name,
+				o.product,
+				o.value,
+				o.status,
+				o.stage,
+				u.name AS owner_name,
+				o.closed_at
+			FROM opportunities o
+			LEFT JOIN users u ON u.id = o.owner_id
+			WHERE o.app_id = $1::uuid
+			  AND o.status IN ('open', 'won')
+			  AND COALESCE(o.value, 0) > 0
+			  AND (
+				(o.status = 'won' AND o.closed_at >= $2 AND o.closed_at < $3)
+				OR (o.status = 'open' AND o.stage_changed_at >= $2 AND o.stage_changed_at < $3)
+			  )
+			  ${scoped.clause}
+			ORDER BY o.value DESC
+			LIMIT ${Math.max(1, Math.min(20, limit))}`,
+			appId,
+			range.currentStart,
+			range.currentEnd,
+			...scoped.values,
+		)
+	}
+
+	// Per-sales revenue + deal count this period, for the leaderboard widget.
+	// Deliberately not the same query as getAgents: that one ranks by chat
+	// volume for CS ops, this one ranks by closed revenue for sales performance,
+	// and the two can disagree about who is "top" for good reason.
+	private static getLeaderboard(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+		limit = 10,
+	) {
+		const userFilter =
+			scope.mode === 'all'
+				? ''
+				: scope.mode === 'self'
+					? 'AND u.id = $4::uuid'
+					: 'AND (u.id = $4::uuid OR u.id IN (SELECT user_id FROM team_members WHERE team_id = ANY($5::uuid[])))'
+		const userFilterValues =
+			scope.mode === 'all'
+				? []
+				: scope.mode === 'self'
+					? [scope.userId]
+					: [scope.userId, scope.teamIds]
+		return queryRows<RawLeaderboardRow>(
+			`/* metrics:leaderboard */
+			SELECT
+				u.id,
+				u.name,
+				COALESCE(SUM(o.value) FILTER (
+					WHERE o.status = 'won' AND o.closed_at >= $2 AND o.closed_at < $3
+				), 0)::double precision AS revenue,
+				COUNT(*) FILTER (
+					WHERE o.status = 'won' AND o.closed_at >= $2 AND o.closed_at < $3
+				)::bigint AS deal_count
+			FROM users u
+			LEFT JOIN opportunities o ON o.owner_id = u.id AND o.app_id = $1::uuid
+			WHERE u.app_id = $1::uuid
+			  AND u.deleted_at IS NULL
+			  AND LOWER(COALESCE(u.role, 'sales')) IN ('sales', 'leader')
+			  ${userFilter}
+			GROUP BY u.id, u.name
+			ORDER BY revenue DESC, deal_count DESC, u.name ASC
+			LIMIT ${Math.max(1, Math.min(50, limit))}`,
+			appId,
+			range.currentStart,
+			range.currentEnd,
+			...userFilterValues,
+		)
+	}
+
+	private static getHandoverAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 6)
 		return queryFirst<HandoverAggregateRow>(
 			`/* metrics:handover-aggregate */
 			SELECT
@@ -1009,18 +1269,26 @@ export abstract class MetricsService {
 					  AND hr.target_agent_id IS NULL
 				)::bigint AS pending_unassigned_current
 			FROM handover_requests hr
+			LEFT JOIN conversations c ON c.id = hr.conversation_id
 			WHERE hr.app_id = $1::uuid
 			  AND hr.created_at >= $4
-			  AND hr.created_at < $3`,
+			  AND hr.created_at < $3
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
 			range.previousStart,
 			range.previousEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getQualifiedAggregate(appId: string, range: DashboardRange) {
+	private static getQualifiedAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 4)
 		return queryFirst<QualifiedAggregateRow>(
 			`/* metrics:qualified-aggregate */
 			SELECT
@@ -1045,14 +1313,24 @@ export abstract class MetricsService {
 				(c.created_at >= $2 AND c.created_at < $3)
 				OR (c.updated_at >= $2 AND c.updated_at < $3)
 				OR o.id IS NOT NULL
-			  )`,
+			  )
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getCustomerAggregate(appId: string, range: DashboardRange) {
+	private static getCustomerAggregate(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		// contacts carries materialised owner_id/team_id directly (see schema
+		// comment on the column) so this scopes without a join, unlike the
+		// conversations-joined methods above.
+		const scoped = scopeFragment(scope, 'owner_id', 'team_id', '', 6)
 		return queryFirst<CustomerAggregateRow>(
 			`/* metrics:customer-aggregate */
 			SELECT
@@ -1065,16 +1343,23 @@ export abstract class MetricsService {
 				)::bigint AS new_customers_previous
 			FROM contacts
 			WHERE app_id = $1::uuid
-			  AND deleted_at IS NULL`,
+			  AND deleted_at IS NULL
+			  ${scoped.clause}`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
 			range.previousStart,
 			range.previousEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getVolume(appId: string, range: DashboardRange) {
+	private static getVolume(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 4)
 		return queryRows<RawVolumeRow>(
 			`/* metrics:volume */
 			SELECT
@@ -1101,6 +1386,7 @@ export abstract class MetricsService {
 				  AND m.created_at < $3
 				  AND m.deleted_at IS NULL
 				  AND COALESCE(m.is_deleted, false) = false
+				  ${scoped.clause}
 				GROUP BY day_key
 
 				UNION ALL
@@ -1111,9 +1397,11 @@ export abstract class MetricsService {
 					0::bigint AS cs,
 					COUNT(*)::bigint AS handover
 				FROM handover_requests hr
+				LEFT JOIN conversations c ON c.id = hr.conversation_id
 				WHERE hr.app_id = $1::uuid
 				  AND hr.created_at >= $2
 				  AND hr.created_at < $3
+				  ${scoped.clause}
 				GROUP BY day_key
 			) daily
 			GROUP BY day_key
@@ -1121,10 +1409,27 @@ export abstract class MetricsService {
 			appId,
 			range.currentStart,
 			range.currentEnd,
+			...scoped.values,
 		)
 	}
 
-	private static getAgents(appId: string, range: DashboardRange) {
+	private static getAgents(
+		appId: string,
+		range: DashboardRange,
+		scope: MetricsScope,
+	) {
+		const agentFilter =
+			scope.mode === 'all'
+				? ''
+				: scope.mode === 'self'
+					? 'AND u.id = $4::uuid'
+					: 'AND (u.id = $4::uuid OR u.id IN (SELECT user_id FROM team_members WHERE team_id = ANY($5::uuid[])))'
+		const agentFilterValues =
+			scope.mode === 'all'
+				? []
+				: scope.mode === 'self'
+					? [scope.userId]
+					: [scope.userId, scope.teamIds]
 		return queryRows<RawAgentRow>(
 			`/* metrics:agents */
 			WITH chats AS (
@@ -1148,15 +1453,14 @@ export abstract class MetricsService {
 				GROUP BY c.assignee_id
 			),
 			revenue AS (
-				SELECT c.assignee_id, COALESCE(SUM(o.grand_total), 0)::double precision AS revenue
-				FROM orders o
-				JOIN conversations c ON c.id = o.conversation_id
-				WHERE COALESCE(o.app_id, c.app_id) = $1::uuid
-				  AND c.assignee_id IS NOT NULL
-				  AND o.created_at >= $2
-				  AND o.created_at < $3
-				  AND (LOWER(COALESCE(o.order_status, '')) IN ('completed', 'paid') OR o.paid_at IS NOT NULL)
-				GROUP BY c.assignee_id
+				SELECT o.owner_id AS assignee_id, COALESCE(SUM(o.value), 0)::double precision AS revenue
+				FROM opportunities o
+				WHERE o.app_id = $1::uuid
+				  AND o.owner_id IS NOT NULL
+				  AND o.status = 'won'
+				  AND o.closed_at >= $2
+				  AND o.closed_at < $3
+				GROUP BY o.owner_id
 			)
 			SELECT
 				u.id,
@@ -1173,14 +1477,19 @@ export abstract class MetricsService {
 			WHERE u.app_id = $1::uuid
 			  AND u.deleted_at IS NULL
 			  AND LOWER(COALESCE(u.role, 'sales')) IN ('sales', 'leader', 'ceo')
+			  ${agentFilter}
 			ORDER BY chats DESC, revenue DESC, u.name ASC
 			LIMIT 8`,
 			appId,
 			range.currentStart,
 			range.currentEnd,
+			...agentFilterValues,
 		)
 	}
 
+	// Intentionally not scoped by actor: WhatsApp channel connectivity is
+	// infra-level (per app, not per sales/team), same as channel config pages
+	// which every operational role can already see.
 	private static getChannelHealth(appId: string) {
 		return queryFirst<ChannelHealthRow>(
 			`/* metrics:channel-health */
@@ -1225,7 +1534,9 @@ export abstract class MetricsService {
 		appId: string,
 		startDate: Date,
 		endDate: Date,
+		scope: MetricsScope,
 	) {
+		const scoped = scopeFragment(scope, 'assignee_id', 'team_id', 'c.', 4)
 		const row = await queryFirst<{ avg_response_seconds?: unknown }>(
 			`/* metrics:derived-response-time */
 			WITH first_incoming AS (
@@ -1241,6 +1552,7 @@ export abstract class MetricsService {
 				  AND m.deleted_at IS NULL
 				  AND COALESCE(m.is_deleted, false) = false
 				  AND (LOWER(m.message_type) = 'incoming' OR LOWER(COALESCE(m.sender_type, '')) = 'contact')
+				  ${scoped.clause}
 				GROUP BY m.conversation_id
 			),
 			first_response AS (
@@ -1264,6 +1576,7 @@ export abstract class MetricsService {
 			appId,
 			startDate,
 			endDate,
+			...scoped.values,
 		)
 		return round(toNumber(row.avg_response_seconds), 1)
 	}

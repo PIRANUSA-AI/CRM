@@ -109,9 +109,16 @@ export abstract class MessageService {
 			// Enqueue to outbound queue only for agent/bot messages.
 			// System messages are internal timeline events and must stay in-app.
 			if (senderType === 'agent' || senderType === 'bot') {
-				await outboundMessageQueue.add('outbound-messages', {
-					messageId: message.id,
-				})
+				await outboundMessageQueue.add(
+					'outbound-messages',
+					{ messageId: message.id },
+					{
+						attempts: 5,
+						backoff: { type: 'exponential', delay: 3_000 },
+						removeOnComplete: { age: 3_600, count: 2_000 },
+						removeOnFail: { age: 86_400 },
+					},
+				)
 			}
 
 		return message

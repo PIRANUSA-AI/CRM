@@ -1,7 +1,50 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, Info, Loader2, Save, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { salesProfiles, type SalesProfileRow } from '@/lib/api'
+import {
+	salesPersona,
+	salesProfiles,
+	type SalesLevelDefinition,
+	type SalesPerformanceSummary,
+	type SalesPersonaDetail,
+	type SalesProfileRow,
+} from '@/lib/api'
+
+const PERSONA_TYPE_OPTIONS = [
+	{ value: '', label: '-' },
+	{ value: 'hunter', label: 'Hunter' },
+	{ value: 'farmer', label: 'Farmer' },
+	{ value: 'closer', label: 'Closer' },
+	{ value: 'advisor', label: 'Advisor' },
+	{ value: 'negotiator', label: 'Negotiator' },
+]
+
+const PERSONA_EXPERIENCE_OPTIONS = [
+	{ value: '', label: '-' },
+	{ value: 'junior', label: 'Junior' },
+	{ value: 'mid', label: 'Mid' },
+	{ value: 'senior', label: 'Senior' },
+	{ value: 'lead', label: 'Lead' },
+]
+
+type PersonaDraft = {
+	personaType: string
+	experienceLevel: string
+	salesLevel: string
+	strengths: string
+	weaknesses: string
+}
+
+function personaToDraft(detail: SalesPersonaDetail | null): PersonaDraft {
+	const source = detail?.persona
+	return {
+		personaType: source?.personaType || '',
+		experienceLevel: source?.experienceLevel || '',
+		salesLevel: detail?.salesLevel || '',
+		strengths: (source?.strengths || []).join(', '),
+		weaknesses: (source?.weaknesses || []).join(', '),
+	}
+}
 
 export const Route = createFileRoute('/_app/kelola-tim/$userId')({
 	component: SalesProfileDetailPage,
@@ -110,7 +153,12 @@ function SalesProfileDetailPage() {
 	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [saved, setSaved] = useState(false)
-	const [products, setProducts] = useState<string[]>([])
+	const [performance, setPerformance] = useState<SalesPerformanceSummary | null>(null)
+	const [personaDraft, setPersonaDraft] = useState<PersonaDraft>(personaToDraft(null))
+	const [personaLevels, setPersonaLevels] = useState<SalesLevelDefinition[]>([])
+	const [personaSaving, setPersonaSaving] = useState(false)
+	const [personaSaved, setPersonaSaved] = useState(false)
+	const [personaError, setPersonaError] = useState<string | null>(null)
 
 	// There is no GET for a single profile. The list endpoint returns every
 	// sales the leader manages, which is a team-sized list, so picking the row
@@ -135,15 +183,52 @@ function SalesProfileDetailPage() {
 	}, [userId])
 
 	useEffect(() => {
+		void load()
+	}, [load])
+
+	useEffect(() => {
 		void salesProfiles
-			.products()
-			.then((response) => setProducts(response.data || []))
+			.performance(userId)
+			.then((response) => setPerformance(response.data || null))
+			.catch(() => undefined)
+	}, [userId])
+
+	useEffect(() => {
+		void salesPersona
+			.get(userId)
+			.then((response) => setPersonaDraft(personaToDraft(response.data)))
+			.catch(() => undefined)
+	}, [userId])
+
+	useEffect(() => {
+		void salesPersona
+			.levels()
+			.then((response) => setPersonaLevels(response.data || []))
 			.catch(() => undefined)
 	}, [])
 
-	useEffect(() => {
-		void load()
-	}, [load])
+	const savePersona = useCallback(async () => {
+		setPersonaSaving(true)
+		setPersonaError(null)
+		try {
+			await salesPersona.update(userId, {
+				personaType: personaDraft.personaType || null,
+				experienceLevel: personaDraft.experienceLevel || null,
+				salesLevel: personaDraft.salesLevel || null,
+				strengths: splitList(personaDraft.strengths),
+				weaknesses: splitList(personaDraft.weaknesses),
+			})
+			const response = await salesPersona.get(userId)
+			setPersonaDraft(personaToDraft(response.data))
+			setPersonaSaved(true)
+		} catch (reason) {
+			setPersonaError(
+				reason instanceof Error ? reason.message : 'Gagal menyimpan penilaian persona.',
+			)
+		} finally {
+			setPersonaSaving(false)
+		}
+	}, [userId, personaDraft])
 
 	const patch = useCallback((next: Partial<Draft>) => {
 		setDraft((prev) => (prev ? { ...prev, ...next } : prev))
@@ -154,22 +239,6 @@ function SalesProfileDetailPage() {
 	// the picker existed keeps working and still shows as a chip.
 	const selectedSkills = useMemo(() => splitList(draft?.productSkills || ''), [draft])
 
-	// Catalogue first, then anything already stored that is not on it. Dropping
-	// unknown values would silently delete a skill on the next save.
-	const productOptions = useMemo(() => {
-		const extra = selectedSkills.filter((skill) => !products.includes(skill))
-		return [...products, ...extra]
-	}, [products, selectedSkills])
-
-	const toggleSkill = useCallback(
-		(product: string) => {
-			const next = selectedSkills.includes(product)
-				? selectedSkills.filter((skill) => skill !== product)
-				: [...selectedSkills, product]
-			patch({ productSkills: next.join(', ') })
-		},
-		[selectedSkills, patch],
-	)
 
 	const save = useCallback(async () => {
 		if (!row || !draft) return
@@ -177,7 +246,6 @@ function SalesProfileDetailPage() {
 		setError(null)
 		try {
 			const response = await salesProfiles.update(row.userId, {
-				productSkills: splitList(draft.productSkills),
 				maxActive: Number(draft.maxActive) || 20,
 				level: draft.level || null,
 				segments: splitList(draft.segments),
@@ -186,10 +254,6 @@ function SalesProfileDetailPage() {
 				tags: splitList(draft.tags),
 				notes: draft.notes.trim() || null,
 				persona: draft.persona.trim() || null,
-				experienceYears: draft.experienceYears.trim() === '' ? null : Number(draft.experienceYears),
-				phone: draft.phone.trim() || null,
-				position: draft.position.trim() || null,
-				joinedAt: draft.joinedAt || null,
 			})
 			setRow((prev) => (prev ? { ...prev, profile: response.data.profile } : prev))
 			setSaved(true)
@@ -288,6 +352,34 @@ function SalesProfileDetailPage() {
 			    same two-column shape as the Kontak and Perusahaan detail pages. */}
 			<div className="grid items-start gap-5 lg:grid-cols-2">
 				<div className="space-y-5">
+				{performance ? (
+					<section className="ocm-card space-y-3 p-5">
+						<h2 className="text-sm font-semibold">Performa Penjualan</h2>
+						<div className="grid grid-cols-3 gap-3 text-center">
+							<div>
+								<p className="text-lg font-semibold text-emerald-600 dark:text-emerald-300">
+									{performance.wonCount}
+								</p>
+								<p className="text-xs text-muted-foreground">Won</p>
+							</div>
+							<div>
+								<p className="text-lg font-semibold text-muted-foreground">
+									{performance.lostCount}
+								</p>
+								<p className="text-xs text-muted-foreground">Lost</p>
+							</div>
+							<div>
+								<p className="text-lg font-semibold">{performance.winRate.toFixed(1)}%</p>
+								<p className="text-xs text-muted-foreground">Win rate</p>
+							</div>
+						</div>
+						<p className="text-center text-xs text-muted-foreground">
+							Total nilai deal won: Rp{' '}
+							{Math.round(performance.totalValue).toLocaleString('id-ID')}
+						</p>
+					</section>
+				) : null}
+
 				<section className="ocm-card space-y-4 p-5">
 					<div>
 						<h2 className="text-sm font-semibold">Persona</h2>
@@ -308,50 +400,141 @@ function SalesProfileDetailPage() {
 
 				<section className="ocm-card space-y-4 p-5">
 					<div>
-						<h2 className="text-sm font-semibold">Data diri</h2>
+						<h2 className="text-sm font-semibold">Persona &amp; Level (terstruktur)</h2>
 						<p className="text-xs text-muted-foreground">
-							Disimpan di profil sales, bukan di akun login, karena ini menggambarkan
-							perannya sebagai sales.
+							Dinilai oleh administrator. Rekomendasi otomatis dari AI belum aktif,
+							jadi isi manual dulu.
 						</p>
 					</div>
 					<div className="grid gap-4 sm:grid-cols-2">
-						<Field label="Posisi">
-							<input
+						<Field label="Tipe persona">
+							<select
 								className={inputClass}
-								value={draft.position}
-								onChange={(event) => patch({ position: event.target.value })}
-								placeholder="mis. Account Executive AEC"
-							/>
+								value={personaDraft.personaType}
+								onChange={(event) => {
+									setPersonaDraft((prev) => ({ ...prev, personaType: event.target.value }))
+									setPersonaSaved(false)
+								}}
+							>
+								{PERSONA_TYPE_OPTIONS.map((option) => (
+									<option key={option.value} value={option.value}>
+										{option.label}
+									</option>
+								))}
+							</select>
 						</Field>
-						<Field label="Nomor telepon">
-							<input
+						<Field label="Level pengalaman">
+							<select
 								className={inputClass}
-								value={draft.phone}
-								onChange={(event) => patch({ phone: event.target.value })}
-								placeholder="628xx"
-							/>
-						</Field>
-						<Field label="Bergabung sejak">
-							<input
-								type="date"
-								className={inputClass}
-								value={draft.joinedAt}
-								onChange={(event) => patch({ joinedAt: event.target.value })}
-							/>
+								value={personaDraft.experienceLevel}
+								onChange={(event) => {
+									setPersonaDraft((prev) => ({ ...prev, experienceLevel: event.target.value }))
+									setPersonaSaved(false)
+								}}
+							>
+								{PERSONA_EXPERIENCE_OPTIONS.map((option) => (
+									<option key={option.value} value={option.value}>
+										{option.label}
+									</option>
+								))}
+							</select>
 						</Field>
 						<Field
-							label="Pengalaman (tahun)"
-							hint="Lama menjual. Berbeda dari level, yang menggambarkan kepercayaan."
+							label="Level sales (jenjang)"
+							hint="Menentukan scope produk & kapasitas yang disarankan."
 						>
-							<input
-								type="number"
-								min={0}
-								max={60}
+							<select
 								className={inputClass}
-								value={draft.experienceYears}
-								onChange={(event) => patch({ experienceYears: event.target.value })}
-							/>
+								value={personaDraft.salesLevel}
+								onChange={(event) => {
+									setPersonaDraft((prev) => ({ ...prev, salesLevel: event.target.value }))
+									setPersonaSaved(false)
+								}}
+							>
+								<option value="">-</option>
+								{personaLevels.map((level) => (
+									<option key={level.id} value={level.id}>
+										{level.title}
+									</option>
+								))}
+							</select>
 						</Field>
+					</div>
+					<Field label="Kekuatan" hint="pisahkan koma">
+						<input
+							className={inputClass}
+							value={personaDraft.strengths}
+							onChange={(event) => {
+								setPersonaDraft((prev) => ({ ...prev, strengths: event.target.value }))
+								setPersonaSaved(false)
+							}}
+							placeholder="negosiasi, cepat respon"
+						/>
+					</Field>
+					<Field label="Perlu ditingkatkan" hint="pisahkan koma">
+						<input
+							className={inputClass}
+							value={personaDraft.weaknesses}
+							onChange={(event) => {
+								setPersonaDraft((prev) => ({ ...prev, weaknesses: event.target.value }))
+								setPersonaSaved(false)
+							}}
+							placeholder="dokumentasi"
+						/>
+					</Field>
+					{personaError ? (
+						<p className="text-xs text-red-600 dark:text-red-300">{personaError}</p>
+					) : null}
+					<div className="flex items-center justify-end gap-3">
+						{personaSaved ? (
+							<span className="text-xs text-emerald-600 dark:text-emerald-300">Tersimpan.</span>
+						) : null}
+						<button
+							type="button"
+							className="ocm-btn"
+							onClick={() => void savePersona()}
+							disabled={personaSaving}
+						>
+							{personaSaving ? (
+								<Loader2 size={14} className="animate-spin" />
+							) : (
+								<Save size={14} />
+							)}
+							Simpan penilaian
+						</button>
+					</div>
+				</section>
+
+				<section className="ocm-card space-y-4 p-5">
+					<div>
+						<h2 className="text-sm font-semibold">Data diri</h2>
+						<p className="text-xs text-muted-foreground">
+							Diisi oleh sales sendiri lewat Settings - read-only di sini.
+						</p>
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<div>
+							<span className="text-xs font-medium text-muted-foreground">Posisi</span>
+							<p className="text-sm">{draft.position || '-'}</p>
+						</div>
+						<div>
+							<span className="text-xs font-medium text-muted-foreground">
+								Nomor telepon
+							</span>
+							<p className="text-sm">{draft.phone || '-'}</p>
+						</div>
+						<div>
+							<span className="text-xs font-medium text-muted-foreground">
+								Bergabung sejak
+							</span>
+							<p className="text-sm">{formatDate(draft.joinedAt || null)}</p>
+						</div>
+						<div>
+							<span className="text-xs font-medium text-muted-foreground">
+								Pengalaman (tahun)
+							</span>
+							<p className="text-sm">{draft.experienceYears || '-'}</p>
+						</div>
 					</div>
 				</section>
 				</div>
@@ -370,34 +553,26 @@ function SalesProfileDetailPage() {
 							<span className="text-xs font-medium text-muted-foreground">
 								Keahlian produk
 							</span>
-							{/* Toggles, not a comma string: routing matches a skill against the
-							    lead's product interest by token overlap, so one person typing
-							    "ZWCAD 2026" quietly stops matching leads that say "ZWCAD". */}
+							<p className="text-[11px] text-muted-foreground">
+								Diisi oleh sales sendiri lewat Settings - read-only di sini.
+							</p>
 							<div className="mt-1.5 flex flex-wrap gap-1.5">
-								{productOptions.map((product) => {
-									const on = selectedSkills.includes(product)
-									return (
-										<button
+								{selectedSkills.length > 0 ? (
+									selectedSkills.map((product) => (
+										<span
 											key={product}
-											type="button"
-											onClick={() => toggleSkill(product)}
-											className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-												on
-													? 'border-primary/40 bg-primary/15 text-primary'
-													: 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'
-											}`}
+											className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary"
 										>
 											{product}
-										</button>
-									)
-								})}
+										</span>
+									))
+								) : (
+									<span className="text-xs text-muted-foreground">
+										Belum ada keahlian diisi. Tanpa ini, orang ini tidak pernah
+										menang pencocokan produk.
+									</span>
+								)}
 							</div>
-							<p className="mt-1.5 text-[11px] text-muted-foreground">
-								Pilih satu atau beberapa. Lead yang produknya cocok diarahkan ke sini.
-								{selectedSkills.length === 0
-									? ' Tanpa keahlian, orang ini tidak pernah menang pencocokan produk.'
-									: ''}
-							</p>
 						</div>
 						<Field
 							label="Kapasitas maks (lead aktif)"

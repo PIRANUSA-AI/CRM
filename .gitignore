@@ -37,3 +37,12 @@ test-results
 REFERENSI
 *claude
 *poc
+
+# Baileys WhatsApp session credentials (ribuan file key per channel) — JANGAN commit
+whatsapp-service/auth-data/
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
+# AGENTS.md = panduan lokal, jangan commit
+AGENTS.md
