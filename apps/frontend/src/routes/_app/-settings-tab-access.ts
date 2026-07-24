@@ -10,11 +10,15 @@ export type SettingsNavItemId =
 	| 'notifications'
 	| 'localization'
 	| 'developer'
+	| 'sales-data'
 
 const PERSONAL_TABS: SettingsNavItemId[] = ['general', 'ai-replies', 'security', 'notifications', 'localization']
-const SALES_TABS: SettingsNavItemId[] = PERSONAL_TABS
+// sales_profiles rows only exist for sales/leader - not part of PERSONAL_TABS
+// since ceo/superadmin have nothing to fill in here.
+const SALES_TABS: SettingsNavItemId[] = [...PERSONAL_TABS, 'sales-data']
 const LEADER_TABS: SettingsNavItemId[] = [
 	...PERSONAL_TABS,
+	'sales-data',
 	'ai-models',
 	'labels',
 	'whatsapp',

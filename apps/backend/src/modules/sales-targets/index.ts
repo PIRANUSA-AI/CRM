@@ -74,9 +74,13 @@ export const salesTargets = new Elysia({
 		{
 			query: t.Object({
 				periodType: t.Optional(
-					t.Union([t.Literal('year'), t.Literal('month'), t.Literal('day')]),
+					t.Union([
+						t.Literal('annual'),
+						t.Literal('quarterly'),
+						t.Literal('monthly'),
+					]),
 				),
-				periodKey: t.Optional(t.String({ maxLength: 10 })),
+				periodStart: t.Optional(t.String({ maxLength: 10 })),
 				userId: t.Optional(t.String()),
 			}),
 		},
@@ -98,13 +102,14 @@ export const salesTargets = new Elysia({
 			params: t.Object({ userId: t.String() }),
 			body: t.Object({
 				periodType: t.Union([
-					t.Literal('year'),
-					t.Literal('month'),
-					t.Literal('day'),
+					t.Literal('annual'),
+					t.Literal('quarterly'),
+					t.Literal('monthly'),
 				]),
-				periodKey: t.String({ maxLength: 10 }),
-				revenueTarget: t.Number(),
-				dealCountTarget: t.Optional(t.Number()),
+				periodStart: t.String({ maxLength: 10 }),
+				targetRevenue: t.Number(),
+				targetDeals: t.Optional(t.Number()),
+				targetLeads: t.Optional(t.Number()),
 			}),
 		},
 	)

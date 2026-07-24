@@ -185,6 +185,15 @@ const service = new Elysia({ adapter: node() as any })
 				}
 				return { data: await BaileysServiceRuntime.sendPresence(body as Record<string, unknown>) }
 			}, { body: t.Any() })
+			.post('/presence-subscribe', async ({ body, headers, set }) => {
+				const channelKey = resolveBaileysChannelKey(body)
+				const secret = resolveBaileysSecret(headers as Record<string, unknown>)
+				if (!channelKey || !secret || !(await BaileysServiceRuntime.authenticateChannelSecret(channelKey, secret))) {
+					set.status = 403
+					return { error: 'Invalid Baileys channel credentials' }
+				}
+				return { data: await BaileysServiceRuntime.subscribePresence(body as Record<string, unknown>) }
+			}, { body: t.Any() })
 			.post('/block-status', async ({ body, headers, set }) => {
 				const channelKey = resolveBaileysChannelKey(body)
 				const secret = resolveBaileysSecret(headers as Record<string, unknown>)

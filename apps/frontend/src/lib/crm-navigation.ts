@@ -7,6 +7,7 @@ import {
 	Code2,
 	FileText,
 	Handshake,
+	HeartPulse,
 	HelpCircle,
 	History,
 	Kanban,
@@ -206,6 +207,13 @@ export const CRM_NAV_ITEMS: CrmNavItem[] = [
 		path: '/log-aktivitas',
 		group: 'sistem',
 		icon: History,
+	},
+	{
+		id: 'kesehatan-sistem',
+		label: 'Kesehatan Sistem',
+		path: '/kesehatan-sistem',
+		group: 'sistem',
+		icon: HeartPulse,
 	},
 	{
 		id: 'help',

@@ -4,6 +4,28 @@ import prisma from '../lib/prisma'
 import { ensureOrganizationAppLink } from '../lib/organization-app'
 import { DeveloperKeysService } from '../modules/developer-keys/service'
 import { resolveAppId } from '../lib/utils'
+import { cached, hashCacheKey } from '../lib/cache'
+
+// Tenant/app data changes rarely - a short TTL keeps every request from
+// re-resolving it via Prisma while still bounding staleness after a change.
+const APP_CONTEXT_CACHE_TTL_SECONDS = 45
+
+// Routes that authenticate themselves (e.g. via their own channel key/secret
+// check) don't need appContext's session/app resolution at all. Running it
+// anyway wastes a bearer-token lookup + session call on every request -
+// most costly on high-volume webhook routes like the WhatsApp ingest path,
+// which fires once per inbound message across every connected session.
+const SELF_AUTHENTICATING_PATHS = ['/api/personal-whatsapp-inbox/ingest']
+
+const EMPTY_APP_CONTEXT = {
+	orgId: null,
+	orgSlug: null,
+	appUuid: null,
+	userId: null,
+	resolvedAppId: null,
+	rawAppId: null,
+	integrationAuthError: null,
+}
 
 function extractBearerToken(
 	requestHeaders: Headers,
@@ -137,6 +159,11 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 	{ as: 'global' },
 	async ({ request, query, headers, body, params }) => {
 		try {
+			const pathname = new URL(request.url).pathname
+			if (SELF_AUTHENTICATING_PATHS.includes(pathname)) {
+				return EMPTY_APP_CONTEXT
+			}
+
 			let userId: string | null = null
 			let appUuid: string | null = null
 			let orgSlug: string | null = null
@@ -148,7 +175,11 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 			)
 
 			if (bearerToken) {
-				const tokenSession = await getSessionFromBearerToken(bearerToken)
+				const tokenSession = await cached(
+					`appctx:session:${hashCacheKey(bearerToken)}`,
+					APP_CONTEXT_CACHE_TTL_SECONDS,
+					() => getSessionFromBearerToken(bearerToken),
+				)
 				if (tokenSession) {
 					userId = tokenSession.userId
 				}
@@ -164,16 +195,26 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 			}
 
 			if (userId) {
-				const user = await prisma.users.findUnique({
-					where: { id: userId },
-					select: { app_id: true, organization_slug: true },
-				})
+				const user = await cached(
+					`appctx:user:${userId}`,
+					APP_CONTEXT_CACHE_TTL_SECONDS,
+					() =>
+						prisma.users.findUnique({
+							where: { id: userId as string },
+							select: { app_id: true, organization_slug: true },
+						}),
+				)
 				if (user?.app_id) {
 					const resolved = await resolveAppId(user.app_id)
 					const app = resolved
-						? await prisma.apps.findUnique({
-								where: { id: resolved },
-							})
+						? await cached(
+								`appctx:app:full:${resolved}`,
+								APP_CONTEXT_CACHE_TTL_SECONDS,
+								() =>
+									prisma.apps.findUnique({
+										where: { id: resolved },
+									}),
+							)
 						: null
 					if (app) {
 						appUuid = app.id
@@ -262,14 +303,19 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 					if (!resolved) {
 						integrationAuthError = 'Invalid app ID'
 					} else {
-						const app = await prisma.apps.findUnique({
-							where: { id: resolved },
-							select: {
-								id: true,
-								app_id: true,
-								organization: { select: { id: true, slug: true } },
-							},
-						})
+						const app = await cached(
+							`appctx:app:integration:${resolved}`,
+							APP_CONTEXT_CACHE_TTL_SECONDS,
+							() =>
+								prisma.apps.findUnique({
+									where: { id: resolved },
+									select: {
+										id: true,
+										app_id: true,
+										organization: { select: { id: true, slug: true } },
+									},
+								}),
+						)
 
 						if (!app) {
 							integrationAuthError = 'Invalid app ID'
@@ -279,10 +325,14 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 
 							// Optional hardening: if client sends app_secret, verify it.
 							if (appSecretCandidate) {
-								const businessIdentifier =
-									await DeveloperKeysService.resolveBusinessIdByApiKey(
-										appSecretCandidate,
-									)
+								const businessIdentifier = await cached(
+									`appctx:apikey:${hashCacheKey(appSecretCandidate)}`,
+									APP_CONTEXT_CACHE_TTL_SECONDS,
+									() =>
+										DeveloperKeysService.resolveBusinessIdByApiKey(
+											appSecretCandidate,
+										),
+								)
 								const allowed = new Set<string>(
 									[
 										app.id,
@@ -338,8 +388,11 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 						body,
 					)
 					if (apiKey) {
-						const businessIdentifier =
-							await DeveloperKeysService.resolveBusinessIdByApiKey(apiKey)
+						const businessIdentifier = await cached(
+							`appctx:apikey:${hashCacheKey(apiKey)}`,
+							APP_CONTEXT_CACHE_TTL_SECONDS,
+							() => DeveloperKeysService.resolveBusinessIdByApiKey(apiKey),
+						)
 						if (businessIdentifier) {
 							const app = await prisma.apps.findFirst({
 								where: {
@@ -369,15 +422,7 @@ export const appContext = new Elysia({ name: 'app-context' }).derive(
 			}
 		} catch (error) {
 			console.error('App Context Error:', error)
-			return {
-				orgId: null,
-				orgSlug: null,
-				appUuid: null,
-				userId: null,
-				resolvedAppId: null,
-				rawAppId: null,
-				integrationAuthError: null,
-			}
+			return EMPTY_APP_CONTEXT
 		}
 	},
 )

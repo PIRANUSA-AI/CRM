@@ -2086,6 +2086,16 @@ export abstract class WebhookService {
 					}
 				}
 
+				const linkPreviewRecord = asRecord(messageRecord.linkPreview)
+				if (asString(linkPreviewRecord.url)) {
+					contentAttributes.link_preview = {
+						url: asString(linkPreviewRecord.url),
+						title: asString(linkPreviewRecord.title),
+						description: asString(linkPreviewRecord.description),
+						thumbnail_url: asString(linkPreviewRecord.thumbnailUrl),
+					}
+				}
+
 				const normalizedMessage: NormalizedWhatsAppInboundMessage = {
 					externalMessageId,
 					senderWaId,
@@ -4695,7 +4705,10 @@ export abstract class WebhookService {
 					where: { id: existingContact.id },
 					data: {
 						identifier: existingContact.identifier || deterministicIdentifier,
-						name: message.contactName,
+						name:
+							existingContact.name === senderWaId || !existingContact.name
+								? message.contactName
+								: existingContact.name,
 						phone_number: senderWaId,
 						whatsapp_id: senderWaId,
 						last_inbound_message_at: messageAt,

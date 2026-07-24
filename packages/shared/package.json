@@ -5,7 +5,11 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./ai-agent": "./src/ai-agent.ts"
+		"./ai-agent": "./src/ai-agent.ts",
+		"./agent-types": "./src/agent-types.ts",
+		"./lead-types": "./src/lead-types.ts",
+		"./sales-types": "./src/sales-types.ts",
+		"./task-types": "./src/task-types.ts"
 	},
 	"scripts": {
 		"build": "tsc --noEmit",

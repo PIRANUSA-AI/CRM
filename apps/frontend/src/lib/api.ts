@@ -5,6 +5,7 @@
  * Automatically includes auth token
  */
 
+import type { LeadNeedPatch, LeadNeedResult } from '@crm/shared/lead-types'
 import { getAppIdFromCookie, getOrgSlugFromCookie } from './organization'
 import { api as treatyApi } from './server'
 
@@ -3508,6 +3509,14 @@ export type SalesProfileUpdate = {
 	joinedAt?: string | null
 }
 
+export type SalesProfileSelfUpdate = {
+	productSkills?: string[]
+	experienceYears?: number | null
+	phone?: string | null
+	position?: string | null
+	joinedAt?: string | null
+}
+
 export type SalesPerformanceSummary = {
 	wonCount: number
 	lostCount: number
@@ -3533,25 +3542,42 @@ export const salesProfiles = {
 			`/sales-profiles/${encodeURIComponent(userId)}`,
 			{ method: 'PUT', body: JSON.stringify(input) },
 		),
+
+	/** Sales/leader reading their own row before editing it. */
+	getSelf: () =>
+		apiRequest<{ data: { userId: string; profile: SalesProfileData } }>(
+			'/sales-profiles/self',
+		),
+
+	/** Sales/leader editing their own row - always the caller's own userId. */
+	updateSelf: (userId: string, input: SalesProfileSelfUpdate) =>
+		apiRequest<{ data: { userId: string; profile: SalesProfileData } }>(
+			`/sales-profiles/${encodeURIComponent(userId)}/self`,
+			{ method: 'PUT', body: JSON.stringify(input) },
+		),
 }
 
 export type SalesTargetRow = {
 	userId: string
 	userName: string | null
-	periodType: 'year' | 'month' | 'day'
-	periodKey: string
-	revenueTarget: number
-	dealCountTarget: number
+	periodType: 'annual' | 'quarterly' | 'monthly'
+	periodStart: string
+	periodEnd: string
+	targetRevenue: number
+	targetDeals: number
+	targetLeads: number
 	achievement: {
 		revenue: number
 		dealCount: number
+		leadCount: number
 		revenueProgressPercent: number
 		dealProgressPercent: number
+		leadProgressPercent: number
 	}
 }
 
 export const salesTargets = {
-	/** No filters = the caller's current year/month/day rows (self for sales, self+team for leader). */
+	/** No filters = the caller's current annual/quarterly/monthly rows (self for sales, self+team for leader). */
 	list: () => apiRequest<{ data: SalesTargetRow[] }>('/sales-targets'),
 }
 
@@ -3607,42 +3633,7 @@ export const leadRouting = {
 }
 
 // F1, structured lead-need profile qualified on the leader's intake number.
-export type LeadNeed = {
-	name: string | null
-	company: string | null
-	product: string | null
-	segment: 'AEC' | 'MFG' | 'other' | null
-	useCase: string | null
-	seats: number | null
-	budget: string | null
-	urgency: 'high' | 'medium' | 'low' | null
-	source: string | null
-	city: string | null
-	notes: string | null
-	missing: string[]
-	ready: boolean
-	updatedBy: 'ai' | 'leader'
-	updatedAt: string
-}
-
-export type LeadNeedResult = { leadNeed: LeadNeed; assigned: boolean }
-
-export type LeadNeedPatch = Partial<
-	Pick<
-		LeadNeed,
-		| 'name'
-		| 'company'
-		| 'product'
-		| 'segment'
-		| 'useCase'
-		| 'seats'
-		| 'budget'
-		| 'urgency'
-		| 'source'
-		| 'city'
-		| 'notes'
-	>
->
+export type { LeadNeed, LeadNeedPatch, LeadNeedResult } from '@crm/shared/lead-types'
 
 export type PersonalInboxConversation = {
 	id: string
@@ -3722,4 +3713,116 @@ export const auditLog = {
 			`/audit-log${qs ? `?${qs}` : ''}`,
 		)
 	},
+}
+
+export type HealthStatus = 'healthy' | 'warning' | 'inactive'
+
+export type SystemHealth = {
+	channels: {
+		active: number
+		error: number
+		inboxes: number
+		lastSyncedAt: string | null
+		status: HealthStatus
+	}
+	webhooks: {
+		last24h: { total: number; processed: number; pending: number; error: number }
+		lastReceivedAt: string | null
+		recentErrors: Array<{
+			id: string
+			source: string
+			eventType: string
+			errorMessage: string | null
+			retryCount: number
+			createdAt: string
+		}>
+		status: HealthStatus
+	}
+	ai: {
+		last24h: {
+			total: number
+			delivered: number
+			failed: number
+			retryPending: number
+			synthetic: number
+			generated: number
+		}
+		failureRate: number
+		totalTokens24h: number
+		totalUsageUsd24h: number
+		lastGeneratedAt: string | null
+		lastProvider: string | null
+		status: HealthStatus
+	}
+	handover: {
+		pending: number
+		pendingUnassigned: number
+		status: HealthStatus
+	}
+	system: {
+		uptimeSeconds: number
+		timestamp: string
+	}
+}
+
+export const systemHealth = {
+	get: () => apiRequest<{ data: SystemHealth }>('/system-health'),
+}
+
+export type { SalesExperienceLevel, SalesPersonaType } from '@crm/shared/sales-types'
+
+export type SalesPersonaRecord = {
+	personaType: string | null
+	productExpertise: Record<string, number>
+	experienceYears: number | null
+	experienceLevel: string | null
+	strengths: string[]
+	weaknesses: string[]
+	updatedAt: string
+}
+
+export type SalesPersonaDetail = {
+	userId: string
+	name: string | null
+	email: string
+	salesLevel: string | null
+	persona: SalesPersonaRecord | null
+}
+
+export type SalesPersonaInput = {
+	personaType?: string | null
+	productExpertise?: Record<string, number> | null
+	experienceYears?: number | null
+	experienceLevel?: string | null
+	strengths?: string[]
+	weaknesses?: string[]
+	salesLevel?: string | null
+}
+
+export type SalesLevelDefinition = {
+	id: string
+	rank: number
+	title: string
+	experienceYearsMin: number
+	experienceYearsMax: number | null
+	productScope: string
+	maxActiveLeads: number
+	weight: number
+}
+
+export const salesPersona = {
+	list: () => apiRequest<{ data: SalesPersonaDetail[] }>('/sales-persona'),
+	get: (userId: string) =>
+		apiRequest<{ data: SalesPersonaDetail }>(
+			`/sales-persona/${encodeURIComponent(userId)}`,
+		),
+	// Administrator-only. There is no self-report path - W2I.md's plan is AI
+	// recommends persona from conversation history, administrator overrides.
+	update: (userId: string, input: SalesPersonaInput) =>
+		apiRequest<{ data: { persona: SalesPersonaRecord; salesLevel: string | null } }>(
+			`/sales-persona/${encodeURIComponent(userId)}`,
+			{ method: 'PUT', body: JSON.stringify(input) },
+		),
+	levels: () =>
+		apiRequest<{ data: SalesLevelDefinition[] }>('/sales-persona/meta/levels'),
 }

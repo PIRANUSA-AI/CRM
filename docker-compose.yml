@@ -23,6 +23,10 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
+    # noeviction: BullMQ job data must never be evicted under memory pressure
+    # (an evicted job silently corrupts queue state). This is a backstop, not
+    # the fix - defaultJobOptions in lib/queue.ts is what bounds key growth.
+    command: redis-server --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

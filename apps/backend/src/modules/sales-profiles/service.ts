@@ -229,8 +229,10 @@ export abstract class SalesProfileService {
 			.sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
 	}
 
-	// Create or update a sales' routing profile. Leaders may only edit sales in
-	// their own team.
+	// Create or update a sales' routing/capacity profile. Leaders may only edit
+	// sales in their own team. Does NOT touch productSkills/experienceYears/
+	// phone/position/joinedAt - those are the sales' own to set, see
+	// upsertSelfProfile below.
 	static async upsertProfile(
 		actor: SalesProfileActor,
 		userId: string,
@@ -254,7 +256,6 @@ export abstract class SalesProfileService {
 				: {}
 
 		const data = {
-			product_skills: cleanStringArray(input.productSkills),
 			segments: cleanStringArray(input.segments),
 			level: input.level ? String(input.level).trim().slice(0, 20) : null,
 			max_active: maxActive,
@@ -263,6 +264,36 @@ export abstract class SalesProfileService {
 			tags: cleanStringArray(input.tags),
 			notes: input.notes ? String(input.notes).trim().slice(0, 2000) : null,
 			persona: input.persona ? String(input.persona).trim().slice(0, 2000) : null,
+		}
+
+		const row = await prisma.sales_profiles.upsert({
+			where: { app_id_user_id: { app_id: actor.appId, user_id: userId } },
+			create: { app_id: actor.appId, user_id: userId, ...data, ...workHours },
+			update: { ...data, ...workHours },
+		})
+
+		return {
+			userId: target.userId,
+			name: target.name,
+			email: target.email,
+			role: target.role,
+			teamId: target.teamId,
+			profile: profileShape(row as ProfileRow),
+		}
+	}
+
+	// A sales (or leader) editing their own background/contact info and
+	// product skills - the part of the profile only they can really speak to.
+	// Always targets the caller's own row; capacity/segments/notes/persona
+	// stay administrator-only in upsertProfile above.
+	static async upsertSelfProfile(actor: SalesProfileActor, input: SalesProfileInput) {
+		if (actor.role !== 'sales' && actor.role !== 'leader') {
+			throw new SalesProfileError('Hanya sales/leader yang punya profil ini')
+		}
+		const userId = actor.userId
+
+		const data = {
+			product_skills: cleanStringArray(input.productSkills),
 			experience_years:
 				input.experienceYears === null || input.experienceYears === undefined
 					? null
@@ -280,18 +311,24 @@ export abstract class SalesProfileService {
 
 		const row = await prisma.sales_profiles.upsert({
 			where: { app_id_user_id: { app_id: actor.appId, user_id: userId } },
-			create: { app_id: actor.appId, user_id: userId, ...data, ...workHours },
-			update: { ...data, ...workHours },
+			create: { app_id: actor.appId, user_id: userId, ...data },
+			update: data,
 		})
 
-		return {
-			userId: target.userId,
-			name: target.name,
-			email: target.email,
-			role: target.role,
-			teamId: target.teamId,
-			profile: profileShape(row as ProfileRow),
+		return { userId, profile: profileShape(row as ProfileRow) }
+	}
+
+	// A sales (or leader) reading their own row - the counterpart to
+	// upsertSelfProfile. listWithProfiles is leader+-only, so this is the only
+	// way a sales sees their own profile before editing it.
+	static async getSelfProfile(actor: SalesProfileActor) {
+		if (actor.role !== 'sales' && actor.role !== 'leader') {
+			throw new SalesProfileError('Hanya sales/leader yang punya profil ini')
 		}
+		const row = await prisma.sales_profiles.findUnique({
+			where: { app_id_user_id: { app_id: actor.appId, user_id: actor.userId } },
+		})
+		return { userId: actor.userId, profile: profileShape(row as ProfileRow | null) }
 	}
 
 	// Win/loss track record for one sales, read from opportunities directly

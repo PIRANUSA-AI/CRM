@@ -2,6 +2,12 @@ import crypto from 'node:crypto'
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai'
 import { z } from 'zod'
+import type {
+	LeadNeed,
+	LeadNeedSegment,
+	LeadNeedUrgency,
+} from '@crm/shared/lead-types'
+export type { LeadNeed, LeadNeedSegment, LeadNeedUrgency } from '@crm/shared/lead-types'
 import prisma from '../../lib/prisma'
 import { webhookQueue } from '../../lib/queue'
 import { getRealtimeIO } from '../../lib/realtime'
@@ -783,27 +789,6 @@ const LEAD_NEED_FIELD_LABELS: Record<string, string> = {
 	source: 'Tahu PIRANUSA dari mana',
 	city: 'Kota',
 	notes: 'Catatan',
-}
-
-type LeadNeedSegment = 'AEC' | 'MFG' | 'other'
-type LeadNeedUrgency = 'high' | 'medium' | 'low'
-
-export type LeadNeed = {
-	name: string | null
-	company: string | null
-	product: string | null
-	segment: LeadNeedSegment | null
-	useCase: string | null
-	seats: number | null
-	budget: string | null
-	urgency: LeadNeedUrgency | null
-	source: string | null
-	city: string | null
-	notes: string | null
-	missing: string[]
-	ready: boolean
-	updatedBy: 'ai' | 'leader'
-	updatedAt: string
 }
 
 const EMPTY_LEAD_NEED_DATA = {

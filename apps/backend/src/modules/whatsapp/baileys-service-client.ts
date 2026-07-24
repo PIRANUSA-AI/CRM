@@ -189,6 +189,11 @@ export abstract class BaileysServiceClient {
 		return unwrapData<{ sent: boolean }>(payload)
 	}
 
+	static async subscribePresence(body: Record<string, unknown>, headers?: Record<string, string>) {
+		const payload = await requestBaileysService('/api/v1/presence-subscribe', { method: 'POST', headers, bodyJson: body })
+		return unwrapData<{ subscribed: boolean }>(payload)
+	}
+
 	static async updateBlockStatus(body: Record<string, unknown>, headers?: Record<string, string>) {
 		const payload = await requestBaileysService('/api/v1/block-status', { method: 'POST', headers, bodyJson: body })
 		return unwrapData<{ updated: boolean; action: 'block' | 'unblock' }>(payload)

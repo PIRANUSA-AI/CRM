@@ -13,19 +13,21 @@ export class SalesTargetNotFoundError extends Error {}
 
 export type SalesTargetListQuery = {
 	periodType?: string
-	periodKey?: string
+	periodStart?: string
 	userId?: string
 }
 
 export type SalesTargetInput = {
 	periodType: string
-	periodKey: string
-	revenueTarget: number
-	dealCountTarget?: number
+	periodStart: string
+	targetRevenue: number
+	targetDeals?: number
+	targetLeads?: number
 }
 
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000
-const PERIOD_TYPES = ['year', 'month', 'day'] as const
+const DAY_MS = 24 * 60 * 60 * 1000
+const PERIOD_TYPES = ['annual', 'quarterly', 'monthly'] as const
 
 function round(value: number, precision = 1): number {
 	if (!Number.isFinite(value)) return 0
@@ -33,11 +35,7 @@ function round(value: number, precision = 1): number {
 	return Math.round(value * factor) / factor
 }
 
-function currentPeriodKeys(now = new Date()): {
-	year: string
-	month: string
-	day: string
-} {
+function todayReferenceDate(now = new Date()): string {
 	const parts = new Intl.DateTimeFormat('en-US', {
 		timeZone: 'Asia/Jakarta',
 		year: 'numeric',
@@ -47,54 +45,61 @@ function currentPeriodKeys(now = new Date()): {
 	const year = parts.find((p) => p.type === 'year')?.value || '1970'
 	const month = parts.find((p) => p.type === 'month')?.value || '01'
 	const day = parts.find((p) => p.type === 'day')?.value || '01'
-	return { year, month: `${year}-${month}`, day: `${year}-${month}-${day}` }
+	return `${year}-${month}-${day}`
+}
+
+type PeriodRange = {
+	// Calendar dates (no time-of-day) for the period_start/period_end columns.
+	periodStart: Date
+	periodEnd: Date
+	// WIB-aware [start, end) timestamps for querying opportunities.closed_at,
+	// same day-boundary convention as metrics/service.ts.
+	queryStart: Date
+	queryEnd: Date
 }
 
 /**
- * "2026" / "2026-07" / "2026-07-23" -> a [start, end) range in Asia/Jakarta,
- * expressed as UTC Dates for Prisma. Mirrors the WIB day-boundary convention
- * metrics/service.ts uses for dashboard periods, so a target period and a
- * dashboard period never disagree about where a day starts.
+ * A reference date ("2026-07-15") snapped to the calendar boundaries of the
+ * annual/quarterly/monthly period it falls in. The caller does not need to
+ * compute period_end themselves - any date inside the target period resolves
+ * to the same canonical period_start/period_end, which is what the unique
+ * constraint (app_id, user_id, period_type, period_start) upserts against.
  */
-function resolveTargetPeriodRange(
+function resolvePeriodRange(
 	periodType: string,
-	periodKey: string,
-): { start: Date; end: Date } | null {
-	if (periodType === 'year') {
-		if (!/^\d{4}$/.test(periodKey)) return null
-		const year = Number(periodKey)
-		return {
-			start: new Date(Date.UTC(year, 0, 1) - WIB_OFFSET_MS),
-			end: new Date(Date.UTC(year + 1, 0, 1) - WIB_OFFSET_MS),
-		}
+	referenceDate: string,
+): PeriodRange | null {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(referenceDate)
+	if (!match) return null
+	const year = Number(match[1])
+	const month = Number(match[2])
+	if (month < 1 || month > 12) return null
+
+	let startMonthIndex: number
+	let endMonthIndex: number
+	if (periodType === 'annual') {
+		startMonthIndex = 0
+		endMonthIndex = 11
+	} else if (periodType === 'quarterly') {
+		startMonthIndex = Math.floor((month - 1) / 3) * 3
+		endMonthIndex = startMonthIndex + 2
+	} else if (periodType === 'monthly') {
+		startMonthIndex = month - 1
+		endMonthIndex = month - 1
+	} else {
+		return null
 	}
-	if (periodType === 'month') {
-		const match = /^(\d{4})-(\d{2})$/.exec(periodKey)
-		if (!match) return null
-		const year = Number(match[1])
-		const month = Number(match[2])
-		if (month < 1 || month > 12) return null
-		return {
-			start: new Date(Date.UTC(year, month - 1, 1) - WIB_OFFSET_MS),
-			end: new Date(Date.UTC(year, month, 1) - WIB_OFFSET_MS),
-		}
+
+	const periodStart = new Date(Date.UTC(year, startMonthIndex, 1))
+	const lastDay = new Date(Date.UTC(year, endMonthIndex + 1, 0)).getUTCDate()
+	const periodEnd = new Date(Date.UTC(year, endMonthIndex, lastDay))
+
+	return {
+		periodStart,
+		periodEnd,
+		queryStart: new Date(periodStart.getTime() - WIB_OFFSET_MS),
+		queryEnd: new Date(periodEnd.getTime() + DAY_MS - WIB_OFFSET_MS),
 	}
-	if (periodType === 'day') {
-		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(periodKey)
-		if (!match) return null
-		const year = Number(match[1])
-		const month = Number(match[2])
-		const day = Number(match[3])
-		if (month < 1 || month > 12 || day < 1 || day > 31) return null
-		// Date.UTC silently rolls a day that doesn't exist in this month (e.g.
-		// Feb 31) into the next one; reject rather than silently target the
-		// wrong day.
-		const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
-		if (day > daysInMonth) return null
-		const start = new Date(Date.UTC(year, month - 1, day) - WIB_OFFSET_MS)
-		return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) }
-	}
-	return null
 }
 
 /**
@@ -125,22 +130,33 @@ async function resolveTargetVisibleUserIds(
 async function computeAchievement(
 	appId: string,
 	userId: string,
-	range: { start: Date; end: Date } | null,
-): Promise<{ revenue: number; dealCount: number }> {
-	if (!range) return { revenue: 0, dealCount: 0 }
-	const result = await prisma.opportunities.aggregate({
-		where: {
-			app_id: appId,
-			owner_id: userId,
-			status: 'won',
-			closed_at: { gte: range.start, lt: range.end },
-		},
-		_sum: { value: true },
-		_count: { _all: true },
-	})
+	range: PeriodRange | null,
+): Promise<{ revenue: number; dealCount: number; leadCount: number }> {
+	if (!range) return { revenue: 0, dealCount: 0, leadCount: 0 }
+	const [dealAgg, leadCount] = await Promise.all([
+		prisma.opportunities.aggregate({
+			where: {
+				app_id: appId,
+				owner_id: userId,
+				status: 'won',
+				closed_at: { gte: range.queryStart, lt: range.queryEnd },
+			},
+			_sum: { value: true },
+			_count: { _all: true },
+		}),
+		prisma.contacts.count({
+			where: {
+				app_id: appId,
+				owner_id: userId,
+				deleted_at: null,
+				created_at: { gte: range.queryStart, lt: range.queryEnd },
+			},
+		}),
+	])
 	return {
-		revenue: Number(result._sum.value || 0),
-		dealCount: result._count._all,
+		revenue: Number(dealAgg._sum.value || 0),
+		dealCount: dealAgg._count._all,
+		leadCount,
 	}
 }
 
@@ -155,17 +171,18 @@ export abstract class SalesTargetsService {
 			userIds = [query.userId]
 		}
 
+		const today = todayReferenceDate()
 		const periodFilter =
-			query.periodType && query.periodKey
-				? [{ period_type: query.periodType, period_key: query.periodKey }]
-				: (() => {
-						const current = currentPeriodKeys()
-						return [
-							{ period_type: 'year', period_key: current.year },
-							{ period_type: 'month', period_key: current.month },
-							{ period_type: 'day', period_key: current.day },
-						]
+			query.periodType && query.periodStart
+				? (() => {
+						const range = resolvePeriodRange(query.periodType!, query.periodStart!)
+						if (!range) throw new SalesTargetError('periodStart tidak valid')
+						return [{ period_type: query.periodType!, period_start: range.periodStart }]
 					})()
+				: PERIOD_TYPES.map((periodType) => {
+						const range = resolvePeriodRange(periodType, today)!
+						return { period_type: periodType, period_start: range.periodStart }
+					})
 
 		const rows = await prisma.sales_targets.findMany({
 			where: {
@@ -187,14 +204,14 @@ export abstract class SalesTargetsService {
 
 		return Promise.all(
 			rows.map(async (row) => {
-				const range = resolveTargetPeriodRange(row.period_type, row.period_key)
-				const achievement = await computeAchievement(
-					actor.appId,
-					row.user_id,
-					range,
+				const range = resolvePeriodRange(
+					row.period_type,
+					row.period_start.toISOString().slice(0, 10),
 				)
-				const revenueTarget = Number(row.revenue_target)
-				const dealCountTarget = row.deal_count_target
+				const achievement = await computeAchievement(actor.appId, row.user_id, range)
+				const targetRevenue = Number(row.target_revenue)
+				const targetDeals = row.target_deals
+				const targetLeads = row.target_leads
 				return {
 					userId: row.user_id,
 					userName:
@@ -202,19 +219,26 @@ export abstract class SalesTargetsService {
 						userById.get(row.user_id)?.email ||
 						null,
 					periodType: row.period_type,
-					periodKey: row.period_key,
-					revenueTarget,
-					dealCountTarget,
+					periodStart: row.period_start,
+					periodEnd: row.period_end,
+					targetRevenue,
+					targetDeals,
+					targetLeads,
 					achievement: {
 						revenue: achievement.revenue,
 						dealCount: achievement.dealCount,
+						leadCount: achievement.leadCount,
 						revenueProgressPercent:
-							revenueTarget > 0
-								? round((achievement.revenue / revenueTarget) * 100, 1)
+							targetRevenue > 0
+								? round((achievement.revenue / targetRevenue) * 100, 1)
 								: 0,
 						dealProgressPercent:
-							dealCountTarget > 0
-								? round((achievement.dealCount / dealCountTarget) * 100, 1)
+							targetDeals > 0
+								? round((achievement.dealCount / targetDeals) * 100, 1)
+								: 0,
+						leadProgressPercent:
+							targetLeads > 0
+								? round((achievement.leadCount / targetLeads) * 100, 1)
 								: 0,
 					},
 				}
@@ -230,11 +254,10 @@ export abstract class SalesTargetsService {
 		if (
 			!PERIOD_TYPES.includes(input.periodType as (typeof PERIOD_TYPES)[number])
 		) {
-			throw new SalesTargetError('periodType harus year, month, atau day')
+			throw new SalesTargetError('periodType harus annual, quarterly, atau monthly')
 		}
-		const range = resolveTargetPeriodRange(input.periodType, input.periodKey)
-		if (!range)
-			throw new SalesTargetError('periodKey tidak sesuai format periodType')
+		const range = resolvePeriodRange(input.periodType, input.periodStart)
+		if (!range) throw new SalesTargetError('periodStart tidak valid')
 
 		const targetUser = await prisma.users.findFirst({
 			where: {
@@ -251,34 +274,36 @@ export abstract class SalesTargetsService {
 			)
 		}
 
-		const revenueTarget = Math.max(0, Number(input.revenueTarget) || 0)
-		const dealCountTarget = Math.max(
-			0,
-			Math.floor(Number(input.dealCountTarget) || 0),
-		)
+		const targetRevenue = Math.max(0, Number(input.targetRevenue) || 0)
+		const targetDeals = Math.max(0, Math.floor(Number(input.targetDeals) || 0))
+		const targetLeads = Math.max(0, Math.floor(Number(input.targetLeads) || 0))
 
 		const compoundKey = {
 			app_id: actor.appId,
 			user_id: targetUserId,
 			period_type: input.periodType,
-			period_key: input.periodKey,
+			period_start: range.periodStart,
 		}
 		const previous = await prisma.sales_targets.findUnique({
-			where: { app_id_user_id_period_type_period_key: compoundKey },
-			select: { revenue_target: true, deal_count_target: true },
+			where: { app_id_user_id_period_type_period_start: compoundKey },
+			select: { target_revenue: true, target_deals: true, target_leads: true },
 		})
 
 		const row = await prisma.sales_targets.upsert({
-			where: { app_id_user_id_period_type_period_key: compoundKey },
+			where: { app_id_user_id_period_type_period_start: compoundKey },
 			create: {
 				...compoundKey,
-				revenue_target: revenueTarget,
-				deal_count_target: dealCountTarget,
+				period_end: range.periodEnd,
+				target_revenue: targetRevenue,
+				target_deals: targetDeals,
+				target_leads: targetLeads,
 				set_by: actor.userId,
 			},
 			update: {
-				revenue_target: revenueTarget,
-				deal_count_target: dealCountTarget,
+				period_end: range.periodEnd,
+				target_revenue: targetRevenue,
+				target_deals: targetDeals,
+				target_leads: targetLeads,
 				set_by: actor.userId,
 			},
 		})
@@ -291,22 +316,24 @@ export abstract class SalesTargetsService {
 			actorId: actor.userId,
 			metadata: {
 				periodType: input.periodType,
-				periodKey: input.periodKey,
-				previousRevenueTarget: previous
-					? Number(previous.revenue_target)
-					: null,
-				revenueTarget,
-				previousDealCountTarget: previous ? previous.deal_count_target : null,
-				dealCountTarget,
+				periodStart: range.periodStart.toISOString().slice(0, 10),
+				previousTargetRevenue: previous ? Number(previous.target_revenue) : null,
+				targetRevenue,
+				previousTargetDeals: previous ? previous.target_deals : null,
+				targetDeals,
+				previousTargetLeads: previous ? previous.target_leads : null,
+				targetLeads,
 			},
 		})
 
 		return {
 			userId: row.user_id,
 			periodType: row.period_type,
-			periodKey: row.period_key,
-			revenueTarget: Number(row.revenue_target),
-			dealCountTarget: row.deal_count_target,
+			periodStart: row.period_start,
+			periodEnd: row.period_end,
+			targetRevenue: Number(row.target_revenue),
+			targetDeals: row.target_deals,
+			targetLeads: row.target_leads,
 		}
 	}
 }

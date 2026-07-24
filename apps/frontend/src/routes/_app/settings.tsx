@@ -16,6 +16,7 @@ import {
 	Edit2,
 	X,
 	MessageCircle,
+	UserCircle2,
 	type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ import {
 import WhatsAppSettingsManager from '@/components/settings/WhatsAppSettingsManager'
 import AIConfigurationManager from '@/components/settings/AIConfigurationManager'
 import PersonalAiSettingsManager from '@/components/settings/PersonalAiSettingsManager'
+import SalesProfileSelfManager from '@/components/settings/SalesProfileSelfManager'
 import ProfileSettingsManager from '@/components/settings/ProfileSettingsManager'
 import SecuritySettingsManager from '@/components/settings/SecuritySettingsManager'
 import { getVisibleSettingsTabIds, type SettingsNavItemId } from './-settings-tab-access'
@@ -51,6 +53,7 @@ type SettingsNavItem = {
 
 const SIDEBAR_NAV_ITEMS: SettingsNavItem[] = [
 	{ title: 'Profil', icon: User, id: 'general' },
+	{ title: 'Data Diri Sales', icon: UserCircle2, id: 'sales-data' },
 	{ title: 'AI Balasan', icon: Bot, id: 'ai-replies' },
 	{ title: 'AI Models', icon: Bot, id: 'ai-models' },
 	{ title: 'Labels', icon: Tag, id: 'labels' },
@@ -808,6 +811,10 @@ function SettingsPage() {
 								</Card>
 							</div>
 						)}
+
+						{/* ========== SALES DATA SECTION ========== */}
+						{activeNav === 'sales-data' &&
+							visibleTabIds.includes('sales-data') && <SalesProfileSelfManager />}
 
 						{/* ========== AI MODELS SECTION ========== */}
 						{activeNav === 'ai-replies' &&

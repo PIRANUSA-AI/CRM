@@ -26,6 +26,7 @@ import { Route as AppNotifikasiRouteImport } from './routes/_app/notifikasi'
 import { Route as AppMetricsRouteImport } from './routes/_app/metrics'
 import { Route as AppLogAktivitasRouteImport } from './routes/_app/log-aktivitas'
 import { Route as AppKnowledgeRouteImport } from './routes/_app/knowledge'
+import { Route as AppKesehatanSistemRouteImport } from './routes/_app/kesehatan-sistem'
 import { Route as AppIntegrationRouteImport } from './routes/_app/integration'
 import { Route as AppImportRouteImport } from './routes/_app/import'
 import { Route as AppHelpRouteImport } from './routes/_app/help'
@@ -153,6 +154,11 @@ const AppLogAktivitasRoute = AppLogAktivitasRouteImport.update({
 const AppKnowledgeRoute = AppKnowledgeRouteImport.update({
   id: '/knowledge',
   path: '/knowledge',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppKesehatanSistemRoute = AppKesehatanSistemRouteImport.update({
+  id: '/kesehatan-sistem',
+  path: '/kesehatan-sistem',
   getParentRoute: () => AppRoute,
 } as any)
 const AppIntegrationRoute = AppIntegrationRouteImport.update({
@@ -401,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/help': typeof AppHelpRoute
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
+  '/kesehatan-sistem': typeof AppKesehatanSistemRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/log-aktivitas': typeof AppLogAktivitasRoute
   '/metrics': typeof AppMetricsRoute
@@ -463,6 +470,7 @@ export interface FileRoutesByTo {
   '/help': typeof AppHelpRoute
   '/import': typeof AppImportRoute
   '/integration': typeof AppIntegrationRoute
+  '/kesehatan-sistem': typeof AppKesehatanSistemRoute
   '/knowledge': typeof AppKnowledgeRoute
   '/log-aktivitas': typeof AppLogAktivitasRoute
   '/metrics': typeof AppMetricsRoute
@@ -527,6 +535,7 @@ export interface FileRoutesById {
   '/_app/help': typeof AppHelpRoute
   '/_app/import': typeof AppImportRoute
   '/_app/integration': typeof AppIntegrationRoute
+  '/_app/kesehatan-sistem': typeof AppKesehatanSistemRoute
   '/_app/knowledge': typeof AppKnowledgeRoute
   '/_app/log-aktivitas': typeof AppLogAktivitasRoute
   '/_app/metrics': typeof AppMetricsRoute
@@ -591,6 +600,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/import'
     | '/integration'
+    | '/kesehatan-sistem'
     | '/knowledge'
     | '/log-aktivitas'
     | '/metrics'
@@ -653,6 +663,7 @@ export interface FileRouteTypes {
     | '/help'
     | '/import'
     | '/integration'
+    | '/kesehatan-sistem'
     | '/knowledge'
     | '/log-aktivitas'
     | '/metrics'
@@ -716,6 +727,7 @@ export interface FileRouteTypes {
     | '/_app/help'
     | '/_app/import'
     | '/_app/integration'
+    | '/_app/kesehatan-sistem'
     | '/_app/knowledge'
     | '/_app/log-aktivitas'
     | '/_app/metrics'
@@ -890,6 +902,13 @@ declare module '@tanstack/react-router' {
       path: '/knowledge'
       fullPath: '/knowledge'
       preLoaderRoute: typeof AppKnowledgeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/kesehatan-sistem': {
+      id: '/_app/kesehatan-sistem'
+      path: '/kesehatan-sistem'
+      fullPath: '/kesehatan-sistem'
+      preLoaderRoute: typeof AppKesehatanSistemRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/integration': {
@@ -1266,6 +1285,7 @@ interface AppRouteChildren {
   AppHelpRoute: typeof AppHelpRoute
   AppImportRoute: typeof AppImportRoute
   AppIntegrationRoute: typeof AppIntegrationRoute
+  AppKesehatanSistemRoute: typeof AppKesehatanSistemRoute
   AppKnowledgeRoute: typeof AppKnowledgeRoute
   AppLogAktivitasRoute: typeof AppLogAktivitasRoute
   AppMetricsRoute: typeof AppMetricsRoute
@@ -1317,6 +1337,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppHelpRoute: AppHelpRoute,
   AppImportRoute: AppImportRoute,
   AppIntegrationRoute: AppIntegrationRoute,
+  AppKesehatanSistemRoute: AppKesehatanSistemRoute,
   AppKnowledgeRoute: AppKnowledgeRoute,
   AppLogAktivitasRoute: AppLogAktivitasRoute,
   AppMetricsRoute: AppMetricsRoute,

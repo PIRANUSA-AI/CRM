@@ -38,8 +38,10 @@ import {
 	orchestration,
 	personalWhatsappInbox,
 	sakti,
+	salesPersona,
 	salesProfiles,
 	salesTargets,
+	systemHealth,
 	tasks,
 	teamModule,
 	templateVariables,
@@ -157,8 +159,10 @@ export const app = new Elysia()
 			.use(orchestration)
 			.use(personalWhatsappInbox)
 			.use(tasks)
+			.use(salesPersona)
 			.use(salesProfiles)
 			.use(salesTargets)
+			.use(systemHealth)
 			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)
@@ -327,8 +331,10 @@ export const app = new Elysia()
 			.use(flow)
 			.use(orchestration)
 			.use(tasks)
+			.use(salesPersona)
 			.use(salesProfiles)
 			.use(salesTargets)
+			.use(systemHealth)
 			.use(leadRouting)
 			.use(notifications)
 			.use(importLeads)

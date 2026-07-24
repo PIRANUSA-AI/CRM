@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
 	Activity,
 	ArrowUpRight,
+	Award,
 	CheckSquare,
 	Clock3,
 	Gauge,
@@ -9,6 +10,7 @@ import {
 	MessageCircle,
 	Sparkles,
 	Target,
+	Trophy,
 	TrendingUp,
 	Users,
 } from 'lucide-react'
@@ -57,6 +59,7 @@ type DashboardUiData = {
 		aiResolvedRate: MetricValue
 		avgResponseSeconds: MetricValue
 		revenue: MetricValue
+		winRate: MetricValue
 	}
 	volume: Array<{
 		date: string
@@ -85,6 +88,22 @@ type DashboardUiData = {
 		title: string
 		description: string
 	}>
+	topDeals: Array<{
+		id: string
+		name: string
+		product: string | null
+		value: number
+		status: string
+		stage: string | null
+		ownerName: string | null
+		closedAt: string | null
+	}>
+	leaderboard: Array<{
+		userId: string
+		name: string
+		revenue: number
+		dealCount: number
+	}>
 }
 
 const EMPTY_METRIC: MetricValue = {
@@ -100,11 +119,14 @@ const EMPTY_DASHBOARD: DashboardUiData = {
 		aiResolvedRate: EMPTY_METRIC,
 		avgResponseSeconds: EMPTY_METRIC,
 		revenue: EMPTY_METRIC,
+		winRate: EMPTY_METRIC,
 	},
 	volume: [],
 	funnel: [],
 	agents: [],
 	alerts: [],
+	topDeals: [],
+	leaderboard: [],
 }
 
 const RANGE_LABEL: Record<DashboardRange, string> = {
@@ -116,6 +138,21 @@ const RANGE_LABEL: Record<DashboardRange, string> = {
 function toNumber(value: unknown, fallback = 0) {
 	const parsed = Number(value)
 	return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function formatPeriodLabel(target: SalesTargetRow): string {
+	const start = new Date(target.periodStart)
+	if (Number.isNaN(start.getTime())) return ''
+	const year = start.getUTCFullYear()
+	if (target.periodType === 'annual') return String(year)
+	if (target.periodType === 'quarterly') {
+		return `Q${Math.floor(start.getUTCMonth() / 3) + 1} ${year}`
+	}
+	return start.toLocaleDateString('id-ID', {
+		month: 'long',
+		year: 'numeric',
+		timeZone: 'UTC',
+	})
 }
 
 function metricFrom(value: unknown): MetricValue {
@@ -195,6 +232,7 @@ function normalizeDashboard(raw: any): DashboardUiData {
 			aiResolvedRate: metricFrom(cards.aiResolvedRate),
 			avgResponseSeconds: metricFrom(cards.avgResponseSeconds),
 			revenue: metricFrom(cards.revenue),
+			winRate: metricFrom(cards.winRate),
 		},
 		volume: volumeSource.map((entry: any) => {
 			const ai = toNumber(entry.ai)
@@ -234,6 +272,26 @@ function normalizeDashboard(raw: any): DashboardUiData {
 						: 'neutral',
 					title: String(alert.title || ''),
 					description: String(alert.description || ''),
+				}))
+			: [],
+		topDeals: Array.isArray(dashboard?.topDeals)
+			? dashboard.topDeals.map((deal: any) => ({
+					id: String(deal.id || ''),
+					name: String(deal.name || 'Deal'),
+					product: deal.product ? String(deal.product) : null,
+					value: toNumber(deal.value),
+					status: String(deal.status || 'open'),
+					stage: deal.stage ? String(deal.stage) : null,
+					ownerName: deal.ownerName ? String(deal.ownerName) : null,
+					closedAt: deal.closedAt ? String(deal.closedAt) : null,
+				}))
+			: [],
+		leaderboard: Array.isArray(dashboard?.leaderboard)
+			? dashboard.leaderboard.map((row: any) => ({
+					userId: String(row.userId || ''),
+					name: String(row.name || 'Sales'),
+					revenue: toNumber(row.revenue),
+					dealCount: toNumber(row.dealCount),
 				}))
 			: [],
 	}
@@ -413,30 +471,30 @@ function DashboardPage() {
 	const hasFunnel = data.funnel.some((step) => step.value > 0)
 	const hasAgents = data.agents.length > 0
 	const yearTarget = targets.find(
-		(t) => t.userId === currentUser?.id && t.periodType === 'year',
+		(t) => t.userId === currentUser?.id && t.periodType === 'annual',
 	)
 	const monthTarget = targets.find(
-		(t) => t.userId === currentUser?.id && t.periodType === 'month',
+		(t) => t.userId === currentUser?.id && t.periodType === 'monthly',
 	)
 
 	const isLeader = currentUser?.role === 'leader'
 	// `targets` already holds every visible row (self + team, for a leader) -
 	// no separate fetch needed, just sum what's already been fetched for the
 	// "Target Penjualan" widget above.
-	const teamYearTargets = targets.filter((t) => t.periodType === 'year')
-	const teamMonthTargets = targets.filter((t) => t.periodType === 'month')
+	const teamYearTargets = targets.filter((t) => t.periodType === 'annual')
+	const teamMonthTargets = targets.filter((t) => t.periodType === 'monthly')
 	const teamRollup = (rows: SalesTargetRow[]) =>
 		rows.reduce(
 			(acc, row) => ({
-				revenueTarget: acc.revenueTarget + row.revenueTarget,
+				targetRevenue: acc.targetRevenue + row.targetRevenue,
 				revenueActual: acc.revenueActual + row.achievement.revenue,
-				dealCountTarget: acc.dealCountTarget + row.dealCountTarget,
+				targetDeals: acc.targetDeals + row.targetDeals,
 				dealCountActual: acc.dealCountActual + row.achievement.dealCount,
 			}),
 			{
-				revenueTarget: 0,
+				targetRevenue: 0,
 				revenueActual: 0,
-				dealCountTarget: 0,
+				targetDeals: 0,
 				dealCountActual: 0,
 			},
 		)
@@ -457,22 +515,22 @@ function DashboardPage() {
 	const teamComparisonRows = (() => {
 		const byTeam = new Map<
 			string,
-			{ teamName: string; revenueTarget: number; revenueActual: number }
+			{ teamName: string; targetRevenue: number; revenueActual: number }
 		>()
 		for (const row of teamMonthTargets) {
 			const teamName = teamNameByUserId.get(row.userId) || 'Tanpa Tim'
 			const entry = byTeam.get(teamName) || {
 				teamName,
-				revenueTarget: 0,
+				targetRevenue: 0,
 				revenueActual: 0,
 			}
-			entry.revenueTarget += row.revenueTarget
+			entry.targetRevenue += row.targetRevenue
 			entry.revenueActual += row.achievement.revenue
 			byTeam.set(teamName, entry)
 		}
 		return [...byTeam.values()].sort((a, b) => {
-			const pctA = a.revenueTarget > 0 ? a.revenueActual / a.revenueTarget : 0
-			const pctB = b.revenueTarget > 0 ? b.revenueActual / b.revenueTarget : 0
+			const pctA = a.targetRevenue > 0 ? a.revenueActual / a.targetRevenue : 0
+			const pctB = b.targetRevenue > 0 ? b.revenueActual / b.targetRevenue : 0
 			return pctB - pctA
 		})
 	})()
@@ -531,7 +589,7 @@ function DashboardPage() {
 				</div>
 			) : null}
 
-			<div className={isSales ? 'ocm-grid-3' : 'ocm-grid-4'}>
+			<div className={isSales ? 'ocm-grid-4' : 'ocm-grid-5'}>
 				<CrmStatCard
 					label="Chat masuk"
 					value={
@@ -573,6 +631,14 @@ function DashboardPage() {
 					deltaTone={positiveTone(data.cards.revenue)}
 					icon={<TrendingUp size={16} className="text-primary" />}
 				/>
+				<CrmStatCard
+					label="Win rate"
+					value={loading ? '...' : `${data.cards.winRate.value.toFixed(1)}%`}
+					delta={formatDeltaValue(data.cards.winRate, 'pp')}
+					deltaTone={positiveTone(data.cards.winRate)}
+					icon={<Award size={16} className="text-primary" />}
+					subtitle="Deal won vs. closed"
+				/>
 			</div>
 
 			{yearTarget || monthTarget ? (
@@ -595,11 +661,11 @@ function DashboardPage() {
 								<div key={target.periodType}>
 									<div className="mb-1 flex items-center justify-between text-xs">
 										<span className="font-semibold">
-											Target {label} · {target.periodKey}
+											Target {label} · {formatPeriodLabel(target)}
 										</span>
 										<span className="text-muted-foreground">
 											{formatRupiah(target.achievement.revenue)} /{' '}
-											{formatRupiah(target.revenueTarget)}
+											{formatRupiah(target.targetRevenue)}
 										</span>
 									</div>
 									<div className="ocm-progress-track">
@@ -612,7 +678,7 @@ function DashboardPage() {
 									</div>
 									<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
 										<span>
-											{target.achievement.dealCount} / {target.dealCountTarget}{' '}
+											{target.achievement.dealCount} / {target.targetDeals}{' '}
 											deal
 										</span>
 										<span>
@@ -651,10 +717,10 @@ function DashboardPage() {
 								.filter((row) => row.count > 0)
 								.map(({ label, rollup }) => {
 									const pct =
-										rollup.revenueTarget > 0
+										rollup.targetRevenue > 0
 											? Math.min(
 													100,
-													(rollup.revenueActual / rollup.revenueTarget) * 100,
+													(rollup.revenueActual / rollup.targetRevenue) * 100,
 												)
 											: 0
 									return (
@@ -665,7 +731,7 @@ function DashboardPage() {
 												</span>
 												<span className="text-muted-foreground">
 													{formatRupiah(rollup.revenueActual)} /{' '}
-													{formatRupiah(rollup.revenueTarget)}
+													{formatRupiah(rollup.targetRevenue)}
 												</span>
 											</div>
 											<div className="ocm-progress-track">
@@ -676,7 +742,7 @@ function DashboardPage() {
 											</div>
 											<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
 												<span>
-													{rollup.dealCountActual} / {rollup.dealCountTarget}{' '}
+													{rollup.dealCountActual} / {rollup.targetDeals}{' '}
 													deal
 												</span>
 												<span>{pct.toFixed(1)}%</span>
@@ -737,10 +803,10 @@ function DashboardPage() {
 							{teamComparisonRows.length > 0 ? (
 								teamComparisonRows.map((team) => {
 									const pct =
-										team.revenueTarget > 0
+										team.targetRevenue > 0
 											? Math.min(
 													100,
-													(team.revenueActual / team.revenueTarget) * 100,
+													(team.revenueActual / team.targetRevenue) * 100,
 												)
 											: 0
 									return (
@@ -749,7 +815,7 @@ function DashboardPage() {
 												<span className="font-semibold">{team.teamName}</span>
 												<span className="text-muted-foreground">
 													{formatRupiah(team.revenueActual)} /{' '}
-													{formatRupiah(team.revenueTarget)}
+													{formatRupiah(team.targetRevenue)}
 												</span>
 											</div>
 											<div className="ocm-progress-track">
@@ -854,10 +920,10 @@ function DashboardPage() {
 									.filter((row) => row.count > 0)
 									.map(({ label, rollup }) => {
 										const pct =
-											rollup.revenueTarget > 0
+											rollup.targetRevenue > 0
 												? Math.min(
 														100,
-														(rollup.revenueActual / rollup.revenueTarget) * 100,
+														(rollup.revenueActual / rollup.targetRevenue) * 100,
 													)
 												: 0
 										return (
@@ -868,7 +934,7 @@ function DashboardPage() {
 													</span>
 													<span className="text-muted-foreground">
 														{formatRupiah(rollup.revenueActual)} /{' '}
-														{formatRupiah(rollup.revenueTarget)}
+														{formatRupiah(rollup.targetRevenue)}
 													</span>
 												</div>
 												<div className="ocm-progress-track">
@@ -879,7 +945,7 @@ function DashboardPage() {
 												</div>
 												<p className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
 													<span>
-														{rollup.dealCountActual} / {rollup.dealCountTarget}{' '}
+														{rollup.dealCountActual} / {rollup.targetDeals}{' '}
 														deal
 													</span>
 													<span>{pct.toFixed(1)}%</span>
@@ -887,6 +953,105 @@ function DashboardPage() {
 											</div>
 										)
 									})}
+							</div>
+						</section>
+					)}
+				</div>
+			) : null}
+
+			{data.topDeals.length > 0 || (!isSales && data.leaderboard.length > 0) ? (
+				<div className="ocm-grid-2">
+					<section className="ocm-card">
+						<div className="ocm-card-header">
+							<h2 className="ocm-card-title flex items-center gap-2">
+								<Award size={16} className="text-primary" />
+								Deal Terbesar · {RANGE_LABEL[range]}
+							</h2>
+						</div>
+						<div className="ocm-card-body space-y-1">
+							{data.topDeals.length > 0 ? (
+								data.topDeals.map((deal) => (
+									<div
+										key={deal.id}
+										className="flex items-center justify-between gap-2 py-1.5"
+									>
+										<div className="min-w-0 flex-1">
+											<p className="truncate text-sm font-semibold">
+												{deal.name}
+											</p>
+											<p className="truncate text-xs text-muted-foreground">
+												{deal.product || '-'}
+												{!isSales && deal.ownerName
+													? ` · ${deal.ownerName}`
+													: ''}
+											</p>
+										</div>
+										<div className="shrink-0 text-right">
+											<p className="text-sm font-semibold">
+												{formatRupiah(deal.value)}
+											</p>
+											<span
+												className={`ocm-tag ${deal.status === 'won' ? 'ocm-tag-success' : ''}`}
+											>
+												{deal.status === 'won' ? 'Won' : 'Open'}
+											</span>
+										</div>
+									</div>
+								))
+							) : (
+								<p className="py-8 text-center text-sm text-muted-foreground">
+									Belum ada deal besar pada periode ini.
+								</p>
+							)}
+						</div>
+					</section>
+
+					{isSales ? null : (
+						<section className="ocm-card">
+							<div className="ocm-card-header">
+								<h2 className="ocm-card-title flex items-center gap-2">
+									<Trophy size={16} className="text-primary" />
+									Leaderboard Sales · {RANGE_LABEL[range]}
+								</h2>
+							</div>
+							<div className="ocm-card-body overflow-x-auto">
+								<table className="ocm-table">
+									<thead>
+										<tr>
+											<th>Sales</th>
+											<th>Deal Won</th>
+											<th>Revenue</th>
+										</tr>
+									</thead>
+									<tbody>
+										{data.leaderboard.length > 0 ? (
+											data.leaderboard.map((row, index) => (
+												<tr key={row.userId}>
+													<td>
+														<div className="flex items-center gap-2">
+															<span className="text-muted-foreground">
+																#{index + 1}
+															</span>
+															<CrmAvatar name={row.name} size={22} />
+															<span>{row.name}</span>
+														</div>
+													</td>
+													<td>{row.dealCount}</td>
+													<td>{formatRupiah(row.revenue)}</td>
+												</tr>
+											))
+										) : (
+											<tr>
+												<td
+													colSpan={3}
+													className="py-8 text-center text-muted-foreground"
+												>
+													Belum ada deal won pada periode ini.
+												</td>
+											</tr>
+										)}
+									</tbody>
+								</table>
 							</div>
 						</section>
 					)}

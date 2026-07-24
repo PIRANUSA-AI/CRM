@@ -4,11 +4,13 @@ import { incomingMessageQueue, webhookQueue } from '../../lib/queue'
 import { appContext } from '../../plugins'
 import { WebhookService } from '../webhook/service'
 import { WhatsAppService } from '../whatsapp/service'
+import { MessageService } from '../message/service'
 import { transcribePhoneNumber } from '../../services/deepgram'
 import { BaileysServiceClient } from '../whatsapp/baileys-service-client'
 import { getRealtimeIO } from '../../lib/realtime'
 import { requireRole } from '../../lib/require-role'
 import { normalizeS3PublicUrl } from '../../lib/s3'
+import { cached, invalidateCache } from '../../lib/cache'
 import { enqueueProfileContact, enqueueProfileSweep } from './profile-sync'
 import {
 	confirmPersonalLead,
@@ -34,8 +36,22 @@ function normalizeMessageMediaAttributes(value: unknown) {
 	const media = asRecord(attributes.media)
 	const currentUrl = typeof media.url === 'string' ? media.url : null
 	const normalizedUrl = normalizeS3PublicUrl(currentUrl)
-	if (!currentUrl || !normalizedUrl || normalizedUrl === currentUrl) return { value, changed: false }
-	return { value: { ...attributes, media: { ...media, url: normalizedUrl } }, changed: true }
+	const mediaChanged = Boolean(currentUrl && normalizedUrl && normalizedUrl !== currentUrl)
+
+	const linkPreview = asRecord(attributes.link_preview)
+	const currentThumbnail = typeof linkPreview.thumbnail_url === 'string' ? linkPreview.thumbnail_url : null
+	const normalizedThumbnail = normalizeS3PublicUrl(currentThumbnail)
+	const previewChanged = Boolean(currentThumbnail && normalizedThumbnail && normalizedThumbnail !== currentThumbnail)
+
+	if (!mediaChanged && !previewChanged) return { value, changed: false }
+	return {
+		value: {
+			...attributes,
+			...(mediaChanged ? { media: { ...media, url: normalizedUrl } } : {}),
+			...(previewChanged ? { link_preview: { ...linkPreview, thumbnail_url: normalizedThumbnail } } : {}),
+		},
+		changed: true,
+	}
 }
 
 function normalizePhoneNumber(value: string) {
@@ -101,11 +117,33 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!channel) { set.status = 403; return { error: 'Invalid channel credentials' } }
 		if (!channel.app_id) { set.status = 422; return { error: 'Channel is not assigned to a CRM app' } }
 		if (String(payload?.event || '') === 'presence.update') {
-			getRealtimeIO()?.to(`app:${channel.app_id}`).emit('whatsapp:presence', {
-				phone: String(payload.phone || '').replace(/\D/g, ''),
-				presence: String(payload.presence || 'unavailable'),
-				timestamp: Number(payload.timestamp || Date.now()),
-			})
+			const phone = String(payload.phone || '').replace(/\D/g, '')
+			const presence = String(payload.presence || 'unavailable')
+			const timestamp = Number(payload.timestamp || Date.now())
+			getRealtimeIO()?.to(`app:${channel.app_id}`).emit('whatsapp:presence', { phone, presence, timestamp })
+			if (phone) {
+				const contact = await prisma.contacts.findFirst({
+					where: { app_id: channel.app_id, deleted_at: null, OR: [{ phone_number: phone }, { whatsapp_id: phone }] },
+					select: { id: true, additional_attributes: true },
+				})
+				if (contact) {
+					const attributes = asRecord(contact.additional_attributes)
+					await prisma.contacts.update({
+						where: { id: contact.id },
+						data: {
+							additional_attributes: {
+								...attributes,
+								whatsapp_presence: presence,
+								// "Last seen" only advances while actively online - a
+								// transition to unavailable freezes it at the last
+								// moment they were confirmed active, matching how
+								// WhatsApp's own last-seen behaves.
+								...(presence !== 'unavailable' ? { whatsapp_last_online_at: new Date(timestamp).toISOString() } : {}),
+							} as any,
+						},
+					})
+				}
+			}
 			return { success: true, realtime: true }
 		}
 		if (String(payload?.event || '') === 'contact.profile_changed') {
@@ -115,6 +153,66 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			})
 			if (contact) await enqueueProfileContact(channel.app_id, channel.id, contact.id, true)
 			return { success: true, queued: Boolean(contact) }
+		}
+		if (String(payload?.event || '') === 'contact.name_changed') {
+			const phone = String(payload.phone || '').replace(/\D/g, '')
+			const name = String(payload.name || '').trim()
+			if (!phone || !name) return { success: true, updated: false }
+			const contact = await prisma.contacts.findFirst({
+				where: { app_id: channel.app_id, deleted_at: null, OR: [{ phone_number: phone }, { whatsapp_id: phone }] },
+				select: { id: true, name: true },
+			})
+			// Only fill in a name that's currently empty or still just the raw
+			// phone number - never overwrite a name an agent set manually.
+			if (!contact || (contact.name && contact.name !== phone)) {
+				return { success: true, updated: false }
+			}
+			await prisma.contacts.update({ where: { id: contact.id }, data: { name, updated_at: new Date() } })
+			getRealtimeIO()?.to(`app:${channel.app_id}`).emit('contact:profile_updated', { contactId: contact.id, name })
+			return { success: true, updated: true }
+		}
+		if (String(payload?.event || '') === 'call.missed') {
+			const phone = String(payload.phone || '').replace(/\D/g, '')
+			if (!phone) return { success: true, updated: false }
+			const contact = await prisma.contacts.findFirst({
+				where: { app_id: channel.app_id, deleted_at: null, OR: [{ phone_number: phone }, { whatsapp_id: phone }] },
+				select: { id: true },
+			})
+			if (!contact) return { success: true, updated: false }
+			const conversation = await prisma.conversations.findFirst({
+				where: { app_id: channel.app_id, contact_id: contact.id, inbox_id: channel.inbox_id, deleted_at: null },
+				orderBy: { last_message_at: 'desc' },
+				select: { id: true },
+			})
+			if (!conversation) return { success: true, updated: false }
+			const callId = String(payload.callId || '').trim()
+			if (callId) {
+				const alreadyLogged = await prisma.messages.findFirst({
+					where: { conversation_id: conversation.id, content_attributes: { path: ['call_id'], equals: callId } },
+					select: { id: true },
+				})
+				if (alreadyLogged) return { success: true, updated: false, duplicate: true }
+			}
+			const isVideo = Boolean(payload.isVideo)
+			const status = String(payload.status || 'timeout')
+			const label = status === 'reject'
+				? (isVideo ? 'Panggilan video ditolak' : 'Panggilan suara ditolak')
+				: (isVideo ? 'Panggilan video tidak terjawab' : 'Panggilan suara tidak terjawab')
+			const message = await MessageService.sendMessage({
+				conversationId: conversation.id,
+				senderType: 'system',
+				content: `📞 ${label}`,
+				contentType: 'text',
+				contentAttributes: { type: 'call_log', call_id: callId || undefined, is_video: isVideo, call_status: status },
+			})
+			await prisma.conversations.update({
+				where: { id: conversation.id },
+				data: { last_message_at: new Date(), unread_count: { increment: 1 }, updated_at: new Date() },
+			})
+			const realtimePayload = { message, conversation: { id: conversation.id, app_id: channel.app_id, channel_type: 'whatsapp' } }
+			getRealtimeIO()?.to(`app:${channel.app_id}`).emit('message:created', realtimePayload)
+			getRealtimeIO()?.to(`conversation:${conversation.id}`).emit('message:created', realtimePayload)
+			return { success: true, updated: true }
 		}
 		if (String(payload?.event || '') === 'message.deleted') {
 			const externalIds = Array.isArray(payload.externalIds)
@@ -400,19 +498,25 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	}, { params: t.Object({ taskId: t.String() }) })
 	.get('/unread-count', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
-		if (!session || !channel?.inbox_id) return { count: 0 }
-		const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
-		if (!confirmedPhones.length) return { count: 0 }
-		// Number of the sales' own conversations that have unread messages.
-		const count = await prisma.conversations.count({
-			where: {
-				app_id: resolvedAppId,
-				inbox_id: channel.inbox_id,
-				deleted_at: null,
-				unread_count: { gt: 0 },
-				contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
-			},
+		// Badge count polled every 60s per tab AND refetched on every
+		// message:created socket event tenant-wide - at 50 concurrent agents a
+		// single incoming message can trigger 50 near-simultaneous identical
+		// queries. Short TTL absorbs that burst without making the badge feel stale.
+		const count = await cached(`count:pwa-unread:${resolvedAppId}:${userId}`, 5, async () => {
+			const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
+			if (!session || !channel?.inbox_id) return 0
+			const confirmedPhones = await listConfirmedPersonalLeadPhones(resolvedAppId, userId)
+			if (!confirmedPhones.length) return 0
+			// Number of the sales' own conversations that have unread messages.
+			return prisma.conversations.count({
+				where: {
+					app_id: resolvedAppId,
+					inbox_id: channel.inbox_id,
+					deleted_at: null,
+					unread_count: { gt: 0 },
+					contacts: { is: { OR: [{ phone_number: { in: confirmedPhones } }, { whatsapp_id: { in: confirmedPhones } }] } },
+				},
+			})
 		})
 		return { count }
 	})
@@ -573,14 +677,16 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	})
 	.get('/takeovers/count', async ({ resolvedAppId, userId, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const user = await prisma.users.findFirst({
-			where: { id: userId, app_id: resolvedAppId, deleted_at: null },
-			select: { role: true },
-		})
-		const count = await PersonalTakeoverService.count({
-			appId: resolvedAppId,
-			userId,
-			role: user?.role || 'sales',
+		const count = await cached(`count:pwa-takeover:${resolvedAppId}:${userId}`, 5, async () => {
+			const user = await prisma.users.findFirst({
+				where: { id: userId, app_id: resolvedAppId, deleted_at: null },
+				select: { role: true },
+			})
+			return PersonalTakeoverService.count({
+				appId: resolvedAppId,
+				userId,
+				role: user?.role || 'sales',
+			})
 		})
 		return { count }
 	})
@@ -625,6 +731,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan untuk dialihkan' } }
 		// Cancel any AI draft/reply already queued for this lead.
 		await PersonalAiReplyService.cancelConversationTasks(resolvedAppId, ownerUserId, params.conversationId)
+		invalidateCache(`count:pwa-takeover:${resolvedAppId}:${ownerUserId}`)
 		return { success: true, ...result }
 	}, {
 		params: t.Object({ conversationId: t.String() }),
@@ -673,6 +780,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			note: typeof body?.note === 'string' ? body.note : null,
 		})
 		if (!result) { set.status = 404; return { error: 'Lead tidak ditemukan' } }
+		invalidateCache(`count:pwa-takeover:${resolvedAppId}:${ownerUserId}`)
 		return { success: true, ...result }
 	}, {
 		params: t.Object({ conversationId: t.String() }),
@@ -738,6 +846,7 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			data: { unread_count: 0, agent_last_seen_at: new Date(), updated_at: new Date() },
 		})
 		if (!updated.count) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
+		invalidateCache(`count:pwa-unread:${resolvedAppId}:${userId}`)
 		return { success: true }
 	}, { params: t.Object({ conversationId: t.String() }) })
 	.post('/:conversationId/presence', async ({ resolvedAppId, userId, params, body, set }) => {
@@ -1064,9 +1173,12 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 	}, { params: t.Object({ conversationId: t.String(), messageId: t.String() }) })
 	.get('/:conversationId/messages', async ({ resolvedAppId, userId, params, query, set }) => {
 		if (!resolvedAppId || !userId) { set.status = 401; return { error: 'Sesi CRM tidak valid' } }
-		const { channel } = await resolveOwnedChannel(resolvedAppId, userId)
+		const { session, channel } = await resolveOwnedChannel(resolvedAppId, userId)
 		if (!channel?.inbox_id) { set.status = 404; return { error: 'WhatsApp belum terhubung' } }
-		const conversation = await prisma.conversations.findFirst({ where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null }, select: { id: true } })
+		const conversation = await prisma.conversations.findFirst({
+			where: { id: params.conversationId, app_id: resolvedAppId, inbox_id: channel.inbox_id, deleted_at: null },
+			select: { id: true, contacts: { select: { phone_number: true, whatsapp_id: true, additional_attributes: true } } },
+		})
 		if (!conversation) { set.status = 404; return { error: 'Percakapan tidak ditemukan' } }
 		const before = query.before ? new Date(query.before) : null
 		const rows = await prisma.messages.findMany({
@@ -1085,5 +1197,21 @@ export const personalWhatsappInbox = new Elysia({ prefix: '/personal-whatsapp-in
 			}
 			return { ...message, content_attributes: normalized.value }
 		})
-		return { data, nextCursor }
+		// WhatsApp only streams a contact's online/typing presence to us once
+		// we've subscribed to their JID - do that as soon as the agent opens
+		// this chat. Fire-and-forget: presence is a nice-to-have, never worth
+		// delaying the message list for.
+		const recipient = normalizePhoneNumber(conversation.contacts?.phone_number || conversation.contacts?.whatsapp_id || '')
+		if (session && channel.api_key && recipient) {
+			void BaileysServiceClient.subscribePresence(
+				{ channelKey: session.provider_channel_key, recipientWhatsAppId: recipient },
+				{ Authorization: `Bearer ${channel.api_key}`, 'X-Crm-Channel-Secret': channel.api_key },
+			).catch(() => undefined)
+		}
+		const contactAttributes = asRecord(conversation.contacts?.additional_attributes)
+		const presence = {
+			status: typeof contactAttributes.whatsapp_presence === 'string' ? contactAttributes.whatsapp_presence : null,
+			lastOnlineAt: typeof contactAttributes.whatsapp_last_online_at === 'string' ? contactAttributes.whatsapp_last_online_at : null,
+		}
+		return { data, nextCursor, presence }
 	}, { params: t.Object({ conversationId: t.String() }), query: t.Object({ before: t.Optional(t.String()) }) })
